@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oxygen Hotel — Book Your Stay</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* ============================================================
+   OXYGEN HOTEL — GUEST PANEL
+   Public-facing booking site. Same brand tokens as the admin
+   tools, different shell: top nav instead of sidebar. Guests
+   register/login, search & book rooms (with food/drink/service
+   add-ons), manage their own bookings, message support, and
+   edit their profile. Single-file SPA.
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #14181f; --ivory: #f6f1e7; --panel: #ffffff;
+  --border: #e6e0d2; --border-soft: rgba(20,24,31,0.08);
+  --brass: #b98d45; --brass-dark: #96712f; --teal: #2f5d5a; --danger: #a3392a; --info: #3b6ea5;
+  --text-muted: #6b6355;
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif; --radius: 10px;
+}
+
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); font-size: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+a { color: inherit; text-decoration: none; }
+
+/* AUTH SCREEN */
+.auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink); padding: 20px; }
+.auth-card { background: var(--panel); padding: 44px 40px; border-radius: var(--radius); width: 100%; max-width: 400px; }
+.auth-card .brand { font-family: var(--font-display); font-size: 1.6rem; margin-bottom: 4px; }
+.auth-card .brand span { color: var(--brass); }
+.auth-card p.sub { color: var(--text-muted); margin-bottom: 22px; font-size: 0.88rem; }
+.auth-tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+.auth-tab-btn { flex: 1; background: none; border: none; padding: 10px; font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.auth-tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
+
+/* SHELL */
+.navbar { background: var(--ink); padding: 0 32px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 500; height: 68px; }
+.nav-brand { display: flex; align-items: center; gap: 10px; color: #ede6d6; font-family: var(--font-display); font-size: 1.15rem; cursor: pointer; }
+.nav-brand .logo-icon { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, var(--brass-dark), var(--brass));
+  display: flex; align-items: center; justify-content: center; color: var(--ink); font-weight: 700; }
+.nav-brand span { color: var(--brass); }
+.nav-links { display: flex; align-items: center; gap: 6px; }
+.nav-link { padding: 10px 16px; color: rgba(237,230,214,0.65); font-size: 0.86rem; font-weight: 500; cursor: pointer; border-radius: 6px; position: relative; }
+.nav-link:hover { color: #ede6d6; background: rgba(255,255,255,0.04); }
+.nav-link.active { color: var(--brass); }
+.nav-link .nav-badge { position: absolute; top: 4px; right: 6px; background: var(--danger); color: #fff; font-size: 0.6rem; font-weight: 700;
+  padding: 1px 5px; border-radius: 8px; display: none; }
+.nav-link .nav-badge.visible { display: inline-block; }
+.nav-user { display: flex; align-items: center; gap: 12px; }
+.nav-user-name { color: #ede6d6; font-size: 0.84rem; }
+.nav-logout { color: rgba(237,230,214,0.5); font-size: 0.8rem; cursor: pointer; }
+.nav-logout:hover { color: #ede6d6; }
+.mobile-nav-toggle { display: none; background: none; border: none; color: #ede6d6; font-size: 1.3rem; cursor: pointer; }
+
+.page-content { max-width: 1080px; margin: 0 auto; padding: 34px 24px 70px; }
+.page-header { margin-bottom: 24px; }
+.page-title { font-size: 1.7rem; }
+.page-subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
+
+/* HERO / SEARCH */
+.hero { background: var(--ink); border-radius: var(--radius); padding: 46px 36px; margin-bottom: 28px; color: #ede6d6; }
+.hero h1 { font-size: 2rem; margin-bottom: 8px; }
+.hero h1 span { color: var(--brass); }
+.hero p { color: rgba(237,230,214,0.7); margin-bottom: 26px; font-size: 0.92rem; }
+.search-panel { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius); padding: 20px; }
+.search-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr 0.7fr auto; gap: 12px; align-items: end; }
+.search-field label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(237,230,214,0.55); margin-bottom: 6px; }
+.search-field input, .search-field select { width: 100%; padding: 11px 12px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.95); font-family: var(--font-body); font-size: 0.86rem; }
+
+/* CARDS / GRIDS */
+.room-grid, .offering-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.room-card, .offering-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
+.room-card h3, .offering-card h4 { font-size: 1.05rem; margin-bottom: 6px; }
+.room-card .price, .offering-card .price { font-family: var(--font-display); font-size: 1.3rem; color: var(--brass-dark); margin: 10px 0; }
+.room-card .meta, .offering-card .meta { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 12px; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; }
+.panel h3 { font-size: 1.05rem; margin-bottom: 14px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+td { padding: 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.badge-confirmed, .badge-checked_in, .badge-resolved, .badge-paid { background: rgba(47,93,90,0.12); color: var(--teal); }
+.badge-cancelled, .badge-refunded { background: rgba(163,57,42,0.1); color: var(--danger); }
+.badge-pending, .badge-open { background: rgba(179,140,43,0.14); color: var(--brass-dark); }
+.badge-checked_out, .badge-in_progress { background: rgba(59,110,165,0.12); color: var(--info); }
+
+.btn { font-family: var(--font-body); font-size: 0.84rem; font-weight: 600; padding: 11px 20px; border-radius: 7px; border: none; cursor: pointer; transition: opacity 0.15s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+.btn-outline:hover:not(:disabled) { background: var(--ivory); }
+.btn-danger { background: rgba(163,57,42,0.1); color: var(--danger); }
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; margin-right: 6px; }
+.btn-block { width: 100%; }
+
+.loading-state, .empty-state { text-align: center; color: var(--text-muted); padding: 34px; font-size: 0.86rem; }
+.coming-soon { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+.coming-soon i { font-size: 2rem; color: var(--brass); margin-bottom: 12px; display: block; }
+
+.notice { padding: 12px 16px; border-radius: 7px; font-size: 0.84rem; margin-bottom: 14px; }
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.2); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--teal); border: 1px solid rgba(47,93,90,0.2); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-field { margin-bottom: 14px; }
+.form-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.form-field input, .form-field select, .form-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; font-family: var(--font-body); font-size: 0.86rem; background: #fff; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+.checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; font-weight: 400 !important; cursor: pointer; padding: 6px 0; }
+.checkbox-item input { width: auto !important; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(20,24,31,0.55); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; overflow-y: auto; }
+.modal { background: var(--panel); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.summary-line { display: flex; justify-content: space-between; padding: 8px 0; font-size: 0.86rem; border-bottom: 1px solid var(--border-soft); }
+.summary-line.total { font-weight: 700; border-bottom: none; padding-top: 12px; font-size: 0.98rem; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tab-btn { background: none; border: none; padding: 10px 16px; font-family: var(--font-body); font-size: 0.86rem; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
+
+.chat-thread { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; max-height: 340px; overflow-y: auto; }
+.chat-bubble { max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 0.85rem; }
+.chat-bubble.mine { align-self: flex-end; background: var(--brass); color: var(--ink); border-bottom-right-radius: 3px; }
+.chat-bubble.theirs { align-self: flex-start; background: var(--ivory); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+.chat-bubble .meta { font-size: 0.68rem; opacity: 0.65; margin-top: 4px; }
+
+@media (max-width: 860px) {
+  .nav-links { display: none; }
+  .mobile-nav-toggle { display: block; }
+  .search-grid { grid-template-columns: 1fr 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="auth-screen" id="authScreen">
+  <div class="auth-card">
+    <div class="brand">Oxygen <span>Hotel</span></div>
+    <p class="sub">Book your stay, manage reservations, and get support — all in one place.</p>
+    <div class="auth-tabs">
+      <button class="auth-tab-btn active" data-tab="login" onclick="switchAuthTab('login')">Log in</button>
+      <button class="auth-tab-btn" data-tab="register" onclick="switchAuthTab('register')">Create account</button>
+    </div>
+    <div id="authNotice"></div>
+
+    <form id="loginForm">
+      <div class="form-field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Log in</button>
+    </form>
+
+    <form id="registerForm" style="display:none;">
+      <div class="form-field"><label>Full name</label><input type="text" id="regName" required></div>
+      <div class="form-field"><label>Email</label><input type="email" id="regEmail" required></div>
+      <div class="form-field"><label>Phone</label><input type="text" id="regPhone"></div>
+      <div class="form-field"><label>Password</label><input type="password" id="regPassword" required minlength="8"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="registerBtn">Create account</button>
+    </form>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <div class="navbar">
+    <div class="nav-brand" onclick="switchPage('search')"><div class="logo-icon">O</div>Oxygen <span>&nbsp;Hotel</span></div>
+    <div class="nav-links" id="navLinks"></div>
+    <div class="nav-user">
+      <span class="nav-user-name" id="navUserName"></span>
+      <span class="nav-logout" id="logoutBtn">Log out</span>
+    </div>
+    <button class="mobile-nav-toggle" id="mobileNavToggle"><i class="fas fa-bars"></i></button>
+  </div>
+  <div class="page-content" id="pageContent"></div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG / SESSION
+   ============================================================ */
+const API_BASE = "/api"; // adjust to your deployed backend base URL
+function getToken() { return localStorage.getItem("guest_token"); }
+function getGuest() { try { return JSON.parse(localStorage.getItem("guest_user")); } catch { return null; } }
+function setSession(token, guest) { localStorage.setItem("guest_token", token); localStorage.setItem("guest_user", JSON.stringify(guest)); }
+function clearSession() { localStorage.removeItem("guest_token"); localStorage.removeItem("guest_user"); }
+
+/* ============================================================
+   API — guest-scoped. The backend must derive "which guest" from
+   the token on every /guest/* call below; this panel never sends
+   a guestId, so a guest can never view or act on another guest's
+   bookings/tickets/payments by editing a request.
+   ============================================================ */
+async function guestRequest(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (getToken()) headers.Authorization = `Bearer ${getToken()}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (res.status === 401) { clearSession(); showAuth(); throw new Error("Session expired — please log in again"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+const guestApi = {
+  register: (payload) => guestRequest("/auth/guest/register", { method: "POST", body: JSON.stringify(payload) }),
+  login: (email, password) => guestRequest("/auth/guest/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+
+  listBranches: () => guestRequest("/public/branches"),
+  searchRoomTypes: (params) => { const qs = new URLSearchParams(params).toString(); return guestRequest(`/public/room-types?${qs}`); },
+  listOfferings: (branchId) => guestRequest(`/public/offerings?branchId=${branchId}`),
+
+  createBooking: (payload) => guestRequest("/guest/bookings", { method: "POST", body: JSON.stringify(payload) }),
+  listMyBookings: () => guestRequest("/guest/bookings"),
+  cancelBooking: (id) => guestRequest(`/guest/bookings/${id}/cancel`, { method: "PATCH" }),
+  getInvoiceUrl: (bookingId) => `${API_BASE}/guest/bookings/${bookingId}/invoice`,
+
+  listMyTickets: () => guestRequest("/guest/tickets"),
+  createTicket: (payload) => guestRequest("/guest/tickets", { method: "POST", body: JSON.stringify(payload) }),
+  getTicket: (id) => guestRequest(`/guest/tickets/${id}`),
+  replyToTicket: (id, message) => guestRequest(`/guest/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
+
+  getProfile: () => guestRequest("/guest/profile"),
+  updateProfile: (payload) => guestRequest("/guest/profile", { method: "PATCH", body: JSON.stringify(payload) }),
+  changePassword: (payload) => guestRequest("/guest/profile/password", { method: "PATCH", body: JSON.stringify(payload) }),
+};
+
+/* ============================================================
+   AUTH SCREEN
+   ============================================================ */
+function switchAuthTab(tab) {
+  document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.getElementById("loginForm").style.display = tab === "login" ? "block" : "none";
+  document.getElementById("registerForm").style.display = tab === "register" ? "block" : "none";
+  document.getElementById("authNotice").innerHTML = "";
+}
+function showAuthNotice(message, type = "error") { document.getElementById("authNotice").innerHTML = `<div class="notice ${type}">${message}</div>`; }
+
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Logging in…";
+  try {
+    const { token, guest } = await guestApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    setSession(token, guest); showApp();
+  } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+document.getElementById("registerForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("registerBtn"); btn.disabled = true; btn.textContent = "Creating account…";
+  try {
+    const { token, guest } = await guestApi.register({
+      name: document.getElementById("regName").value, email: document.getElementById("regEmail").value,
+      phone: document.getElementById("regPhone").value || undefined, password: document.getElementById("regPassword").value,
+    });
+    setSession(token, guest); showApp();
+  } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Create account"; }
+});
+
+/* ============================================================
+   NAV
+   ============================================================ */
+const NAV_LINKS = [
+  { page: "search", label: "Book a Stay", icon: "fa-magnifying-glass" },
+  { page: "bookings", label: "My Bookings", icon: "fa-calendar-check" },
+  { page: "events", label: "Events", icon: "fa-champagne-glasses" },
+  { page: "support", label: "Support", icon: "fa-headset", badgeId: "supportNavBadge" },
+  { page: "profile", label: "Profile", icon: "fa-user" },
+];
+
+function renderNav() {
+  const guest = getGuest();
+  document.getElementById("navUserName").textContent = guest ? guest.name : "";
+  document.getElementById("navLinks").innerHTML = NAV_LINKS.map((l) => `
+    <div class="nav-link" data-page="${l.page}" onclick="switchPage('${l.page}')">
+      <i class="fas ${l.icon}"></i> ${l.label}
+      ${l.badgeId ? `<span class="nav-badge" id="${l.badgeId}">0</span>` : ""}
+    </div>
+  `).join("");
+}
+function setActiveNav(page) { document.querySelectorAll(".nav-link").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page)); }
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+const PAGE_LOADERS = {
+  search: loadSearchPage,
+  bookings: loadMyBookingsPage,
+  events: () => loadComingSoon("Events", "Browse and book hotel events soon."),
+  support: loadSupportPage,
+  profile: loadProfilePage,
+};
+function switchPage(page) {
+  setActiveNav(page);
+  const loader = PAGE_LOADERS[page];
+  const container = document.getElementById("pageContent");
+  if (!loader) { container.innerHTML = `<div class="empty-state">Page not found.</div>`; return; }
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  loader();
+  window.scrollTo(0, 0);
+}
+function loadComingSoon(title, description) {
+  document.getElementById("pageContent").innerHTML = `
+    <div class="page-header"><h1 class="page-title">${title}</h1></div>
+    <div class="panel"><div class="coming-soon"><i class="fas fa-hourglass-half"></i><p><b>${title} is coming soon.</b></p><p style="margin-top:6px;">${description}</p></div></div>
+  `;
+}
+function pageHeader(title, subtitle) { return `<div class="page-header"><h1 class="page-title">${title}</h1>${subtitle ? `<p class="page-subtitle">${subtitle}</p>` : ""}</div>`; }
+
+/* ============================================================
+   SEARCH & BOOK
+   ============================================================ */
+let _searchOfferingsCache = [];
+let _searchContext = null;
+
+async function loadSearchPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = `<option value="">Loading branches…</option>`;
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { branchOptions = `<option value="">Couldn't load branches</option>`; }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  container.innerHTML = `
+    <div class="hero">
+      <h1>Find your <span>next stay</span></h1>
+      <p>Search rooms across our branches and book in minutes.</p>
+      <div class="search-panel">
+        <div class="search-grid">
+          <div class="search-field"><label>Branch</label><select id="seBranch">${branchOptions}</select></div>
+          <div class="search-field"><label>Check-in</label><input type="date" id="seCheckIn" min="${today}" value="${today}"></div>
+          <div class="search-field"><label>Check-out</label><input type="date" id="seCheckOut" min="${today}"></div>
+          <div class="search-field"><label>Guests</label><input type="number" id="seGuests" min="1" value="1"></div>
+          <button class="btn btn-primary" onclick="runRoomSearch()">Search</button>
+        </div>
+      </div>
+    </div>
+    <div id="searchNotice"></div>
+    <div id="searchResults"></div>
+  `;
+}
+
+async function runRoomSearch() {
+  const branchId = document.getElementById("seBranch").value;
+  const checkIn = document.getElementById("seCheckIn").value;
+  const checkOut = document.getElementById("seCheckOut").value;
+  const guests = document.getElementById("seGuests").value;
+  const resultsEl = document.getElementById("searchResults");
+
+  if (!branchId || !checkIn || !checkOut) { showNotice("searchNotice", "Pick a branch and both dates to search."); return; }
+  if (checkOut <= checkIn) { showNotice("searchNotice", "Check-out must be after check-in."); return; }
+
+  resultsEl.innerHTML = `<div class="loading-state">Searching…</div>`;
+  _searchContext = { branchId, checkIn, checkOut, guests };
+
+  try {
+    const [{ roomTypes }, { offerings }] = await Promise.all([
+      guestApi.searchRoomTypes({ branchId, checkIn, checkOut, guests }),
+      guestApi.listOfferings(branchId),
+    ]);
+    _searchOfferingsCache = offerings || [];
+
+    resultsEl.innerHTML = roomTypes.length ? `
+      <div class="room-grid">
+        ${roomTypes.map((rt) => `
+          <div class="room-card">
+            <h3>${rt.name}</h3>
+            <div class="meta">Sleeps up to ${rt.maxOccupancy} &middot; ${rt.availableCount ?? "—"} available</div>
+            <div class="price">&#8358;${Number(rt.basePrice).toLocaleString()}<span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;"> / night</span></div>
+            <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${rt.description || ""}</p>
+            <button class="btn btn-primary btn-block" onclick='openBookingModal(${JSON.stringify(rt).replace(/'/g, "&#39;")})'>Book this room</button>
+          </div>
+        `).join("")}
+      </div>
+    ` : `<div class="empty-state">No rooms available for those dates — try a different branch or date range.</div>`;
+  } catch (err) {
+    resultsEl.innerHTML = "";
+    showNotice("searchNotice", err.message);
+  }
+}
+
+function openBookingModal(roomType) {
+  const guest = getGuest();
+  const nights = Math.max(1, Math.round((new Date(_searchContext.checkOut) - new Date(_searchContext.checkIn)) / 86400000));
+  const roomSubtotal = roomType.basePrice * nights;
+
+  const addonsHtml = _searchOfferingsCache.length ? _searchOfferingsCache.map((o) => `
+    <label class="checkbox-item">
+      <input type="checkbox" class="bk-addon" value="${o.id}" data-price="${o.price}" onchange="recalcBookingTotal()">
+      ${o.name} — &#8358;${Number(o.price).toLocaleString()}
+    </label>
+  `).join("") : `<p style="color:var(--text-muted); font-size:0.84rem;">No add-ons available at this branch.</p>`;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.id = "bookingModal";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Book — ${roomType.name}</h3>
+      <div id="bookingModalNotice"></div>
+      <form id="bookingForm">
+        <div class="form-row">
+          <div class="form-field"><label>Guest name</label><input type="text" id="bkGuestName" value="${guest.name}" required></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="bkPhone" value="${guest.phone || ""}"></div>
+        </div>
+        <div class="form-field"><label>Add-ons</label>${addonsHtml}</div>
+        <div class="form-field">
+          <label>Payment method</label>
+          <select id="bkMethod" required>
+            <option value="PAYSTACK">Paystack</option><option value="FLUTTERWAVE">Flutterwave</option>
+            <option value="CARD">Card</option><option value="TRANSFER">Bank transfer</option>
+          </select>
+        </div>
+        <div class="summary-line"><span>${nights} night${nights > 1 ? "s" : ""} &times; &#8358;${Number(roomType.basePrice).toLocaleString()}</span><span>&#8358;${roomSubtotal.toLocaleString()}</span></div>
+        <div class="summary-line"><span>Add-ons</span><span id="bkAddonsTotal">&#8358;0</span></div>
+        <div class="summary-line total"><span>Total</span><span id="bkGrandTotal">&#8358;${roomSubtotal.toLocaleString()}</span></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeBookingModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="bkSubmitBtn">Confirm & pay</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.dataset.roomTypeId = roomType.id;
+  overlay.dataset.roomSubtotal = roomSubtotal;
+  document.getElementById("bookingForm").addEventListener("submit", (e) => submitBookingForm(e, roomType));
+}
+function recalcBookingTotal() {
+  const overlay = document.getElementById("bookingModal");
+  const roomSubtotal = Number(overlay.dataset.roomSubtotal);
+  const addonsTotal = Array.from(document.querySelectorAll(".bk-addon:checked")).reduce((sum, el) => sum + Number(el.dataset.price), 0);
+  document.getElementById("bkAddonsTotal").textContent = `\u20a6${addonsTotal.toLocaleString()}`;
+  document.getElementById("bkGrandTotal").textContent = `\u20a6${(roomSubtotal + addonsTotal).toLocaleString()}`;
+}
+function closeBookingModal() { const el = document.getElementById("bookingModal"); if (el) el.remove(); }
+
+async function submitBookingForm(e, roomType) {
+  e.preventDefault();
+  const btn = document.getElementById("bkSubmitBtn"); btn.disabled = true; btn.textContent = "Processing…";
+  try {
+    const addonIds = Array.from(document.querySelectorAll(".bk-addon:checked")).map((el) => el.value);
+    const { booking, paymentUrl } = await guestApi.createBooking({
+      roomTypeId: roomType.id,
+      branchId: _searchContext.branchId,
+      checkIn: _searchContext.checkIn,
+      checkOut: _searchContext.checkOut,
+      guests: Number(_searchContext.guests),
+      guestName: document.getElementById("bkGuestName").value,
+      phone: document.getElementById("bkPhone").value || undefined,
+      offeringIds: addonIds,
+      paymentMethod: document.getElementById("bkMethod").value,
+    });
+    closeBookingModal();
+    if (paymentUrl) {
+      // Gateway (Paystack/Flutterwave) hosted checkout — hand off to it.
+      window.location.href = paymentUrl;
+    } else {
+      showNotice("searchNotice", `Booking confirmed! Reference: ${booking.id}. See it under "My Bookings".`, "success");
+      switchPage("bookings");
+    }
+  } catch (err) {
+    showNotice("bookingModalNotice", err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Confirm & pay";
+  }
+}
+
+/* ============================================================
+   MY BOOKINGS
+   ============================================================ */
+async function loadMyBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("My Bookings", "Everything you've booked with us.")}
+    <div id="myBookingsNotice"></div>
+    <div id="myBookingsList"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { bookings } = await guestApi.listMyBookings();
+    document.getElementById("myBookingsList").innerHTML = bookings.length ? bookings.map((b) => `
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+          <div>
+            <h3 style="margin-bottom:4px;">${b.room.roomType.name} — ${b.branchName}</h3>
+            <p style="color:var(--text-muted); font-size:0.86rem;">${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</p>
+          </div>
+          <span class="badge badge-${b.status.toLowerCase()}">${b.status}</span>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+          <a class="btn btn-sm btn-outline" href="${guestApi.getInvoiceUrl(b.id)}" target="_blank" rel="noopener">View invoice</a>
+          ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.id}')">Cancel booking</button>` : ""}
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">You haven't booked with us yet. <a href="#" onclick="switchPage('search'); return false;" style="color:var(--brass-dark); font-weight:600;">Find a room →</a></div>`;
+  } catch (err) {
+    document.getElementById("myBookingsList").innerHTML = "";
+    showNotice("myBookingsNotice", err.message);
+  }
+}
+async function cancelMyBooking(id) {
+  if (!confirm("Cancel this booking? This can't be undone.")) return;
+  try { await guestApi.cancelBooking(id); loadMyBookingsPage(); }
+  catch (err) { showNotice("myBookingsNotice", err.message); }
+}
+
+/* ============================================================
+   SUPPORT
+   ============================================================ */
+async function loadSupportPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Support", "Questions about a stay or a booking? We're here to help.")}
+    <div id="supportNotice"></div>
+    <button class="btn btn-primary" style="margin-bottom:18px;" onclick="openNewTicketModal()">New support request</button>
+    <div id="ticketsList"><div class="loading-state">Loading…</div></div>
+  `;
+  await refreshSupportTickets();
+}
+async function refreshSupportTickets() {
+  try {
+    const { tickets } = await guestApi.listMyTickets();
+    document.getElementById("ticketsList").innerHTML = tickets.length ? tickets.map((t) => `
+      <div class="panel" style="cursor:pointer;" onclick="openTicketThread('${t.id}')">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div><b>${t.subject}</b><p style="color:var(--text-muted); font-size:0.8rem; margin-top:2px;">${(t.createdAt||"").slice(0,10)}</p></div>
+          <span class="badge badge-${t.status.toLowerCase()}">${t.status}</span>
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">No support requests yet.</div>`;
+
+    const openCount = tickets.filter((t) => ["OPEN","IN_PROGRESS"].includes(t.status)).length;
+    const badge = document.getElementById("supportNavBadge");
+    if (badge) { badge.textContent = openCount; badge.classList.toggle("visible", openCount > 0); }
+  } catch (err) { document.getElementById("ticketsList").innerHTML = ""; showNotice("supportNotice", err.message); }
+}
+function openNewTicketModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "newTicketModal";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>New support request</h3>
+      <div id="newTicketNotice"></div>
+      <form id="newTicketForm">
+        <div class="form-field"><label>Subject</label><input type="text" id="ntSubject" required></div>
+        <div class="form-field"><label>Related booking ID <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="ntBookingId"></div>
+        <div class="form-field"><label>Message</label><textarea id="ntMessage" rows="4" required></textarea></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('newTicketModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="ntSubmitBtn">Send</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("newTicketForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("ntSubmitBtn"); btn.disabled = true;
+    try {
+      await guestApi.createTicket({
+        subject: document.getElementById("ntSubject").value,
+        bookingId: document.getElementById("ntBookingId").value || undefined,
+        message: document.getElementById("ntMessage").value,
+      });
+      overlay.remove(); showNotice("supportNotice", "Support request sent.", "success"); refreshSupportTickets();
+    } catch (err) { document.getElementById("newTicketNotice").innerHTML = `<div class="notice error">${err.message}</div>`; }
+    finally { btn.disabled = false; }
+  });
+}
+async function openTicketThread(id) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "ticketThreadModal";
+  overlay.innerHTML = `<div class="modal"><div class="loading-state">Loading…</div></div>`;
+  document.body.appendChild(overlay);
+  try {
+    const { ticket } = await guestApi.getTicket(id);
+    const guest = getGuest();
+    overlay.querySelector(".modal").innerHTML = `
+      <h3>${ticket.subject} <span class="badge badge-${ticket.status.toLowerCase()}" style="margin-left:8px;">${ticket.status}</span></h3>
+      <div class="chat-thread">
+        ${(ticket.messages || []).map((m) => `
+          <div class="chat-bubble ${m.senderType === "guest" ? "mine" : "theirs"}">
+            ${m.message}
+            <div class="meta">${m.senderType === "guest" ? "You" : "Staff"} &middot; ${(m.createdAt||"").replace("T"," ").slice(0,16)}</div>
+          </div>
+        `).join("") || `<p style="color:var(--text-muted); font-size:0.84rem;">No messages yet.</p>`}
+      </div>
+      ${ticket.status !== "RESOLVED" ? `
+        <form id="replyForm">
+          <div class="form-field"><textarea id="replyMessage" rows="2" placeholder="Write a reply…" required></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('ticketThreadModal').remove()">Close</button>
+            <button type="submit" class="btn btn-primary" id="replySubmitBtn">Send reply</button>
+          </div>
+        </form>` : `<div class="modal-actions"><button class="btn btn-outline" onclick="document.getElementById('ticketThreadModal').remove()">Close</button></div>`}
+    `;
+    const replyForm = document.getElementById("replyForm");
+    if (replyForm) replyForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("replySubmitBtn"); btn.disabled = true;
+      try { await guestApi.replyToTicket(id, document.getElementById("replyMessage").value); overlay.remove(); openTicketThread(id); }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    });
+  } catch (err) {
+    overlay.querySelector(".modal").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   PROFILE
+   ============================================================ */
+async function loadProfilePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Profile", "Your account details.")}
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="details" onclick="switchProfileTab('details')">Details</button>
+      <button class="tab-btn" data-tab="password" onclick="switchProfileTab('password')">Password</button>
+    </div>
+    <div id="profileNotice"></div>
+    <div class="panel" id="profilePanel"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { profile } = await guestApi.getProfile();
+    window._guestProfile = profile;
+    renderProfileTab("details");
+  } catch (err) { document.getElementById("profilePanel").innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+function switchProfileTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  renderProfileTab(tab);
+}
+function renderProfileTab(tab) {
+  const p = window._guestProfile || {};
+  const panel = document.getElementById("profilePanel");
+  if (tab === "details") {
+    panel.innerHTML = `
+      <form id="profileForm">
+        <div class="form-row">
+          <div class="form-field"><label>Full name</label><input type="text" id="pfName" value="${p.name || ""}" required></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="pfPhone" value="${p.phone || ""}"></div>
+        </div>
+        <div class="form-field"><label>Email</label><input type="email" id="pfEmail" value="${p.email || ""}" required></div>
+        <button type="submit" class="btn btn-primary" id="pfSubmitBtn">Save changes</button>
+      </form>`;
+    document.getElementById("profileForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("pfSubmitBtn"); btn.disabled = true;
+      try {
+        const { profile } = await guestApi.updateProfile({ name: document.getElementById("pfName").value,
+          phone: document.getElementById("pfPhone").value, email: document.getElementById("pfEmail").value });
+        window._guestProfile = profile;
+        const session = getGuest(); session.name = profile.name; setSession(getToken(), session); renderNav();
+        showNotice("profileNotice", "Profile updated.", "success");
+      } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+    });
+  } else {
+    panel.innerHTML = `
+      <form id="passwordForm">
+        <div class="form-field"><label>Current password</label><input type="password" id="pwCurrent" required></div>
+        <div class="form-field"><label>New password</label><input type="password" id="pwNew" required minlength="8"></div>
+        <button type="submit" class="btn btn-primary" id="pwSubmitBtn">Update password</button>
+      </form>`;
+    document.getElementById("passwordForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("pwSubmitBtn"); btn.disabled = true;
+      try {
+        await guestApi.changePassword({ currentPassword: document.getElementById("pwCurrent").value, newPassword: document.getElementById("pwNew").value });
+        showNotice("profileNotice", "Password updated.", "success");
+        document.getElementById("passwordForm").reset();
+      } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+    });
+  }
+}
+
+/* ============================================================
+   SHARED / BOOT
+   ============================================================ */
+function showNotice(containerId, message, type = "error") {
+  const el = document.getElementById(containerId); if (!el) return;
+  el.innerHTML = `<div class="notice ${type}">${message}</div>`;
+  setTimeout(() => { if (el) el.innerHTML = ""; }, 4500);
+}
+function showAuth() { document.getElementById("authScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
+function showApp() {
+  document.getElementById("authScreen").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  renderNav(); switchPage("search"); refreshSupportBadgeSilently();
+}
+async function refreshSupportBadgeSilently() {
+  try {
+    const { tickets } = await guestApi.listMyTickets();
+    const openCount = tickets.filter((t) => ["OPEN","IN_PROGRESS"].includes(t.status)).length;
+    const badge = document.getElementById("supportNavBadge");
+    if (badge) { badge.textContent = openCount; badge.classList.toggle("visible", openCount > 0); }
+  } catch { /* silent — background badge refresh */ }
+}
+document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showAuth(); });
+document.getElementById("mobileNavToggle").addEventListener("click", () => {
+  const links = document.getElementById("navLinks");
+  links.style.display = links.style.display === "flex" ? "none" : "flex";
+  links.style.cssText += "position:absolute; top:68px; left:0; right:0; background:#14181f; flex-direction:column; padding:8px; z-index:600;";
+});
+
+// Boot
+if (getToken() && getGuest()) { showApp(); } else { showAuth(); }
+</script>
+</body>
+</html>

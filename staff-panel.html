@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff Panel — Oxygen Hotel</title>
+<meta name="robots" content="noindex, nofollow">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* ============================================================
+   OXYGEN HOTEL — STAFF PANEL
+   Most restricted tier. Same design tokens as Director/Manager
+   dashboards. No staff management, no settings — a Staff account
+   only ever gets the operational sections a Manager granted them
+   via checkbox permissions at account creation. Single-file SPA.
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #14181f; --ink-light: #1c2230; --ivory: #f6f1e7; --panel: #ffffff;
+  --border: #e6e0d2; --border-soft: rgba(20,24,31,0.08);
+  --brass: #b98d45; --brass-dark: #96712f; --teal: #2f5d5a; --danger: #a3392a; --info: #3b6ea5;
+  --text-muted: #6b6355; --text-on-dark: #ede6d6; --text-on-dark-muted: rgba(237,230,214,0.6);
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif; --radius: 8px;
+}
+
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); overflow-x: hidden; font-size: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+a { color: inherit; }
+
+/* LOGIN */
+.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink); }
+.login-card { background: var(--panel); padding: 48px 40px; border-radius: var(--radius); width: 100%; max-width: 380px; }
+.login-card .brand { font-family: var(--font-display); font-size: 1.5rem; margin-bottom: 6px; }
+.login-card .brand span { color: var(--brass); }
+.login-card p.sub { color: var(--text-muted); margin-bottom: 28px; font-size: 0.88rem; }
+
+/* SIDEBAR */
+.sidebar { position: fixed; left: 0; top: 0; height: 100vh; width: 270px; background: var(--ink);
+  border-right: 1px solid rgba(237,230,214,0.08); padding: 26px 0; z-index: 1000; overflow-y: auto; transition: transform 0.3s ease; }
+.sidebar-header { padding: 0 26px 22px; border-bottom: 1px solid rgba(237,230,214,0.08); display: flex; align-items: center; gap: 12px; }
+.logo-icon { width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, var(--brass-dark), var(--brass));
+  display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 1.1rem; }
+.logo-text { font-family: var(--font-display); font-size: 1.2rem; color: var(--text-on-dark); }
+.logo-text span { color: var(--brass); }
+
+.admin-info { padding: 18px 26px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(237,230,214,0.08); }
+.admin-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--teal), #3d7873);
+  display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 0.95rem; flex-shrink: 0; }
+.admin-details .admin-name { color: var(--text-on-dark); font-size: 0.88rem; font-weight: 600; }
+.admin-details .admin-role { color: var(--brass); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1px; }
+.admin-details .admin-branch { color: var(--text-on-dark-muted); font-size: 0.74rem; margin-top: 1px; }
+
+.nav-menu { padding: 14px 0; }
+.nav-item-standalone { padding: 11px 26px; display: flex; align-items: center; gap: 12px; color: var(--text-on-dark-muted);
+  cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; font-size: 0.88rem; font-weight: 500; }
+.nav-item-standalone:hover { background: rgba(185,141,69,0.06); color: var(--text-on-dark); }
+.nav-item-standalone.active { background: rgba(185,141,69,0.1); color: var(--brass); border-left-color: var(--brass); }
+.nav-item-standalone i { width: 18px; text-align: center; }
+.nav-divider { height: 1px; background: rgba(237,230,214,0.08); margin: 10px 26px 10px; }
+
+.nav-group { margin-bottom: 2px; }
+.nav-group-header { padding: 10px 26px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; transition: all 0.15s; }
+.nav-group-header:hover { background: rgba(255,255,255,0.02); }
+.nav-group-header .group-icon { width: 18px; text-align: center; font-size: 0.85rem; color: rgba(185,141,69,0.6); }
+.nav-group-header .group-label { flex: 1; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-on-dark-muted); }
+.nav-group-header .group-chevron { font-size: 0.65rem; color: rgba(237,230,214,0.25); transition: transform 0.2s; }
+.nav-group.open > .nav-group-header .group-chevron { transform: rotate(180deg); color: var(--brass); }
+.nav-group.open > .nav-group-header .group-icon, .nav-group.open > .nav-group-header .group-label { color: var(--brass); }
+.nav-group-header .group-badge { font-size: 0.62rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: rgba(163,57,42,0.25); color: #e08a7a; display: none; }
+.nav-group-header .group-badge.visible { display: inline-block; }
+.nav-group-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
+.nav-group.open > .nav-group-body { max-height: 600px; }
+
+.nav-item { padding: 10px 26px 10px 50px; display: flex; align-items: center; gap: 11px; color: var(--text-on-dark-muted);
+  cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; font-size: 0.84rem; font-weight: 500; position: relative; }
+.nav-item:hover { background: rgba(185,141,69,0.05); color: var(--text-on-dark); }
+.nav-item.active { background: rgba(185,141,69,0.1); color: var(--brass); border-left-color: var(--brass); }
+.nav-item i { width: 16px; text-align: center; font-size: 0.82rem; }
+.nav-item .nav-badge { margin-left: auto; background: rgba(163,57,42,0.25); color: #e08a7a; padding: 1px 7px; border-radius: 9px; font-size: 0.64rem; font-weight: 700; display: none; }
+.nav-item .nav-badge.visible { display: inline-block; }
+
+.sidebar-footer { padding: 16px 26px 0; margin-top: 12px; }
+.logout-link { color: var(--text-on-dark-muted); font-size: 0.82rem; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.logout-link:hover { color: var(--text-on-dark); }
+
+/* MAIN */
+.main-content { margin-left: 270px; min-height: 100vh; }
+.topbar { background: rgba(246,241,231,0.94); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); padding: 16px 36px;
+  display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; gap: 16px; }
+.hamburger-btn { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 6px; }
+.hamburger-btn span { width: 22px; height: 2px; background: var(--ink); border-radius: 2px; }
+.search-bar { flex: 1; max-width: 420px; position: relative; }
+.search-bar input { width: 100%; padding: 10px 16px 10px 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.88rem; font-family: var(--font-body); }
+.search-bar input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+.search-bar i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; }
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+.topbar-btn { width: 40px; height: 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; color: var(--ink); }
+
+.page-content { padding: 30px 36px 60px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.page-title { font-size: 1.5rem; }
+.page-subtitle { color: var(--text-muted); font-size: 0.88rem; margin-top: 4px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+.stat-card b { font-family: var(--font-display); font-size: 1.6rem; display: block; }
+.stat-card span { color: var(--text-muted); font-size: 0.8rem; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; }
+.panel h3 { font-size: 1.05rem; margin-bottom: 14px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+td { padding: 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.badge-active, .badge-paid, .badge-confirmed, .badge-checked_in, .badge-resolved, .badge-available { background: rgba(47,93,90,0.12); color: var(--teal); }
+.badge-inactive, .badge-cancelled, .badge-refunded { background: rgba(163,57,42,0.1); color: var(--danger); }
+.badge-pending, .badge-open, .badge-maintenance { background: rgba(179,140,43,0.14); color: var(--brass-dark); }
+.badge-in_progress, .badge-cleaning, .badge-occupied { background: rgba(59,110,165,0.12); color: var(--info); }
+
+.btn { font-family: var(--font-body); font-size: 0.84rem; font-weight: 600; padding: 10px 18px; border-radius: var(--radius); border: none; cursor: pointer; transition: opacity 0.15s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+.btn-outline:hover:not(:disabled) { background: var(--ivory); }
+.btn-danger { background: rgba(163,57,42,0.1); color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: rgba(163,57,42,0.18); }
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; margin-right: 6px; }
+
+.loading-state, .empty-state { text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.86rem; }
+.coming-soon { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+.coming-soon i { font-size: 2rem; color: var(--brass); margin-bottom: 12px; display: block; }
+
+.notice { padding: 12px 16px; border-radius: var(--radius); font-size: 0.84rem; margin-bottom: 14px; }
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.2); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--teal); border: 1px solid rgba(47,93,90,0.2); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-field { margin-bottom: 14px; }
+.form-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+.form-field input, .form-field select, .form-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--font-body); font-size: 0.86rem; background: #fff; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(20,24,31,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
+.modal { background: var(--panel); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.locked-note { display: flex; align-items: flex-start; gap: 10px; background: rgba(59,110,165,0.06); border: 1px solid rgba(59,110,165,0.18);
+  border-radius: var(--radius); padding: 12px 16px; font-size: 0.82rem; color: var(--info); margin-bottom: 18px; }
+.locked-note i { margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { margin-left: 0; }
+  .hamburger-btn { display: flex; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="brand">Oxygen <span>Hotel</span></div>
+    <p class="sub">Staff panel — sign in with your staff account.</p>
+    <div id="loginNotice"></div>
+    <form id="loginForm">
+      <div class="form-field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
+    </form>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">O</div>
+      <div class="logo-text">Oxygen <span>Hotel</span></div>
+    </div>
+    <div class="admin-info">
+      <div class="admin-avatar" id="adminAvatar">S</div>
+      <div class="admin-details">
+        <div class="admin-name" id="adminName"></div>
+        <div class="admin-role" id="adminRole"></div>
+        <div class="admin-branch" id="adminBranch"></div>
+      </div>
+    </div>
+    <div class="nav-menu" id="navMenu"></div>
+    <div class="sidebar-footer">
+      <div class="logout-link" id="logoutBtn"><i class="fas fa-arrow-right-from-bracket"></i> Log out</div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="topbar">
+      <button class="hamburger-btn" id="hamburgerBtn"><span></span><span></span><span></span></button>
+      <div class="search-bar"><i class="fas fa-magnifying-glass"></i><input type="text" placeholder="Search…" disabled></div>
+      <div class="topbar-actions">
+        <div class="topbar-btn" id="ticketsBellBtn"><i class="fas fa-bell"></i><span class="nav-badge" id="ticketsBellBadge" style="position:absolute; top:2px; right:2px;">0</span></div>
+      </div>
+    </div>
+    <div class="page-content" id="pageContent"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG / SESSION
+   ============================================================ */
+const API_BASE = "/api"; // adjust to your deployed backend base URL
+function getToken() { return localStorage.getItem("stf_token"); }
+function getStaff() { try { return JSON.parse(localStorage.getItem("stf_staff")); } catch { return null; } }
+function setSession(token, staff) { localStorage.setItem("stf_token", token); localStorage.setItem("stf_staff", JSON.stringify(staff)); }
+function clearSession() { localStorage.removeItem("stf_token"); localStorage.removeItem("stf_staff"); }
+function hasPermission(perm) { const s = getStaff(); return s && (s.permissions || []).includes(perm); }
+
+/* ============================================================
+   API — every call is scoped server-side to this staff member's
+   own branch AND filtered to their granted permissions. This
+   panel never sends branchId, never touches /admin/staff,
+   /admin/branches, /admin/site-settings, /admin/audit-logs, or
+   /admin/analytics — those routes shouldn't even respond to a
+   STAFF-role token, regardless of what this file does or doesn't
+   render.
+   ============================================================ */
+async function adminRequest(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}`, ...(options.headers || {}) },
+  });
+  if (res.status === 401) { clearSession(); showLogin(); throw new Error("Session expired"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+const staffApi = {
+  login: (email, password) =>
+    fetch(`${API_BASE}/auth/staff/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
+      .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Login failed"); return data; }),
+
+  listRoomTypes: () => adminRequest("/admin/room-types"),
+  listRooms: () => adminRequest("/admin/rooms"),
+  updateRoomStatus: (id, status) => adminRequest(`/admin/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  listOfferings: (category) => adminRequest(`/admin/offerings${category ? `?category=${category}` : ""}`),
+
+  listBookings: (status) => adminRequest(`/admin/bookings${status ? `?status=${status}` : ""}`),
+  updateBookingStatus: (id, status) => adminRequest(`/admin/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  listTickets: (status) => adminRequest(`/admin/tickets${status ? `?status=${status}` : ""}`),
+  assignTicket: (id) => adminRequest(`/admin/tickets/${id}/assign`, { method: "PATCH" }),
+  resolveTicket: (id) => adminRequest(`/admin/tickets/${id}/resolve`, { method: "PATCH" }),
+
+  listTransactions: (filters = {}) => { const qs = new URLSearchParams(filters).toString(); return adminRequest(`/admin/transactions${qs ? `?${qs}` : ""}`); },
+  recordPayment: (payload) => adminRequest("/admin/transactions", { method: "POST", body: JSON.stringify(payload) }),
+  getInvoiceUrl: (transactionId) => `${API_BASE}/admin/transactions/${transactionId}/invoice`,
+};
+
+/* ============================================================
+   NAV CONFIG — operational sections only, gated purely by the
+   permissions a Manager/Director granted this account. No
+   People, no Company, no Settings, no Finance refund action.
+   ============================================================ */
+const NAV_GROUPS = [
+  {
+    id: "operations", label: "Operations", icon: "fa-th-large",
+    items: [
+      { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
+      { page: "offerings", label: "Food, Drinks & Services", icon: "fa-utensils", permission: "manage_rooms" },
+      { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
+      { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
+      { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
+    ],
+  },
+  {
+    id: "support", label: "Guest Support", icon: "fa-headset",
+    items: [{ page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" }],
+  },
+  {
+    id: "finance", label: "Finance", icon: "fa-sack-dollar",
+    items: [{ page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" }],
+  },
+];
+
+function renderSidebar() {
+  const staff = getStaff();
+  if (!staff) return;
+
+  document.getElementById("adminAvatar").textContent = staff.name.charAt(0).toUpperCase();
+  document.getElementById("adminName").textContent = staff.name;
+  document.getElementById("adminRole").textContent = staff.title || "Staff";
+  document.getElementById("adminBranch").textContent = staff.branchName || "";
+
+  const groupsHtml = NAV_GROUPS.map((group) => {
+    const visibleItems = group.items.filter((item) => (staff.permissions || []).includes(item.permission));
+    if (!visibleItems.length) return "";
+    return `
+      <div class="nav-group open" data-group="${group.id}">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <i class="fas ${group.icon} group-icon"></i>
+          <span class="group-label">${group.label}</span>
+          <i class="fas fa-chevron-down group-chevron"></i>
+        </div>
+        <div class="nav-group-body">
+          ${visibleItems.map((item) => `
+            <div class="nav-item" data-page="${item.page}" onclick="switchPage('${item.page}')">
+              <i class="fas ${item.icon}"></i><span>${item.label}</span>
+              ${item.badgeId ? `<span class="nav-badge" id="${item.badgeId}">0</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  document.getElementById("navMenu").innerHTML = `
+    <div class="nav-item-standalone active" data-page="dashboard" onclick="switchPage('dashboard')">
+      <i class="fas fa-house"></i><span>Dashboard</span>
+    </div>
+    <div class="nav-divider"></div>
+    ${groupsHtml}
+  `;
+}
+function toggleNavGroup(headerEl) { headerEl.parentElement.classList.toggle("open"); }
+function setActiveNav(page) { document.querySelectorAll(".nav-item, .nav-item-standalone").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page)); }
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+const PAGE_LOADERS = {
+  dashboard: loadDashboardPage,
+  rooms: loadRoomsPage,
+  offerings: loadOfferingsPage,
+  bookings: loadBookingsPage,
+  stock: () => loadComingSoon("Stock", "Track inventory for your branch with low-stock flags."),
+  events: () => loadComingSoon("Events", "Publish upcoming events guests can book into."),
+  tickets: loadTicketsPage,
+  transactions: loadTransactionsPage,
+};
+
+function switchPage(page) {
+  const staff = getStaff();
+  setActiveNav(page);
+  const container = document.getElementById("pageContent");
+
+  // Belt-and-suspenders: even though the nav only ever renders links this
+  // account has permission for, a direct switchPage() call (or a stale
+  // link) still gets blocked here rather than trusting the click alone.
+  const pagePermission = { rooms: "manage_rooms", offerings: "manage_rooms", bookings: "manage_bookings",
+    stock: "manage_stock", events: "manage_events", tickets: "handle_tickets", transactions: "manage_payments" }[page];
+  if (pagePermission && !hasPermission(pagePermission)) {
+    container.innerHTML = `<div class="empty-state">You don't have access to this section. Ask your Manager to grant it.</div>`;
+    return;
+  }
+
+  const loader = PAGE_LOADERS[page];
+  if (!loader) { container.innerHTML = `<div class="empty-state">Unknown page.</div>`; return; }
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  loader();
+  if (window.innerWidth <= 900) document.getElementById("sidebar").classList.remove("open");
+}
+function loadComingSoon(title, description) {
+  document.getElementById("pageContent").innerHTML = `
+    <div class="page-header"><div><h1 class="page-title">${title}</h1></div></div>
+    <div class="panel"><div class="coming-soon"><i class="fas fa-hammer"></i><p><b>${title} isn't built yet.</b></p><p style="margin-top:6px;">${description}</p></div></div>
+  `;
+}
+function pageHeader(title, subtitle, actionHtml = "") {
+  return `<div class="page-header"><div><h1 class="page-title">${title}</h1>${subtitle ? `<p class="page-subtitle">${subtitle}</p>` : ""}</div>${actionHtml}</div>`;
+}
+
+/* ============================================================
+   DASHBOARD — this branch, no staff-count card (staff can't see
+   the staff list here at all, unlike the Manager panel)
+   ============================================================ */
+async function loadDashboardPage() {
+  const staff = getStaff();
+  const container = document.getElementById("pageContent");
+  const cards = [];
+  let bookingsPanel = "", ticketsPanel = "";
+
+  try {
+    if (hasPermission("manage_bookings")) {
+      const { bookings } = await staffApi.listBookings();
+      const upcoming = bookings.filter((b) => ["PENDING", "CONFIRMED"].includes(b.status));
+      cards.push({ label: "Upcoming bookings", value: upcoming.length });
+      if (bookings.length) {
+        bookingsPanel = `
+          <div class="panel"><h3>Recent bookings</h3>
+            <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
+              <tbody>${bookings.slice(0, 6).map((b) => `
+                <tr><td>${b.guest.name}</td><td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+                <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
+                <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+    if (hasPermission("manage_rooms")) {
+      const { rooms } = await staffApi.listRooms();
+      cards.push({ label: "Total rooms", value: rooms.length });
+    }
+    if (hasPermission("handle_tickets")) {
+      const { tickets } = await staffApi.listTickets("OPEN");
+      cards.push({ label: "Open tickets", value: tickets.length });
+      if (tickets.length) {
+        ticketsPanel = `
+          <div class="panel"><h3>Open guest tickets</h3>
+            <table><thead><tr><th>Subject</th><th>Guest</th><th>Priority</th><th>Status</th></tr></thead>
+              <tbody>${tickets.slice(0, 6).map((t) => `
+                <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
+                <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+    if (hasPermission("manage_payments")) {
+      const { totals } = await staffApi.listTransactions();
+      cards.push({ label: "Recorded this month", value: `\u20a6${Number(totals?.paid || 0).toLocaleString()}` });
+    }
+
+    container.innerHTML = `
+      ${pageHeader("Overview", staff.branchName ? `What's happening at ${staff.branchName} right now.` : "A quick look at what's happening right now.")}
+      <div class="stats-grid">
+        ${cards.length ? cards.map((c) => `<div class="stat-card"><b>${c.value}</b><span>${c.label}</span></div>`).join("")
+          : `<div class="empty-state">Your account doesn't have access to any dashboard sections yet — ask your Manager to grant permissions.</div>`}
+      </div>
+      ${bookingsPanel}${ticketsPanel}
+    `;
+  } catch (err) {
+    container.innerHTML = `${pageHeader("Overview")}<div class="empty-state">Couldn't load your overview (${err.message}).</div>`;
+  }
+}
+
+/* ============================================================
+   ROOMS — VIEW + status update only. No add/edit room type,
+   no add/edit room, no pricing control. Staff can flag a room's
+   housekeeping/maintenance status, nothing else.
+   ============================================================ */
+async function loadRoomsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Rooms", "View room types and update room status.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding room types, rooms, or changing prices is limited to Managers and Directors. You can update a room's status below.</span></div>
+    <div id="roomsNotice"></div>
+    <div class="panel"><h3>Room types</h3>
+      <table><thead><tr><th>Name</th><th>Base price</th><th>Max occupancy</th><th>Rooms</th></tr></thead>
+        <tbody id="roomTypesBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel"><h3>All rooms</h3>
+      <table><thead><tr><th>Room #</th><th>Type</th><th>Floor</th><th>Status</th><th></th></tr></thead>
+        <tbody id="roomsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  try {
+    const [{ roomTypes }, { rooms }] = await Promise.all([staffApi.listRoomTypes(), staffApi.listRooms()]);
+    document.getElementById("roomTypesBody").innerHTML = roomTypes.length ? roomTypes.map((rt) => `
+      <tr><td>${rt.name}</td><td>&#8358;${Number(rt.basePrice).toLocaleString()}</td><td>${rt.maxOccupancy}</td><td>${(rt.rooms || []).length}</td></tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No room types yet.</td></tr>`;
+
+    document.getElementById("roomsBody").innerHTML = rooms.length ? rooms.map((r) => `
+      <tr><td>${r.roomNumber}</td><td>${r.roomType.name}</td><td>${r.floor || "—"}</td>
+      <td><span class="badge badge-${r.status.toLowerCase()}">${r.status}</span></td>
+      <td>
+        <select onchange="updateRoomStatusInline('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
+          <option value="">Change status…</option>
+          <option value="AVAILABLE">Available</option><option value="OCCUPIED">Occupied</option>
+          <option value="CLEANING">Cleaning</option><option value="MAINTENANCE">Maintenance</option>
+        </select>
+      </td></tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms yet.</td></tr>`;
+  } catch (err) { showNotice("roomsNotice", err.message); }
+}
+async function updateRoomStatusInline(id, status) {
+  if (!status) return;
+  try { await staffApi.updateRoomStatus(id, status); loadRoomsPage(); }
+  catch (err) { showNotice("roomsNotice", err.message); }
+}
+
+/* ============================================================
+   OFFERINGS — view only, no add/edit/price control
+   ============================================================ */
+const OFFERING_CATEGORY_LABELS = { food: "Food", drink: "Drink", service: "Service" };
+async function loadOfferingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Food, Drinks & Services", "What your branch currently offers guests.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding items or changing prices is limited to Managers and Directors.</span></div>
+    <div class="panel">
+      <table><thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Status</th></tr></thead>
+        <tbody id="offeringsBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  try {
+    const { offerings } = await staffApi.listOfferings();
+    document.getElementById("offeringsBody").innerHTML = offerings.length ? offerings.map((o) => `
+      <tr><td>${o.name}</td><td>${OFFERING_CATEGORY_LABELS[o.category] || o.category}</td><td>&#8358;${Number(o.price).toLocaleString()}</td>
+      <td><span class="badge badge-${o.isActive ? "active" : "inactive"}">${o.isActive ? "Active" : "Inactive"}</span></td></tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No items yet.</td></tr>`;
+  } catch (err) { document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="4" class="empty-state">${err.message}</td></tr>`; }
+}
+
+/* ============================================================
+   BOOKINGS — full lifecycle actions kept (front-desk work)
+   ============================================================ */
+async function loadBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Bookings", "Confirm, check in, check out, or cancel.")}
+    <div id="bookingsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th></th></tr></thead>
+        <tbody id="bookingsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshBookingsTable();
+}
+async function refreshBookingsTable() {
+  const NEXT_STATUS = { PENDING: "CONFIRMED", CONFIRMED: "CHECKED_IN", CHECKED_IN: "CHECKED_OUT" };
+  try {
+    const { bookings } = await staffApi.listBookings();
+    document.getElementById("bookingsBody").innerHTML = bookings.length ? bookings.map((b) => `
+      <tr><td>${b.guest.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${b.guest.email}</span></td>
+      <td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+      <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
+      <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
+      <td>${NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceBooking('${b.id}','CANCELLED')">Cancel</button>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No bookings yet.</td></tr>`;
+  } catch (err) { document.getElementById("bookingsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+async function advanceBooking(id, status) {
+  try { await staffApi.updateBookingStatus(id, status); refreshBookingsTable(); }
+  catch (err) { showNotice("bookingsNotice", err.message); }
+}
+
+/* ============================================================
+   TICKETS — same as Manager panel (claim/resolve)
+   ============================================================ */
+async function loadTicketsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Guest Tickets", "Support requests from guests at your branch.")}
+    <div id="ticketsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Subject</th><th>Guest</th><th>Priority</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ticketsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshTicketsTable();
+}
+async function refreshTicketsTable() {
+  try {
+    const { tickets } = await staffApi.listTickets();
+    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => `
+      <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
+      <td>${t.assignedStaff ? t.assignedStaff.name : "—"}</td><td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+      <td>${!t.assignedStaff ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
+      ${t.status !== "RESOLVED" ? `<button class="btn btn-sm btn-outline" onclick="resolveTicketRow('${t.id}')">Resolve</button>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
+
+    const openCount = tickets.filter((t) => ["OPEN", "IN_PROGRESS"].includes(t.status)).length;
+    const bellBadge = document.getElementById("ticketsBellBadge");
+    const navBadge = document.getElementById("ticketsNavBadge");
+    [bellBadge, navBadge].forEach((el) => { if (!el) return; el.textContent = openCount; el.style.display = openCount ? "flex" : "none"; el.classList.toggle("visible", openCount > 0); });
+  } catch (err) { document.getElementById("ticketsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+async function claimTicket(id) { try { await staffApi.assignTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
+async function resolveTicketRow(id) { try { await staffApi.resolveTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
+
+/* ============================================================
+   TRANSACTIONS — can record a payment, cannot refund (that stays
+   a Manager/Director action) and cannot see totals broken out
+   beyond their own branch (already branch-scoped server-side).
+   ============================================================ */
+const TXN_SOURCE_LABELS = { booking: "Room booking", food: "Food", drink: "Drink", service: "Service", event: "Event" };
+const TXN_METHOD_LABELS = { CARD: "Card", TRANSFER: "Transfer", CASH: "Cash", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
+
+async function loadTransactionsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Transactions", "Payments recorded at your branch.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Refunds are limited to Managers and Directors. You can record new payments below.</span></div>
+    <div id="transactionsNotice"></div>
+    <div class="panel">
+      <div style="margin-bottom:14px;"><button class="btn btn-primary" onclick="openPaymentModal()">Record payment</button></div>
+      <table>
+        <thead><tr><th>Date</th><th>Guest</th><th>Source</th><th>Method</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody id="transactionsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="paymentModal" style="display:none;">
+      <div class="modal">
+        <h3>Record payment</h3>
+        <form id="paymentForm">
+          <div class="form-field"><label>Booking ID <span style="color:var(--text-muted); font-weight:400;">(leave blank for a non-booking sale)</span></label><input type="text" id="pyBookingId"></div>
+          <div class="form-field"><label>Guest name</label><input type="text" id="pyGuestName" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Source</label>
+              <select id="pySource" required><option value="booking">Room booking</option><option value="food">Food</option><option value="drink">Drink</option><option value="service">Service</option><option value="event">Event</option></select>
+            </div>
+            <div class="form-field"><label>Amount (&#8358;)</label><input type="number" id="pyAmount" min="0" step="1" required></div>
+          </div>
+          <div class="form-field"><label>Method</label>
+            <select id="pyMethod" required><option value="CASH">Cash</option><option value="CARD">Card</option><option value="TRANSFER">Transfer</option><option value="PAYSTACK">Paystack</option><option value="FLUTTERWAVE">Flutterwave</option></select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closePaymentModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pySubmitBtn">Record</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("paymentForm").addEventListener("submit", submitPaymentForm);
+  refreshTransactionsTable();
+}
+async function refreshTransactionsTable() {
+  try {
+    const { transactions } = await staffApi.listTransactions();
+    document.getElementById("transactionsBody").innerHTML = transactions.length ? transactions.map((t) => `
+      <tr><td>${(t.createdAt || "").slice(0,10)}</td><td>${t.guestName}</td><td>${TXN_SOURCE_LABELS[t.source] || t.source}</td>
+      <td>${TXN_METHOD_LABELS[t.method] || t.method}</td><td>&#8358;${Number(t.amount).toLocaleString()}</td>
+      <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td></tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No transactions yet.</td></tr>`;
+  } catch (err) { document.getElementById("transactionsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+function openPaymentModal() { document.getElementById("paymentModal").style.display = "flex"; }
+function closePaymentModal() { document.getElementById("paymentModal").style.display = "none"; }
+async function submitPaymentForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("pySubmitBtn"); btn.disabled = true;
+  try {
+    await staffApi.recordPayment({
+      bookingId: document.getElementById("pyBookingId").value || undefined,
+      guestName: document.getElementById("pyGuestName").value,
+      source: document.getElementById("pySource").value,
+      amount: Number(document.getElementById("pyAmount").value),
+      method: document.getElementById("pyMethod").value,
+    });
+    closePaymentModal(); showNotice("transactionsNotice", "Payment recorded.", "success"); refreshTransactionsTable();
+  } catch (err) { showNotice("transactionsNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   SHARED / LOGIN / BOOT
+   ============================================================ */
+function showNotice(containerId, message, type = "error") {
+  const el = document.getElementById(containerId); if (!el) return;
+  el.innerHTML = `<div class="notice ${type}">${message}</div>`;
+  setTimeout(() => { if (el) el.innerHTML = ""; }, 4000);
+}
+function showLogin() { document.getElementById("loginScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
+function showApp() {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  renderSidebar(); switchPage("dashboard"); refreshTicketsBadgeSilently();
+}
+async function refreshTicketsBadgeSilently() {
+  if (!hasPermission("handle_tickets")) return;
+  try {
+    const { tickets } = await staffApi.listTickets("OPEN");
+    const badge = document.getElementById("ticketsBellBadge");
+    if (badge) { badge.textContent = tickets.length; badge.style.display = tickets.length ? "flex" : "none"; }
+  } catch { /* silent — background badge refresh */ }
+}
+
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("loginBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Logging in…";
+  try {
+    const { token, staff } = await staffApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (staff.role === "DIRECTOR" || staff.role === "MANAGER") {
+      notice.innerHTML = `<div class="notice error">${staff.role === "DIRECTOR" ? "Director" : "Manager"} accounts should use their own dashboard, not this panel.</div>`;
+      btn.disabled = false; btn.textContent = "Log in"; return;
+    }
+    setSession(token, staff); showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showLogin(); });
+document.getElementById("hamburgerBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));
+document.getElementById("ticketsBellBtn").addEventListener("click", () => switchPage("tickets"));
+
+// Boot
+if (getToken() && getStaff()) { showApp(); } else { showLogin(); }
+</script>
+</body>
+</html>
