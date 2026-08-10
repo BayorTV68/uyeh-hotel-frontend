@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book a room — Solace House</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="brand">Solace <span>House</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="rooms.html">Rooms</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="rooms.html" class="nav-cta">Book a room</a>
+    </div>
+    <button class="nav-toggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 80px 0 70px;">
+  <div class="wrap">
+    <p class="eyebrow">Book your stay</p>
+    <h1 style="font-size: clamp(2.2rem, 4.5vw, 3.2rem);">Choose your dates.</h1>
+    <p class="lead">We'll show you exactly which rooms are open before you enter any details.</p>
+  </div>
+</header>
+<div class="tide-divider">
+  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+</div>
+
+<section style="padding-top: 56px;">
+  <div class="wrap" style="max-width: 640px;">
+
+    <div id="notice-area"></div>
+
+    <div id="step-dates">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="checkIn">Check in</label>
+          <input type="date" id="checkIn" required>
+        </div>
+        <div class="form-field">
+          <label for="checkOut">Check out</label>
+          <input type="date" id="checkOut" required>
+        </div>
+      </div>
+      <button class="btn btn-primary" id="check-availability-btn" style="width:100%;">Check availability</button>
+    </div>
+
+    <div id="step-rooms" style="display:none; margin-top: 40px;">
+      <h3 style="margin-bottom: 20px; font-size: 1.3rem;">Available rooms for your dates</h3>
+      <div id="available-rooms-list"></div>
+    </div>
+
+    <div id="step-guest" style="display:none; margin-top: 40px;">
+      <h3 style="margin-bottom: 20px; font-size: 1.3rem;">Your details</h3>
+      <form id="booking-form">
+        <div class="form-grid">
+          <div class="form-field">
+            <label for="guestName">Full name</label>
+            <input type="text" id="guestName" required>
+          </div>
+          <div class="form-field">
+            <label for="guestEmail">Email</label>
+            <input type="email" id="guestEmail" required>
+          </div>
+          <div class="form-field">
+            <label for="guestPhone">Phone</label>
+            <input type="tel" id="guestPhone">
+          </div>
+          <div class="form-field">
+            <label for="guestsCount">Guests</label>
+            <input type="number" id="guestsCount" value="1" min="1" max="6">
+          </div>
+          <div class="form-field full">
+            <label for="specialRequests">Special requests (optional)</label>
+            <textarea id="specialRequests"></textarea>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="submit-booking-btn">Confirm booking</button>
+      </form>
+    </div>
+
+    <div id="step-confirmed" style="display:none; margin-top: 40px; text-align:center;">
+      <div class="key-tag" style="margin: 0 auto 20px;">✓</div>
+      <h3 style="margin-bottom: 12px;">Booking received</h3>
+      <p style="color:var(--text-muted);">We've sent a confirmation to your email. Payment can be completed on arrival or via the link we'll send shortly.</p>
+      <a href="index.html" class="btn btn-dark" style="margin-top: 28px;">Back to home</a>
+    </div>
+
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-bottom">
+      <span>&copy; 2026 Solace House. All rights reserved.</span>
+      <a href="index.html">Back to home</a>
+    </div>
+  </div>
+</footer>
+
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script src="js/booking.js"></script>
+</body>
+</html>

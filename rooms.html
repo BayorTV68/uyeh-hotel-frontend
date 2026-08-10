@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rooms — Solace House</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="brand">Solace <span>House</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="rooms.html">Rooms</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="rooms.html" class="nav-cta">Book a room</a>
+    </div>
+    <button class="nav-toggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 80px 0 70px;">
+  <div class="wrap">
+    <p class="eyebrow">Rooms &amp; rates</p>
+    <h1 style="font-size: clamp(2.2rem, 4.5vw, 3.2rem);">Pick a room, then your dates.</h1>
+    <p class="lead">Rates shown are per night, before any applicable taxes.</p>
+  </div>
+</header>
+<div class="tide-divider">
+  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+</div>
+
+<section>
+  <div class="wrap">
+    <div id="rooms-container" class="room-grid">
+      <div class="loading-state">Loading rooms…</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-bottom">
+      <span>&copy; 2026 Solace House. All rights reserved.</span>
+      <a href="index.html">Back to home</a>
+    </div>
+  </div>
+</footer>
+
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script>
+const AMENITY_LABELS = { wifi: "Wifi", ac: "AC", breakfast: "Breakfast", "rain shower": "Rain shower", terrace: "Terrace", minibar: "Minibar" };
+
+async function loadRooms() {
+  const container = document.getElementById("rooms-container");
+  try {
+    const { roomTypes } = await api.getRoomTypes();
+    if (!roomTypes.length) {
+      container.innerHTML = '<div class="empty-state">No rooms published yet — check back soon.</div>';
+      return;
+    }
+    container.innerHTML = roomTypes.map((rt, i) => `
+      <div class="room-card">
+        <div class="room-card-image">
+          <div class="key-tag">${rt.name.charAt(0)}</div>
+        </div>
+        <div class="room-card-body">
+          <h3>${rt.name}</h3>
+          <p class="desc">${rt.description || ""}</p>
+          <div class="amenity-tags">
+            ${(rt.amenities || []).map((a) => `<span>${AMENITY_LABELS[a] || a}</span>`).join("")}
+          </div>
+          <div class="room-meta">
+            <div class="price">${rt.currency} ${Number(rt.basePrice).toLocaleString()}<small> / night</small></div>
+            <span style="font-size:0.82rem; color:var(--text-muted);">Sleeps ${rt.maxOccupancy}</span>
+          </div>
+          <a href="booking.html?roomTypeId=${rt.id}" class="btn btn-primary" style="width:100%;">Check dates</a>
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">Couldn't load rooms right now (${err.message}). Please try again shortly.</div>`;
+  }
+}
+
+loadRooms();
+</script>
+</body>
+</html>

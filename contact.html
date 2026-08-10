@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact — Solace House</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="brand">Solace <span>House</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="rooms.html">Rooms</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="rooms.html" class="nav-cta">Book a room</a>
+    </div>
+    <button class="nav-toggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</nav>
+
+<header class="hero" style="padding: 80px 0 70px;">
+  <div class="wrap">
+    <p class="eyebrow">Get in touch</p>
+    <h1 style="font-size: clamp(2.2rem, 4.5vw, 3.2rem);">Questions before you book?</h1>
+    <p class="lead">Send us a message and someone from the front desk will reply directly — usually within a few hours.</p>
+  </div>
+</header>
+<div class="tide-divider">
+  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+</div>
+
+<section>
+  <div class="wrap two-col">
+    <div>
+      <p class="eyebrow">Reach us directly</p>
+      <h2>Prefer to call or email?</h2>
+      <div style="margin-top: 28px;">
+        <p style="margin-bottom: 10px;"><strong>Phone</strong><br><a data-settings="phone" data-settings-href="phone" href="tel:" style="color:var(--teal);">+234 800 000 0000</a></p>
+        <p style="margin-bottom: 10px;"><strong>Email</strong><br><a data-settings="email" data-settings-href="email" href="mailto:" style="color:var(--teal);">hello@solacehouse.com</a></p>
+        <p><strong>Address</strong><br><span data-settings="address">14 Kuramo Close, Lagos, Nigeria</span></p>
+      </div>
+    </div>
+    <div>
+      <div id="notice-area"></div>
+      <form id="contact-form">
+        <div class="form-field">
+          <label for="name">Full name</label>
+          <input type="text" id="name" required>
+        </div>
+        <div class="form-field">
+          <label for="email">Email</label>
+          <input type="email" id="email" required>
+        </div>
+        <div class="form-field">
+          <label for="subject">Subject</label>
+          <input type="text" id="subject" required>
+        </div>
+        <div class="form-field">
+          <label for="message">Message</label>
+          <textarea id="message" required></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%;" id="contact-submit-btn">Send message</button>
+      </form>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-bottom">
+      <span>&copy; 2026 Solace House. All rights reserved.</span>
+      <a href="index.html">Back to home</a>
+    </div>
+  </div>
+</footer>
+
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script src="js/contact.js"></script>
+</body>
+</html>
