@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Location — Oxygen Hotel</title>
+<meta name="description" id="pageDescription" content="Book directly at this Oxygen Hotel location.">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="brand">Oxygen <span>Hotel</span></a>
+    <div class="nav-links">
+      <a href="index.html">Home</a>
+      <a href="index.html#locations">Locations</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="#rooms" class="nav-cta">Book a room</a>
+    </div>
+    <button class="nav-toggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</nav>
+
+<!-- Everything below is populated by location.js from ?branch= in the URL.
+     One file serves every branch — nothing here is hardcoded to a specific
+     location. If the slug/id in the URL doesn't resolve, #notFoundState
+     shows instead of the branch content. -->
+
+<div id="notFoundState" style="display:none;">
+  <div class="wrap" style="padding:120px 0; text-align:center;">
+    <p class="eyebrow" style="justify-content:center;">Location not found</p>
+    <h1 style="font-size:2rem; margin-bottom:16px;">We couldn't find that location.</h1>
+    <p style="color:var(--text-muted); margin-bottom:32px;">It may have closed, or the link might be out of date.</p>
+    <a href="index.html#locations" class="btn btn-dark">See all locations</a>
+  </div>
+</div>
+
+<div id="branchContent" style="display:none;">
+
+  <header class="hero">
+    <div class="wrap">
+      <p class="eyebrow" id="branchCity">—</p>
+      <h1 id="branchName">—</h1>
+      <p class="lead" id="branchAddress">—</p>
+      <div class="hero-actions">
+        <a href="#rooms" class="btn btn-primary">Check room availability</a>
+        <a href="#events" class="btn btn-ghost">Upcoming events</a>
+      </div>
+    </div>
+  </header>
+  <div class="tide-divider">
+    <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+  </div>
+
+  <!-- ===== SERVICES AT THIS BRANCH ===== -->
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Available here</p>
+        <h2>What this location offers.</h2>
+      </div>
+      <div class="branch-services" id="branchServices" style="gap:12px;"></div>
+    </div>
+  </section>
+
+  <!-- ===== AVAILABILITY CHECK ===== -->
+  <section id="rooms" style="background:#fff;">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Rooms</p>
+        <h2>Check what's available.</h2>
+        <p>Real-time — a room shown here is actually free for those dates.</p>
+      </div>
+
+      <form id="availabilityForm" class="form-grid" style="margin-bottom:40px; max-width:640px;">
+        <div class="form-field">
+          <label for="checkIn">Check-in</label>
+          <input type="date" id="checkIn" required>
+        </div>
+        <div class="form-field">
+          <label for="checkOut">Check-out</label>
+          <input type="date" id="checkOut" required>
+        </div>
+        <div class="form-field full">
+          <button type="submit" class="btn btn-primary" id="checkAvailabilityBtn">Check availability</button>
+        </div>
+      </form>
+
+      <div id="availabilityNotice"></div>
+      <div class="room-grid" id="roomGrid">
+        <div class="loading-state">Pick your dates above to see available rooms.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== EVENTS AT THIS BRANCH ===== -->
+  <section id="events">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Events</p>
+        <h2>Upcoming at this location.</h2>
+      </div>
+      <div class="room-grid" id="eventsGrid">
+        <div class="loading-state">Loading events…</div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="brand">Oxygen <span>Hotel</span></a>
+        <p style="max-width:34ch; margin-top:10px; font-size:0.9rem;">Multiple locations, one company, one booking system.</p>
+      </div>
+      <div>
+        <h5>Explore</h5>
+        <ul>
+          <li><a href="index.html#locations">Locations</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>This location</h5>
+        <ul id="footerBranchContact">
+          <li><span style="color:var(--text-muted);">Loading contact info…</span></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="year"></span> Oxygen Hotel. All rights reserved.</span>
+      <span>Built and run directly — no third-party booking fees.</span>
+    </div>
+  </div>
+</footer>
+
+<script src="js/api.js"></script>
+<script src="js/location.js"></script>
+<script>document.getElementById("year").textContent = new Date().getFullYear();</script>
+</body>
+</html>

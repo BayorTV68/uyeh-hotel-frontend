@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oxygen Hotel — Book direct, no OTA fees, real-time availability</title>
+<meta name="description" content="Oxygen Hotel — multiple locations, one company. Book rooms, restaurant, spa and events directly with real-time availability and Paystack payment.">
+<style>
+/* ============================================================
+   This page is fully self-contained — all CSS and JS live in
+   this one file. No external .css or .js files. The only
+   external resource is the Google Fonts stylesheet below (a
+   font, not application logic, so it stays linked).
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #14181f;
+  --ink-soft: #1c222b;
+  --ivory: #f6f1e7;
+  --ivory-dim: #ede5d4;
+  --brass: #b98d45;
+  --brass-light: #d9b876;
+  --teal: #2f5d5a;
+  --teal-light: #3f7a76;
+  --text-muted: #6b6355;
+  --text-on-ink: #ede6d6;
+  --radius: 3px;
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+/* ---- Nav ---- */
+.site-nav { position: sticky; top: 0; z-index: 50; background: rgba(20, 24, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(217, 184, 118, 0.15); }
+.site-nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+.brand { font-family: var(--font-display); font-size: 1.3rem; color: var(--ivory); letter-spacing: 0.01em; }
+.brand span { color: var(--brass-light); }
+.nav-links { display: flex; gap: 36px; align-items: center; }
+.nav-links a { color: var(--text-on-ink); font-size: 0.92rem; letter-spacing: 0.02em; transition: color 0.2s; }
+.nav-links a:hover { color: var(--brass-light); }
+.nav-cta { border: 1px solid var(--brass); color: var(--brass-light) !important; padding: 9px 20px; border-radius: var(--radius); font-size: 0.85rem !important; }
+.nav-cta:hover { background: var(--brass); color: var(--ink) !important; }
+.nav-toggle { display: none; background: none; border: none; color: var(--ivory); font-size: 1.5rem; cursor: pointer; }
+@media (max-width: 860px) {
+  .nav-links { position: fixed; top: 76px; left: 0; right: 0; background: var(--ink); flex-direction: column; padding: 24px 32px; gap: 20px; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: all 0.25s; }
+  .nav-links.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+  .nav-toggle { display: block; }
+}
+
+/* ---- Hero ---- */
+.hero { background: var(--ink); color: var(--text-on-ink); position: relative; overflow: hidden; padding: 120px 0 100px; }
+.hero::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.14) 0, transparent 45%), radial-gradient(circle at 85% 75%, rgba(47, 93, 90, 0.35) 0, transparent 50%); pointer-events: none; }
+.hero .wrap { position: relative; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 24px; }
+.eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--brass); }
+.hero h1 { font-size: clamp(2.6rem, 5.5vw, 4.4rem); max-width: 14ch; margin-bottom: 26px; }
+.hero p.lead { font-size: 1.15rem; color: rgba(237, 230, 214, 0.75); max-width: 46ch; margin-bottom: 40px; }
+.hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.tide-divider { display: block; width: 100%; height: 48px; background: var(--ink); }
+.tide-divider svg { display: block; width: 100%; height: 48px; }
+
+/* ---- Buttons ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: var(--radius); font-size: 0.9rem; letter-spacing: 0.02em; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover { background: var(--brass-light); }
+.btn-ghost { border-color: rgba(237, 230, 214, 0.3); color: var(--text-on-ink); }
+.btn-ghost:hover { border-color: var(--brass-light); color: var(--brass-light); }
+.btn-dark { background: var(--ink); color: var(--ivory); }
+.btn-dark:hover { background: var(--teal); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- Section scaffolding ---- */
+section { padding: 96px 0; }
+.section-head { max-width: 640px; margin-bottom: 56px; }
+.section-head .eyebrow { color: var(--teal); }
+.section-head .eyebrow::before { background: var(--teal); }
+.section-head h2 { font-size: clamp(1.9rem, 3.5vw, 2.6rem); color: var(--ink); }
+.section-head p { color: var(--text-muted); margin-top: 14px; font-size: 1.02rem; }
+
+/* ---- Key-tag signature element ---- */
+.key-tag { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; background: var(--brass); border-radius: 6px; color: var(--ink); font-family: var(--font-display); font-weight: 600; font-size: 1rem; transform: rotate(-4deg); }
+.key-tag::after { content: ""; position: absolute; top: 8px; left: -7px; width: 8px; height: 8px; border-radius: 50%; background: var(--ivory); border: 2px solid var(--ink); }
+
+/* ---- Branch cards (multi-location) ---- */
+.branch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+.branch-card { background: #fff; border: 1px solid rgba(107, 99, 85, 0.12); border-radius: 4px; overflow: hidden; transition: transform 0.25s, box-shadow 0.25s; }
+.branch-card:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(20, 24, 31, 0.25); }
+.branch-card-top { height: 130px; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-light) 60%, var(--brass) 140%); display: flex; align-items: flex-end; padding: 18px 22px; }
+.branch-card-top .city-tag { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ivory); background: rgba(20,24,31,0.35); padding: 5px 12px; border-radius: 20px; }
+.branch-card-body { padding: 22px 24px 26px; }
+.branch-card-body h3 { font-size: 1.2rem; margin-bottom: 6px; }
+.branch-card-body p.addr { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px; }
+.branch-services { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.branch-services span { font-size: 0.72rem; letter-spacing: 0.02em; text-transform: capitalize; color: var(--teal); background: rgba(47, 93, 90, 0.08); padding: 4px 10px; border-radius: 20px; }
+
+/* ---- Amenities band ---- */
+.amenities-band { background: var(--ink); color: var(--text-on-ink); }
+.amenities-band .section-head h2 { color: var(--ivory); }
+.amenities-band .section-head p { color: rgba(237, 230, 214, 0.65); }
+.amenities-band .section-head .eyebrow { color: var(--brass-light); }
+.amenities-band .section-head .eyebrow::before { background: var(--brass); }
+.amenity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 40px; }
+.amenity-item .key-tag { margin-bottom: 20px; }
+.amenity-item h4 { font-size: 1.15rem; margin-bottom: 10px; color: var(--ivory); }
+.amenity-item p { color: rgba(237, 230, 214, 0.6); font-size: 0.92rem; }
+
+/* ---- Trust grid ---- */
+.trust-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 36px; }
+.trust-item .key-tag { margin-bottom: 18px; }
+.trust-item h4 { font-size: 1.05rem; margin-bottom: 8px; }
+.trust-item p { color: var(--text-muted); font-size: 0.9rem; }
+
+/* ---- CTA banner ---- */
+.cta-banner { background: linear-gradient(135deg, var(--teal) 0%, var(--ink) 100%); color: var(--ivory); text-align: center; padding: 90px 0; }
+.cta-banner h2 { color: var(--ivory); font-size: clamp(1.9rem, 3.5vw, 2.6rem); margin-bottom: 16px; }
+.cta-banner p { color: rgba(237,230,214,0.7); max-width: 46ch; margin: 0 auto 32px; font-size: 1.02rem; }
+
+.loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
+
+/* ---- Footer ---- */
+footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 64px 0 32px; }
+.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 48px; margin-bottom: 48px; }
+footer .brand { display: block; margin-bottom: 14px; }
+footer h5 { color: var(--ivory); font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px; font-family: var(--font-body); font-weight: 600; }
+footer ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+footer a { font-size: 0.9rem; transition: color 0.2s; }
+footer a:hover { color: var(--brass-light); }
+.footer-bottom { border-top: 1px solid rgba(237, 230, 214, 0.1); padding-top: 24px; font-size: 0.8rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 720px) { .footer-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="brand">Oxygen <span>Hotel</span></a>
+    <div class="nav-links" id="navLinks">
+      <a href="index.html">Home</a>
+      <a href="index.html#locations">Locations</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="index.html#locations" class="nav-cta">Book a room</a>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow" data-content="heroEyebrow">Multiple locations, one company</p>
+    <h1 data-content="heroTitle">One booking system, every Oxygen Hotel location.</h1>
+    <p class="lead" data-content="heroSubtitle">Book a room, order restaurant or spa service, or reserve a space for your next event — directly with us, at any of our branches, with real-time availability and no double-bookings.</p>
+    <div class="hero-actions">
+      <a href="#locations" class="btn btn-primary">Check availability</a>
+      <a href="about.html" class="btn btn-ghost">About Oxygen Hotel</a>
+    </div>
+  </div>
+</header>
+<div class="tide-divider">
+  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+</div>
+
+<!-- ===== LOCATIONS — live from GET /api/branches ===== -->
+<section id="locations">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Our locations</p>
+      <h2 data-content="locationsTitle">Choose a branch to get started.</h2>
+      <p data-content="locationsSubtitle">Every location runs on the same platform — rooms, availability, and payment work the same way wherever you book.</p>
+    </div>
+    <div class="branch-grid" id="branchGrid">
+      <div class="loading-state">Loading our locations…</div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== WHAT WE OFFER ===== -->
+<section class="amenities-band">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What we offer</p>
+      <h2 data-content="servicesTitle">One system, every service you'd expect.</h2>
+      <p data-content="servicesSubtitle">Not every location offers every service — each branch page shows exactly what's available there.</p>
+    </div>
+    <div class="amenity-grid">
+      <div class="amenity-item"><div class="key-tag">R</div><h4>Rooms &amp; direct booking</h4><p>Real-time availability, no double-bookings, book straight through us — no third-party markup.</p></div>
+      <div class="amenity-item"><div class="key-tag">D</div><h4>Restaurant &amp; room service</h4><p>Order from the branch menu, delivered to your room or reserve a table ahead of time.</p></div>
+      <div class="amenity-item"><div class="key-tag">E</div><h4>Events &amp; spaces</h4><p>Browse upcoming events at each branch and reserve your spot directly.</p></div>
+      <div class="amenity-item"><div class="key-tag">S</div><h4>Spa &amp; laundry</h4><p>Where offered, book spa treatments or laundry service the same way you book a room.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== WHY BOOK DIRECT ===== -->
+<section>
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Why book direct</p>
+      <h2 data-content="trustTitle">No middleman, no markup, no guesswork.</h2>
+    </div>
+    <div class="trust-grid">
+      <div class="trust-item"><div class="key-tag">1</div><h4>Real-time availability</h4><p>What you see is actually open — our system rejects any attempt at a double-booking at the database level, not just on the screen.</p></div>
+      <div class="trust-item"><div class="key-tag">2</div><h4>Pay your way</h4><p>Card, bank transfer, or USSD through Paystack — no card required if you'd rather transfer directly.</p></div>
+      <div class="trust-item"><div class="key-tag">3</div><h4>Book with or without an account</h4><p>Create an account for faster rebooking and saved preferences, or check out as a guest — your choice either way.</p></div>
+      <div class="trust-item"><div class="key-tag">4</div><h4>Direct support</h4><p>Questions go straight to the right branch's team — not a call center reading from a script.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA BANNER ===== -->
+<section class="cta-banner">
+  <div class="wrap">
+    <h2 data-content="ctaTitle">Ready to book your stay?</h2>
+    <p data-content="ctaSubtitle">Pick a location above, check what's available, and book directly — no account required to get started.</p>
+    <a href="#locations" class="btn btn-primary">See our locations</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="brand">Oxygen <span>Hotel</span></a>
+        <p style="max-width:34ch; margin-top:10px; font-size:0.9rem;" data-content="footerAbout">Multiple locations, one company, one booking system — built directly by the team that runs it.</p>
+      </div>
+      <div>
+        <h5>Explore</h5>
+        <ul>
+          <li><a href="index.html#locations">Locations</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Get in touch</h5>
+        <ul>
+          <li><a href="mailto:hello@oxygenhotel.com" data-content="footerEmail">hello@oxygenhotel.com</a></li>
+          <li><a href="tel:" data-content="footerPhone">Phone available on each branch page</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="year"></span> Oxygen Hotel. All rights reserved.</span>
+      <span>Built and run directly — no third-party booking fees.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ============================================================
+   All page logic lives here, inline. Nothing shared with any
+   other page — location.html has its own independent copy of
+   whatever it needs, not this file. That's deliberate: a shared
+   main.js meant editing one page could silently change another.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  const API_BASE = window.__API_BASE__ || "/api";
+
+  async function apiRequest(path, options = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function initNav() {
+    const toggle = document.getElementById("navToggle");
+    const links = document.getElementById("navLinks");
+    if (toggle && links) toggle.addEventListener("click", () => links.classList.toggle("open"));
+  }
+
+  /**
+   * Populates [data-content="fieldName"] elements from the (not-yet-built)
+   * GET /api/site-content endpoint — the mechanism that would let the
+   * Director edit this page's copy from the admin panel. Every element
+   * already has real, professional fallback copy hardcoded above, so the
+   * page is complete and correct even before that endpoint exists; this
+   * only overwrites the defaults once it does.
+   */
+  async function hydrateSiteContent() {
+    try {
+      const { content } = await apiRequest("/site-content");
+      document.querySelectorAll("[data-content]").forEach((el) => {
+        const field = el.getAttribute("data-content");
+        if (content[field]) el.textContent = content[field];
+      });
+    } catch (err) {
+      console.warn("Live site content not available yet, using defaults:", err.message);
+    }
+  }
+
+  /** Live "Our Locations" section, fed by the real GET /api/branches. */
+  async function loadBranches() {
+    const grid = document.getElementById("branchGrid");
+    if (!grid) return;
+
+    try {
+      const { branches } = await apiRequest("/branches");
+
+      if (!branches.length) {
+        grid.innerHTML = `<div class="empty-state">No locations published yet — check back soon.</div>`;
+        return;
+      }
+
+      grid.innerHTML = branches.map((b) => `
+        <div class="branch-card">
+          <div class="branch-card-top"><span class="city-tag">${b.city}${b.state ? `, ${b.state}` : ""}</span></div>
+          <div class="branch-card-body">
+            <h3>${b.name}</h3>
+            <p class="addr">${b.address || ""}</p>
+            <div class="branch-services">${(b.services || []).map((s) => `<span>${s}</span>`).join("")}</div>
+            <a href="location.html?branch=${b.slug || b.id}" class="btn btn-dark" style="width:100%;">View rooms &amp; book</a>
+          </div>
+        </div>
+      `).join("");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty-state">Couldn't load our locations right now — please try again shortly.</div>`;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initNav();
+    hydrateSiteContent();
+    loadBranches();
+    document.getElementById("year").textContent = new Date().getFullYear();
+  });
+})();
+</script>
+</body>
+</html>
