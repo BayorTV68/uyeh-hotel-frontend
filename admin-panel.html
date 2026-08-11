@@ -380,6 +380,11 @@ function hasPermission(key) {
   if (staff.role === "DIRECTOR") return true;
   return (staff.permissions || []).includes(key);
 }
+function branchPath(path) {
+  const staff = getStaff();
+  if (!staff || !staff.branchId) throw new Error("No branch context for this account");
+  return `/branches/${staff.branchId}/admin${path}`;
+}
 
 async function adminRequest(path, options = {}) {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -402,7 +407,7 @@ async function adminRequest(path, options = {}) {
 
 const adminApi = {
   login: (email, password) =>
-    fetch(`${API_BASE}/auth/staff/login`, {
+    fetch(`${API_BASE}/auth/director/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email, password }),
@@ -423,13 +428,15 @@ const adminApi = {
   // NEW — Company-wide rollup (Director dashboard, not built yet)
   getCompanyOverview: () => adminRequest("/admin/company/overview"),
 
-  listRoomTypes: () => adminRequest("/admin/room-types"),
-  createRoomType: (payload) => adminRequest("/admin/room-types", { method: "POST", body: JSON.stringify(payload) }),
-  updateRoomType: (id, payload) => adminRequest(`/admin/room-types/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  listRooms: () => adminRequest("/admin/rooms"),
-  createRoom: (payload) => adminRequest("/admin/rooms", { method: "POST", body: JSON.stringify(payload) }),
-  updateRoom: (id, payload) => adminRequest(`/admin/rooms/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  updateRoomStatus: (id, status) => adminRequest(`/admin/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  listRoomTypes: () => adminRequest(branchPath("/room-types")),
+  createRoomType: (payload) => adminRequest(branchPath("/room-types"), { method: "POST", body: JSON.stringify(payload) }),
+  updateRoomType: (id, payload) => adminRequest(branchPath(`/room-types/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  listRooms: () => adminRequest(branchPath("/rooms")),
+  createRoom: (payload) => adminRequest(branchPath("/rooms"), { method: "POST", body: JSON.stringify(payload) }),
+  // No generic PATCH /rooms/:id exists on the backend yet — only /rooms/:id/status.
+  // This will 404 until that route is added. Use updateRoomStatus for status changes.
+  updateRoom: (id, payload) => adminRequest(branchPath(`/rooms/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  updateRoomStatus: (id, status) => adminRequest(branchPath(`/rooms/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
 
   // NEW — Offerings: food, drinks, services — priced per branch
   listOfferings: (category) => adminRequest(`/admin/offerings${category ? `?category=${category}` : ""}`),
@@ -437,18 +444,28 @@ const adminApi = {
   updateOffering: (id, payload) => adminRequest(`/admin/offerings/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteOffering: (id) => adminRequest(`/admin/offerings/${id}`, { method: "DELETE" }),
 
-  listBookings: (status) => adminRequest(`/admin/bookings${status ? `?status=${status}` : ""}`),
-  updateBookingStatus: (id, status) => adminRequest(`/admin/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  listBookings: (status) => adminRequest(branchPath(`/bookings${status ? `?status=${status}` : ""}`)),
+  updateBookingStatus: (id, status) => adminRequest(branchPath(`/bookings/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
 
-  listStaff: () => adminRequest("/admin/staff"),
-  createStaff: (payload) => adminRequest("/admin/staff", { method: "POST", body: JSON.stringify(payload) }),
-  updateStaff: (id, payload) => adminRequest(`/admin/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  listStockItems: () => adminRequest(branchPath("/stock")),
+  createStockItem: (payload) => adminRequest(branchPath("/stock"), { method: "POST", body: JSON.stringify(payload) }),
+  updateStockItem: (id, payload) => adminRequest(branchPath(`/stock/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteStockItem: (id) => adminRequest(branchPath(`/stock/${id}`), { method: "DELETE" }),
 
-  listTickets: (status) => adminRequest(`/admin/tickets${status ? `?status=${status}` : ""}`),
-  getTicket: (id) => adminRequest(`/admin/tickets/${id}`),
-  assignTicket: (id, staffId) => adminRequest(`/admin/tickets/${id}/assign`, { method: "PATCH", body: JSON.stringify({ staffId }) }),
-  replyToTicket: (id, message) => adminRequest(`/admin/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
-  resolveTicket: (id) => adminRequest(`/admin/tickets/${id}/resolve`, { method: "PATCH" }),
+  listEventsAdmin: () => adminRequest(branchPath("/events")),
+  createEvent: (payload) => adminRequest(branchPath("/events"), { method: "POST", body: JSON.stringify(payload) }),
+  updateEvent: (id, payload) => adminRequest(branchPath(`/events/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteEvent: (id) => adminRequest(branchPath(`/events/${id}`), { method: "DELETE" }),
+
+  listStaff: () => adminRequest(branchPath("/staff")),
+  createStaff: (payload) => adminRequest(branchPath("/staff"), { method: "POST", body: JSON.stringify(payload) }),
+  updateStaff: (id, payload) => adminRequest(branchPath(`/staff/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+
+  listTickets: (status) => adminRequest(branchPath(`/tickets${status ? `?status=${status}` : ""}`)),
+  getTicket: (id) => adminRequest(branchPath(`/tickets/${id}`)),
+  assignTicket: (id, staffId) => adminRequest(branchPath(`/tickets/${id}/assign`), { method: "PATCH", body: JSON.stringify({ staffId }) }),
+  replyToTicket: (id, message) => adminRequest(branchPath(`/tickets/${id}/messages`), { method: "POST", body: JSON.stringify({ message }) }),
+  resolveTicket: (id) => adminRequest(branchPath(`/tickets/${id}/resolve`), { method: "PATCH" }),
 
   // NEW — Payments & Invoicing
   listTransactions: (filters = {}) => {
@@ -587,8 +604,8 @@ const PAGE_LOADERS = {
   rooms: loadRoomsPage,
   offerings: loadOfferingsPage,
   bookings: loadBookingsPage,
-  stock: () => loadComingSoon("Stock", "Track inventory per branch with low-stock flags."),
-  events: () => loadComingSoon("Events", "Publish upcoming events guests can book into."),
+  stock: loadStockPage,
+  events: loadEventsPage,
   staff: loadStaffPage,
   tickets: loadTicketsPage,
   transactions: loadTransactionsPage,
@@ -1036,6 +1053,237 @@ async function submitRoomForm(e) {
     showNotice("roomsNotice", err.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   STOCK — per-branch inventory with low-stock flags
+   ============================================================ */
+async function loadStockPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Stock", "Inventory per branch, with low-stock flags.",
+      `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
+    <div id="stockNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Category</th><th>Quantity</th><th>Unit</th><th>Reorder level</th><th></th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="stockModal" style="display:none;">
+      <div class="modal">
+        <h3 id="stockModalTitle">Add item</h3>
+        <form id="stockForm">
+          <input type="hidden" id="stId">
+          <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Category</label><input type="text" id="stCategory" placeholder="kitchen, housekeeping, bar…"></div>
+            <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
+            <div class="form-field"><label>Reorder level</label><input type="number" id="stReorderLevel" min="0" step="1" value="0" required></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("stockForm").addEventListener("submit", submitStockForm);
+  await refreshStock();
+}
+
+async function refreshStock() {
+  try {
+    const { stockItems } = await adminApi.listStockItems();
+    document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
+      <tr>
+        <td>${s.name}</td>
+        <td>${s.category || "—"}</td>
+        <td>${s.quantity <= s.reorderLevel ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
+        <td>${s.unit}</td>
+        <td>${s.reorderLevel}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="deleteStockItemConfirm('${s.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No stock items yet — add one above.</td></tr>`;
+  } catch (err) {
+    showNotice("stockNotice", err.message);
+  }
+}
+
+function openStockModal(item) {
+  document.getElementById("stockModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("stockForm").reset();
+  document.getElementById("stId").value = item ? item.id : "";
+  if (item) {
+    document.getElementById("stName").value = item.name;
+    document.getElementById("stCategory").value = item.category || "";
+    document.getElementById("stUnit").value = item.unit;
+    document.getElementById("stQuantity").value = item.quantity;
+    document.getElementById("stReorderLevel").value = item.reorderLevel;
+  }
+  document.getElementById("stockModal").style.display = "flex";
+}
+function closeStockModal() { document.getElementById("stockModal").style.display = "none"; }
+
+async function submitStockForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("stSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("stId").value;
+    const payload = {
+      name: document.getElementById("stName").value,
+      category: document.getElementById("stCategory").value || undefined,
+      unit: document.getElementById("stUnit").value || "unit",
+      quantity: Number(document.getElementById("stQuantity").value),
+      reorderLevel: Number(document.getElementById("stReorderLevel").value),
+    };
+    if (id) { await adminApi.updateStockItem(id, payload); showNotice("stockNotice", "Item updated.", "success"); }
+    else { await adminApi.createStockItem(payload); showNotice("stockNotice", "Item added.", "success"); }
+    closeStockModal();
+    refreshStock();
+  } catch (err) {
+    showNotice("stockNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteStockItemConfirm(id) {
+  if (!confirm("Delete this stock item?")) return;
+  try {
+    await adminApi.deleteStockItem(id);
+    refreshStock();
+  } catch (err) {
+    showNotice("stockNotice", err.message);
+  }
+}
+
+/* ============================================================
+   EVENTS — branch-scoped
+   ============================================================ */
+async function loadEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Events", "Publish upcoming events guests can book into.",
+      `<button class="btn btn-primary" onclick="openEventModal()">Add event</button>`)}
+    <div id="eventsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Starts</th><th>Ends</th><th>Capacity</th><th>Price</th><th></th></tr></thead>
+        <tbody id="eventsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="eventModal" style="display:none;">
+      <div class="modal">
+        <h3 id="eventModalTitle">Add event</h3>
+        <form id="eventForm">
+          <input type="hidden" id="evId">
+          <div class="form-field"><label>Name</label><input type="text" id="evName" required></div>
+          <div class="form-field"><label>Description</label><textarea id="evDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Starts at</label><input type="datetime-local" id="evStartsAt" required></div>
+            <div class="form-field"><label>Ends at</label><input type="datetime-local" id="evEndsAt"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Capacity</label><input type="number" id="evCapacity" min="0" step="1"></div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="evPrice" min="0" step="1"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="evSubmitBtn">Save event</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("eventForm").addEventListener("submit", submitEventForm);
+  await refreshEvents();
+}
+
+async function refreshEvents() {
+  try {
+    const { events } = await adminApi.listEventsAdmin();
+    document.getElementById("eventsBody").innerHTML = events.length ? events.map((ev) => `
+      <tr>
+        <td>${ev.name}</td>
+        <td>${new Date(ev.startsAt).toLocaleString()}</td>
+        <td>${ev.endsAt ? new Date(ev.endsAt).toLocaleString() : "—"}</td>
+        <td>${ev.capacity ?? "—"}</td>
+        <td>${ev.price ? `&#8358;${Number(ev.price).toLocaleString()}` : "Free"}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openEventModal(${JSON.stringify(ev).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="deleteEventConfirm('${ev.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No events yet — add one above.</td></tr>`;
+  } catch (err) {
+    showNotice("eventsNotice", err.message);
+  }
+}
+
+function openEventModal(ev) {
+  document.getElementById("eventModalTitle").textContent = ev ? "Edit event" : "Add event";
+  document.getElementById("eventForm").reset();
+  document.getElementById("evId").value = ev ? ev.id : "";
+  if (ev) {
+    document.getElementById("evName").value = ev.name;
+    document.getElementById("evDescription").value = ev.description || "";
+    document.getElementById("evStartsAt").value = toDatetimeLocalValue(ev.startsAt);
+    document.getElementById("evEndsAt").value = ev.endsAt ? toDatetimeLocalValue(ev.endsAt) : "";
+    document.getElementById("evCapacity").value = ev.capacity ?? "";
+    document.getElementById("evPrice").value = ev.price ?? "";
+  }
+  document.getElementById("eventModal").style.display = "flex";
+}
+function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
+
+function toDatetimeLocalValue(isoString) {
+  const d = new Date(isoString);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function submitEventForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("evSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("evId").value;
+    const payload = {
+      name: document.getElementById("evName").value,
+      description: document.getElementById("evDescription").value || undefined,
+      startsAt: new Date(document.getElementById("evStartsAt").value).toISOString(),
+      endsAt: document.getElementById("evEndsAt").value ? new Date(document.getElementById("evEndsAt").value).toISOString() : undefined,
+      capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
+      price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : undefined,
+    };
+    if (id) { await adminApi.updateEvent(id, payload); showNotice("eventsNotice", "Event updated.", "success"); }
+    else { await adminApi.createEvent(payload); showNotice("eventsNotice", "Event added.", "success"); }
+    closeEventModal();
+    refreshEvents();
+  } catch (err) {
+    showNotice("eventsNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteEventConfirm(id) {
+  if (!confirm("Delete this event?")) return;
+  try {
+    await adminApi.deleteEvent(id);
+    refreshEvents();
+  } catch (err) {
+    showNotice("eventsNotice", err.message);
   }
 }
 
