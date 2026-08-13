@@ -253,39 +253,38 @@ async function adminRequest(path, options = {}) {
 // if it's ever present in a payload from this client.
 const managerApi = {
   login: (email, password) =>
-    fetch(`${API_BASE}/auth/staff/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
+    fetch(`${API_BASE}/auth/manager/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
       .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Login failed"); return data; }),
 
-  getSettings: () => adminRequest("/settings"),
-  updateSettings: (payload) => adminRequest("/admin/settings", { method: "PATCH", body: JSON.stringify(payload) }),
+  getDepartments: () => adminRequest("/manager/departments"),
 
-  listRoomTypes: () => adminRequest("/admin/room-types"),
-  createRoomType: (payload) => adminRequest("/admin/room-types", { method: "POST", body: JSON.stringify(payload) }),
-  updateRoomType: (id, payload) => adminRequest(`/admin/room-types/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  listRooms: () => adminRequest("/admin/rooms"),
-  createRoom: (payload) => adminRequest("/admin/rooms", { method: "POST", body: JSON.stringify(payload) }),
-  updateRoom: (id, payload) => adminRequest(`/admin/rooms/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  updateRoomStatus: (id, status) => adminRequest(`/admin/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  getSettings: () => adminRequest("/manager/branch-settings"),
+  updateSettings: (payload) => adminRequest("/manager/branch-settings", { method: "PATCH", body: JSON.stringify(payload) }),
 
-  listOfferings: (category) => adminRequest(`/admin/offerings${category ? `?category=${category}` : ""}`),
-  createOffering: (payload) => adminRequest("/admin/offerings", { method: "POST", body: JSON.stringify(payload) }),
-  updateOffering: (id, payload) => adminRequest(`/admin/offerings/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  getReports: () => adminRequest("/manager/reports"),
 
-  listBookings: (status) => adminRequest(`/admin/bookings${status ? `?status=${status}` : ""}`),
-  updateBookingStatus: (id, status) => adminRequest(`/admin/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  listRoomTypes: () => adminRequest("/manager/room-types"),
+  createRoomType: (payload) => adminRequest("/manager/room-types", { method: "POST", body: JSON.stringify(payload) }),
+  updateRoomType: (id, payload) => adminRequest(`/manager/room-types/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  listRooms: () => adminRequest("/manager/rooms"),
+  createRoom: (payload) => adminRequest("/manager/rooms", { method: "POST", body: JSON.stringify(payload) }),
+  updateRoom: (id, payload) => adminRequest(`/manager/rooms/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  updateRoomStatus: (id, status) => adminRequest(`/manager/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
-  listStaff: () => adminRequest("/admin/staff"),
-  createStaff: (payload) => adminRequest("/admin/staff", { method: "POST", body: JSON.stringify(payload) }),
-  updateStaff: (id, payload) => adminRequest(`/admin/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  listMenuItems: (category) => adminRequest(`/manager/menu${category ? `?category=${category}` : ""}`),
+  createMenuItem: (payload) => adminRequest("/manager/menu", { method: "POST", body: JSON.stringify(payload) }),
+  updateMenuItem: (id, payload) => adminRequest(`/manager/menu/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
-  listTickets: (status) => adminRequest(`/admin/tickets${status ? `?status=${status}` : ""}`),
-  assignTicket: (id) => adminRequest(`/admin/tickets/${id}/assign`, { method: "PATCH" }),
-  resolveTicket: (id) => adminRequest(`/admin/tickets/${id}/resolve`, { method: "PATCH" }),
+  listBookings: (status) => adminRequest(`/manager/bookings${status ? `?status=${status}` : ""}`),
+  updateBookingStatus: (id, status) => adminRequest(`/manager/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
-  listTransactions: (filters = {}) => { const qs = new URLSearchParams(filters).toString(); return adminRequest(`/admin/transactions${qs ? `?${qs}` : ""}`); },
-  recordPayment: (payload) => adminRequest("/admin/transactions", { method: "POST", body: JSON.stringify(payload) }),
-  refundTransaction: (id) => adminRequest(`/admin/transactions/${id}/refund`, { method: "PATCH", body: JSON.stringify({}) }),
-  getInvoiceUrl: (transactionId) => `${API_BASE}/admin/transactions/${transactionId}/invoice`,
+  listStaff: () => adminRequest("/manager/staff"),
+  createStaff: (payload) => adminRequest("/manager/staff", { method: "POST", body: JSON.stringify(payload) }),
+  updateStaff: (id, payload) => adminRequest(`/manager/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  listTickets: (status) => adminRequest(`/manager/tickets${status ? `?status=${status}` : ""}`),
+  assignTicket: (id) => adminRequest(`/manager/tickets/${id}/assign`, { method: "PATCH" }),
+  resolveTicket: (id) => adminRequest(`/manager/tickets/${id}/resolve`, { method: "PATCH" }),
 };
 
 /* ============================================================
@@ -296,7 +295,7 @@ const NAV_GROUPS = [
     id: "operations", label: "Operations", icon: "fa-th-large",
     items: [
       { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
-      { page: "offerings", label: "Food, Drinks & Services", icon: "fa-utensils", permission: "manage_rooms" },
+      { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
       { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
       { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
@@ -311,8 +310,8 @@ const NAV_GROUPS = [
     items: [{ page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" }],
   },
   {
-    id: "finance", label: "Finance", icon: "fa-sack-dollar",
-    items: [{ page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" }],
+    id: "reports", label: "Reports", icon: "fa-chart-line",
+    items: [{ page: "reports", label: "Branch Reports", icon: "fa-chart-line", permission: "view_reports" }],
   },
 ];
 const SETTINGS_ITEM = { page: "settings", label: "Branch Settings", icon: "fa-gear", permission: "manage_settings" };
@@ -373,13 +372,13 @@ function setActiveNav(page) { document.querySelectorAll(".nav-item, .nav-item-st
 const PAGE_LOADERS = {
   dashboard: loadDashboardPage,
   rooms: loadRoomsPage,
-  offerings: loadOfferingsPage,
+  menu: loadMenuPage,
   bookings: loadBookingsPage,
   stock: () => loadComingSoon("Stock", "Track inventory for your branch with low-stock flags."),
   events: () => loadComingSoon("Events", "Publish upcoming events guests can book into."),
   staff: loadStaffPage,
   tickets: loadTicketsPage,
-  transactions: loadTransactionsPage,
+  reports: loadReportsPage,
   settings: loadSettingsPage,
 };
 
@@ -452,9 +451,9 @@ async function loadDashboardPage() {
       const { staff: staffList } = await managerApi.listStaff();
       cards.push({ label: "Branch staff", value: staffList.filter((s) => s.isActive).length });
     }
-    if (hasPermission("manage_payments")) {
-      const { totals } = await managerApi.listTransactions();
-      cards.push({ label: "Revenue this month", value: `\u20a6${Number(totals?.paid || 0).toLocaleString()}` });
+    if (hasPermission("view_reports")) {
+      const { report } = await managerApi.getReports();
+      cards.push({ label: "Revenue this month", value: `\u20a6${Number(report?.revenueThisMonth || 0).toLocaleString()}` });
     }
 
     container.innerHTML = `
@@ -523,8 +522,9 @@ async function loadRoomsPage() {
           <div class="form-field">
             <label>Status</label>
             <select id="rStatus">
-              <option value="AVAILABLE">Available</option><option value="OCCUPIED">Occupied</option>
-              <option value="CLEANING">Cleaning</option><option value="MAINTENANCE">Maintenance</option>
+              <option value="ACTIVE">Active</option>
+              <option value="MAINTENANCE">Maintenance</option>
+              <option value="INACTIVE">Inactive</option>
             </select>
           </div>
           <div class="modal-actions">
@@ -612,81 +612,84 @@ async function submitRoomForm(e) {
 }
 
 /* ============================================================
-   OFFERINGS — food, drinks, services (this branch)
+   MENU — food & drink (this branch). Laundry and spa items have
+   their own real backend endpoints (/manager/laundry-items,
+   /manager/spa-treatments) but no page here yet — ask if you
+   want those built out next.
    ============================================================ */
-const OFFERING_CATEGORY_LABELS = { food: "Food", drink: "Drink", service: "Service" };
+const MENU_CATEGORY_LABELS = { FOOD: "Food", DRINK: "Drink" };
 
-async function loadOfferingsPage() {
+async function loadMenuPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Food, Drinks & Services", "Priced for your branch.", `<button class="btn btn-primary" onclick="openOfferingModal()">Add item</button>`)}
-    <div id="offeringsNotice"></div>
+    ${pageHeader("Menu", "Food & drink priced for your branch.", `<button class="btn btn-primary" onclick="openMenuItemModal()">Add item</button>`)}
+    <div id="menuNotice"></div>
     <div class="panel">
       <table><thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
-        <tbody id="offeringsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <tbody id="menuBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
-    <div class="modal-overlay" id="offeringModal" style="display:none;">
+    <div class="modal-overlay" id="menuItemModal" style="display:none;">
       <div class="modal">
-        <h3 id="offeringModalTitle">Add item</h3>
-        <form id="offeringForm">
-          <input type="hidden" id="ofId">
-          <div class="form-field"><label>Name</label><input type="text" id="ofName" required></div>
+        <h3 id="menuItemModalTitle">Add item</h3>
+        <form id="menuItemForm">
+          <input type="hidden" id="miId">
+          <div class="form-field"><label>Name</label><input type="text" id="miName" required></div>
           <div class="form-row">
             <div class="form-field"><label>Category</label>
-              <select id="ofCategory" required><option value="food">Food</option><option value="drink">Drink</option><option value="service">Service</option></select>
+              <select id="miCategory" required><option value="FOOD">Food</option><option value="DRINK">Drink</option></select>
             </div>
-            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="ofPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="miPrice" min="0" step="1" required></div>
           </div>
-          <div class="form-field"><label>Description</label><textarea id="ofDescription" rows="2"></textarea></div>
+          <div class="form-field"><label>Description</label><textarea id="miDescription" rows="2"></textarea></div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeOfferingModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="ofSubmitBtn">Save item</button>
+            <button type="button" class="btn btn-outline" onclick="closeMenuItemModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="miSubmitBtn">Save item</button>
           </div>
         </form>
       </div>
     </div>
   `;
-  document.getElementById("offeringForm").addEventListener("submit", submitOfferingForm);
-  refreshOfferingsTable();
+  document.getElementById("menuItemForm").addEventListener("submit", submitMenuItemForm);
+  refreshMenuTable();
 }
-async function refreshOfferingsTable() {
+async function refreshMenuTable() {
   try {
-    const { offerings } = await managerApi.listOfferings();
-    document.getElementById("offeringsBody").innerHTML = offerings.length ? offerings.map((o) => `
-      <tr><td>${o.name}</td><td>${OFFERING_CATEGORY_LABELS[o.category] || o.category}</td><td>&#8358;${Number(o.price).toLocaleString()}</td>
-      <td><span class="badge badge-${o.isActive ? "active" : "inactive"}">${o.isActive ? "Active" : "Inactive"}</span></td>
-      <td><button class="btn btn-sm btn-outline" onclick='openOfferingModal(${JSON.stringify(o).replace(/'/g, "&#39;")})'>Edit</button>
-      <button class="btn btn-sm btn-outline" onclick="toggleOfferingActive('${o.id}', ${o.isActive})">${o.isActive ? "Deactivate" : "Activate"}</button></td></tr>
+    const { menuItems } = await managerApi.listMenuItems();
+    document.getElementById("menuBody").innerHTML = menuItems.length ? menuItems.map((m) => `
+      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td><td>&#8358;${Number(m.price).toLocaleString()}</td>
+      <td><span class="badge badge-${m.isAvailable ? "active" : "inactive"}">${m.isAvailable ? "Available" : "Unavailable"}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick='openMenuItemModal(${JSON.stringify(m).replace(/'/g, "&#39;")})'>Edit</button>
+      <button class="btn btn-sm btn-outline" onclick="toggleMenuItemAvailable('${m.id}', ${m.isAvailable})">${m.isAvailable ? "Deactivate" : "Activate"}</button></td></tr>
     `).join("") : `<tr><td colspan="5" class="empty-state">No items yet.</td></tr>`;
-  } catch (err) { document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
 }
-function openOfferingModal(o) {
-  document.getElementById("offeringModalTitle").textContent = o ? "Edit item" : "Add item";
-  document.getElementById("offeringForm").reset();
-  document.getElementById("ofId").value = o ? o.id : "";
-  if (o) {
-    document.getElementById("ofName").value = o.name; document.getElementById("ofCategory").value = o.category;
-    document.getElementById("ofPrice").value = o.price; document.getElementById("ofDescription").value = o.description || "";
+function openMenuItemModal(m) {
+  document.getElementById("menuItemModalTitle").textContent = m ? "Edit item" : "Add item";
+  document.getElementById("menuItemForm").reset();
+  document.getElementById("miId").value = m ? m.id : "";
+  if (m) {
+    document.getElementById("miName").value = m.name; document.getElementById("miCategory").value = m.category;
+    document.getElementById("miPrice").value = m.price; document.getElementById("miDescription").value = m.description || "";
   }
-  document.getElementById("offeringModal").style.display = "flex";
+  document.getElementById("menuItemModal").style.display = "flex";
 }
-function closeOfferingModal() { document.getElementById("offeringModal").style.display = "none"; }
-async function submitOfferingForm(e) {
+function closeMenuItemModal() { document.getElementById("menuItemModal").style.display = "none"; }
+async function submitMenuItemForm(e) {
   e.preventDefault();
-  const btn = document.getElementById("ofSubmitBtn"); btn.disabled = true;
+  const btn = document.getElementById("miSubmitBtn"); btn.disabled = true;
   try {
-    const id = document.getElementById("ofId").value;
-    const payload = { name: document.getElementById("ofName").value, category: document.getElementById("ofCategory").value,
-      price: Number(document.getElementById("ofPrice").value), description: document.getElementById("ofDescription").value || undefined };
-    if (id) { await managerApi.updateOffering(id, payload); showNotice("offeringsNotice", "Item updated.", "success"); }
-    else { await managerApi.createOffering(payload); showNotice("offeringsNotice", "Item added.", "success"); }
-    closeOfferingModal(); refreshOfferingsTable();
-  } catch (err) { showNotice("offeringsNotice", err.message); } finally { btn.disabled = false; }
+    const id = document.getElementById("miId").value;
+    const payload = { name: document.getElementById("miName").value, category: document.getElementById("miCategory").value,
+      price: Number(document.getElementById("miPrice").value), description: document.getElementById("miDescription").value || undefined };
+    if (id) { await managerApi.updateMenuItem(id, payload); showNotice("menuNotice", "Item updated.", "success"); }
+    else { await managerApi.createMenuItem(payload); showNotice("menuNotice", "Item added.", "success"); }
+    closeMenuItemModal(); refreshMenuTable();
+  } catch (err) { showNotice("menuNotice", err.message); } finally { btn.disabled = false; }
 }
-async function toggleOfferingActive(id, currentlyActive) {
-  try { await managerApi.updateOffering(id, { isActive: !currentlyActive }); refreshOfferingsTable(); }
-  catch (err) { showNotice("offeringsNotice", err.message); }
+async function toggleMenuItemAvailable(id, currentlyAvailable) {
+  try { await managerApi.updateMenuItem(id, { isAvailable: !currentlyAvailable }); refreshMenuTable(); }
+  catch (err) { showNotice("menuNotice", err.message); }
 }
 
 /* ============================================================
@@ -728,6 +731,14 @@ async function advanceBooking(id, status) {
    STAFF — this branch only. Manager cannot appoint a Manager
    or set/see a branch selector; server must reject either if sent.
    ============================================================ */
+const ALL_PERMISSIONS = [
+  ["manage_rooms", "Manage rooms"], ["manage_bookings", "Manage bookings"], ["manage_stock", "Manage stock"],
+  ["manage_events", "Manage events"], ["manage_menu", "Manage menu"], ["manage_laundry", "Manage laundry"],
+  ["manage_spa", "Manage spa"], ["handle_tickets", "Handle tickets"], ["manage_reviews", "Manage reviews"],
+  ["manage_promos", "Manage promo codes"], ["manage_security", "Guest verification (security)"],
+  ["manage_settings", "Branch settings"], ["view_reports", "View reports"], ["manage_staff", "Manage staff"],
+];
+
 async function loadStaffPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
@@ -735,8 +746,8 @@ async function loadStaffPage() {
     <div id="staffNotice"></div>
     <div class="panel">
       <table>
-        <thead><tr><th>Name</th><th>Title</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
-        <tbody id="staffBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
+        <tbody id="staffBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="staffModal" style="display:none;">
@@ -748,19 +759,15 @@ async function loadStaffPage() {
             <div class="form-field"><label>Email</label><input type="email" id="sEmail" required></div>
           </div>
           <div class="form-field"><label>Temporary password</label><input type="text" id="sPassword" required></div>
-          <div class="form-field"><label>Job title <span style="color:var(--text-muted); font-weight:400;">(free text)</span></label>
-            <input type="text" id="sTitle" placeholder="e.g. Front Desk Receptionist"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Job title <span style="color:var(--text-muted); font-weight:400;">(free text)</span></label>
+              <input type="text" id="sTitle" placeholder="e.g. Front Desk Receptionist"></div>
+            <div class="form-field"><label>Department <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+              <select id="sDepartment"><option value="">— None —</option></select></div>
+          </div>
           <div class="form-field">
             <label>Permissions</label>
-            <div class="checkbox-grid">
-              <label class="checkbox-item"><input type="checkbox" value="manage_rooms"> Manage rooms</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_bookings"> Manage bookings</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_stock"> Manage stock</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_events"> Manage events</label>
-              <label class="checkbox-item"><input type="checkbox" value="handle_tickets"> Handle tickets</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_payments"> Record & view payments</label>
-              <label class="checkbox-item"><input type="checkbox" value="view_reports"> View reports</label>
-            </div>
+            <div class="checkbox-grid" id="sPermissionsGrid"></div>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeStaffModal()">Cancel</button>
@@ -770,6 +777,13 @@ async function loadStaffPage() {
       </div>
     </div>
   `;
+  document.getElementById("sPermissionsGrid").innerHTML = ALL_PERMISSIONS.map(([value, label]) =>
+    `<label class="checkbox-item"><input type="checkbox" value="${value}"> ${label}</label>`).join("");
+  try {
+    const { departments } = await managerApi.getDepartments();
+    const select = document.getElementById("sDepartment");
+    select.innerHTML += Object.keys(departments).map((d) => `<option value="${d}">${d}</option>`).join("");
+  } catch { /* department list is optional — form still works without it */ }
   document.getElementById("staffForm").addEventListener("submit", submitStaffForm);
   refreshStaffTable();
 }
@@ -778,11 +792,11 @@ async function refreshStaffTable() {
     const { staff } = await managerApi.listStaff();
     document.getElementById("staffBody").innerHTML = staff.map((s) => `
       <tr><td>${s.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${s.email}</span></td>
-      <td>${s.title || "—"}</td><td>${(s.permissions || []).length ? s.permissions.join(", ") : "—"}</td>
+      <td>${s.roleTitle || "—"}</td><td>${s.department || "—"}</td><td>${(s.permissions || []).length ? s.permissions.join(", ") : "—"}</td>
       <td><span class="badge badge-${s.isActive ? "active" : "inactive"}">${s.isActive ? "Active" : "Inactive"}</span></td>
       <td><button class="btn btn-sm btn-outline" onclick="toggleStaffActive('${s.id}', ${s.isActive})">${s.isActive ? "Deactivate" : "Activate"}</button></td></tr>
     `).join("");
-  } catch (err) { document.getElementById("staffBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+  } catch (err) { document.getElementById("staffBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
 }
 async function toggleStaffActive(id, currentlyActive) {
   try { await managerApi.updateStaff(id, { isActive: !currentlyActive }); refreshStaffTable(); }
@@ -794,13 +808,13 @@ async function submitStaffForm(e) {
   e.preventDefault();
   const btn = document.getElementById("sSubmitBtn"); btn.disabled = true;
   try {
-    const permissions = Array.from(document.querySelectorAll('#staffForm .checkbox-grid input:checked')).map((el) => el.value);
-    // role is intentionally omitted — this panel only ever creates STAFF accounts.
-    // branchId is intentionally omitted — the backend must derive it from the
-    // logged-in manager's own branchId and ignore any client-supplied value.
+    const permissions = Array.from(document.querySelectorAll('#sPermissionsGrid input:checked')).map((el) => el.value);
+    // branchId is intentionally omitted — the backend derives it from the
+    // logged-in manager's own branchId and ignores any client-supplied value.
     const payload = { name: document.getElementById("sName").value, email: document.getElementById("sEmail").value,
-      password: document.getElementById("sPassword").value, role: "STAFF",
-      title: document.getElementById("sTitle").value || undefined, permissions };
+      password: document.getElementById("sPassword").value,
+      roleTitle: document.getElementById("sTitle").value || undefined,
+      department: document.getElementById("sDepartment").value || undefined, permissions };
     await managerApi.createStaff(payload);
     closeStaffModal(); showNotice("staffNotice", "Staff account created.", "success"); refreshStaffTable();
   } catch (err) { showNotice("staffNotice", err.message); } finally { btn.disabled = false; }
@@ -842,32 +856,32 @@ async function claimTicket(id) { try { await managerApi.assignTicket(id); refres
 async function resolveTicketRow(id) { try { await managerApi.resolveTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
 
 /* ============================================================
-   TRANSACTIONS — this branch only, no branch filter/column
+   REPORTS — read-only branch snapshot (view_reports)
    ============================================================ */
-const TXN_SOURCE_LABELS = { booking: "Room booking", food: "Food", drink: "Drink", service: "Service", event: "Event" };
-const TXN_METHOD_LABELS = { CARD: "Card", TRANSFER: "Transfer", CASH: "Cash", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
-
-async function loadTransactionsPage() {
+async function loadReportsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Transactions", "Payments recorded at your branch.")}
-    <div id="transactionsNotice"></div>
-    <div class="stats-grid" id="txnStatCards"><div class="loading-state">Loading…</div></div>
-    <div class="panel">
-      <div style="display:flex; gap:10px; align-items:center; margin-bottom:14px; flex-wrap:wrap;">
-        <select id="txnSourceFilter" onchange="refreshTransactionsTable()">
-          <option value="">All sources</option><option value="booking">Room booking</option><option value="food">Food</option>
-          <option value="drink">Drink</option><option value="service">Service</option><option value="event">Event</option>
-        </select>
-        <select id="txnStatusFilter" onchange="refreshTransactionsTable()">
-          <option value="">All statuses</option><option value="PAID">Paid</option><option value="PENDING">Pending</option><option value="REFUNDED">Refunded</option>
-        </select>
-        <button class="btn btn-primary" onclick="openPaymentModal()">Record payment</button>
-      </div>
-      <table>
-        <thead><tr><th>Date</th><th>Guest</th><th>Source</th><th>Method</th><th>Amount</th><th>Status</th><th></th></tr></thead>
-        <tbody id="transactionsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
-      </table>
+    ${pageHeader("Branch Reports", "A snapshot of this branch's activity.")}
+    <div id="reportsNotice"></div>
+    <div class="stats-grid" id="reportsStatCards"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { report } = await managerApi.getReports();
+    document.getElementById("reportsStatCards").innerHTML = `
+      <div class="stat-card"><b>${report.roomCount}</b><span>Rooms</span></div>
+      <div class="stat-card"><b>${report.activeBookings}</b><span>Active bookings</span></div>
+      <div class="stat-card"><b>${report.bookingsThisMonth}</b><span>Bookings this month</span></div>
+      <div class="stat-card"><b>&#8358;${Number(report.revenueThisMonth).toLocaleString()}</b><span>Revenue this month</span></div>
+      <div class="stat-card"><b>${report.openTickets}</b><span>Open tickets</span></div>
+    `;
+  } catch (err) { showNotice("reportsNotice", err.message); }
+}
+
+/* ============================================================
+   (Old Transactions page removed — no backend ever supported it.
+   See panel.md Part C7 for details. Below this point in the
+   original file is now dead code that this patch removes.)
+   ============================================================ */
     </div>
     <div class="modal-overlay" id="paymentModal" style="display:none;">
       <div class="modal">
@@ -1007,10 +1021,6 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Logging in…";
   try {
     const { token, staff } = await managerApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
-    if (staff.role === "DIRECTOR") {
-      notice.innerHTML = `<div class="notice error">Director accounts should use the Director dashboard, not this panel.</div>`;
-      btn.disabled = false; btn.textContent = "Log in"; return;
-    }
     setSession(token, staff); showApp();
   } catch (err) {
     notice.innerHTML = `<div class="notice error">${err.message}</div>`;
