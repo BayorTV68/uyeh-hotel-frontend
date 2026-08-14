@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Director Account — Oxygen Hotel</title>
+<meta name="robots" content="noindex, nofollow">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink:        #14181f;
+  --ivory:      #f6f1e7;
+  --panel:      #ffffff;
+  --border:     #e6e0d2;
+  --brass:      #b98d45;
+  --brass-dark: #96712f;
+  --teal:       #2f5d5a;
+  --danger:     #a3392a;
+  --success:    #2f5d5a;
+  --text-muted: #6b6355;
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+  --radius: 8px;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--ink);
+  color: var(--ink);
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  padding: 24px;
+}
+
+.card {
+  background: var(--panel);
+  padding: 48px 40px;
+  border-radius: var(--radius);
+  width: 100%;
+  max-width: 420px;
+}
+
+.brand { font-family: var(--font-display); font-size: 1.5rem; margin-bottom: 6px; color: var(--ink); }
+.brand span { color: var(--brass); }
+p.sub { color: var(--text-muted); margin-bottom: 8px; font-size: 0.88rem; line-height: 1.5; }
+p.warn {
+  color: var(--brass-dark);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  background: rgba(185,141,69,0.08);
+  border: 1px solid rgba(185,141,69,0.25);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 16px 0 24px;
+}
+
+.form-field { margin-bottom: 16px; }
+.form-field label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.form-field label .hint { font-weight: 400; color: var(--text-muted); }
+.form-field input {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  background: var(--ivory);
+  color: var(--ink);
+}
+.form-field input:focus {
+  outline: none;
+  border-color: var(--brass);
+  background: var(--panel);
+}
+
+.btn {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 6px;
+}
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover { background: var(--brass-dark); }
+.btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+.notice {
+  padding: 11px 13px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.25); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--success); border: 1px solid rgba(47,93,90,0.25); }
+
+.success-state { display: none; text-align: center; }
+.success-state.visible { display: block; }
+.success-state .icon { font-size: 2rem; margin-bottom: 12px; }
+.success-state h2 { font-family: var(--font-display); font-size: 1.2rem; margin-bottom: 8px; }
+.success-state p { color: var(--text-muted); font-size: 0.86rem; line-height: 1.6; margin-bottom: 22px; }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <div id="formState">
+    <div class="brand">Oxygen <span>Hotel</span></div>
+    <p class="sub">Create the first Director account for your company.</p>
+    <p class="warn">
+      This page only works once. As soon as this account is created,
+      Director signup is permanently disabled — every Director after this
+      one is appointed from inside the dashboard, not from a public page.
+    </p>
+
+    <div id="formNotice"></div>
+
+    <form id="bootstrapForm">
+      <div class="form-field">
+        <label for="fName">Full name</label>
+        <input type="text" id="fName" required autocomplete="name">
+      </div>
+      <div class="form-field">
+        <label for="fEmail">Email</label>
+        <input type="email" id="fEmail" required autocomplete="username">
+      </div>
+      <div class="form-field">
+        <label for="fPassword">Password</label>
+        <input type="password" id="fPassword" required minlength="8" autocomplete="new-password">
+      </div>
+      <div class="form-field">
+        <label for="fSecret">Bootstrap secret <span class="hint">— set as DIRECTOR_BOOTSTRAP_SECRET on Render</span></label>
+        <input type="password" id="fSecret" required autocomplete="off">
+      </div>
+      <button type="submit" class="btn btn-primary" id="submitBtn">Create Director account</button>
+    </form>
+  </div>
+
+  <div class="success-state" id="successState">
+    <div class="icon">✓</div>
+    <h2>Director account created</h2>
+    <p id="successMessage">You can now log in from the admin dashboard.</p>
+    <a href="admin-panel.html" class="btn btn-primary" style="display:block; text-decoration:none; text-align:center; box-sizing:border-box;">Go to login</a>
+  </div>
+</div>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+
+document.getElementById("bootstrapForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("submitBtn");
+  const notice = document.getElementById("formNotice");
+  notice.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Creating…";
+
+  try {
+    const res = await fetch(`${API_BASE}/auth/director/bootstrap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: document.getElementById("fName").value,
+        email: document.getElementById("fEmail").value,
+        password: document.getElementById("fPassword").value,
+        secret: document.getElementById("fSecret").value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+
+    document.getElementById("successMessage").textContent =
+      `${data.director.name}, your Director account (${data.director.email}) is ready. You can now log in from the admin dashboard.`;
+    document.getElementById("formState").style.display = "none";
+    document.getElementById("successState").classList.add("visible");
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = "Create Director account";
+  }
+});
+</script>
+</body>
+</html>
