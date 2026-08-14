@@ -1,0 +1,952 @@
+// ============================================================
+// Uyeh Hotel — multi-branch hotel platform.
+// One company, several branches. Staff hierarchy: DIRECTOR (company-wide)
+// > MANAGER/RECEPTIONIST/STAFF (branch-scoped) with hand-picked permissions.
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// prisma/schema.prisma
+datasource db {
+  provider  = "postgresql"
+  url  	    = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+enum MenuCategory {
+  FOOD   // Restaurant
+  DRINK  // Bar
+}
+
+enum ReviewStatus {
+  PENDING    // awaiting staff moderation before it's public
+  PUBLISHED
+  REJECTED
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+model HotelSettings {
+  id String @id @default("main")
+
+  // ── Identity ──────────────────────────────────────────────────
+  name         String  @default("Uyeh Hotel")
+  tagline      String  @default("A boutique stay on the Lagos lagoon")
+  description  String?
+  email        String?
+  phone        String?
+  address      String?
+  city         String?
+  country      String?
+  logoUrl      String?
+  faviconUrl   String?
+  heroImageUrl String?
+  socialLinks  Json?   // { instagram: "...", facebook: "..." }
+
+  // ── Brand colors ──────────────────────────────────────────────
+  // Hex strings, validated server-side before save. Defaults match the
+  // theme already shipped on the public site (ink/brass/teal) so nothing
+  // visually shifts until the Director deliberately changes it.
+  primaryColor   String @default("#14181f") // ink — nav, footer, dark sections
+  secondaryColor String @default("#b98d45") // brass — buttons, accents, key-tags
+  accentColor    String @default("#2f5d5a") // teal — links, highlights, CTA gradient
+
+  // ── Business hours ───────────────────────────────────────────
+  checkInTime  String @default("14:00")
+  checkOutTime String @default("11:00")
+
+  // ── Currency ──────────────────────────────────────────────────
+  baseCurrency String @default("NGN")
+
+  // ── Feature flags ─────────────────────────────────────────────
+  // Lets the Director turn a whole feature off platform-wide without a
+  // redeploy — e.g. disable Events while a branch is between seasons.
+  bookingsEnabled      Boolean @default(true)
+  ordersEnabled        Boolean @default(true) // room service/restaurant/spa/laundry
+  eventsEnabled        Boolean @default(true)
+  ticketsEnabled       Boolean @default(true)
+  guestAccountsEnabled Boolean @default(true) // false = guest checkout only, no registration
+
+  // ── Maintenance mode ──────────────────────────────────────────
+  maintenanceMode        Boolean @default(false)
+  maintenanceTitle       String  @default("Under Maintenance")
+  maintenanceMessage     String  @default("We're performing scheduled maintenance. We'll be back shortly!")
+  maintenanceETA         String?
+  maintenanceBypassToken String? // write-only — never returned by any GET route
+
+  // ── Announcement banner ───────────────────────────────────────
+  bannerEnabled     Boolean @default(false)
+  bannerText        String?
+  bannerType        String  @default("info") // "info" | "success" | "warning" | "urgent"
+  bannerLink        String?
+  bannerLinkText    String?
+  bannerDismissible Boolean @default(true)
+
+  // ── SEO ───────────────────────────────────────────────────────
+  metaTitle         String?
+  metaDescription   String?
+  metaKeywords      String?
+  ogImageUrl        String?
+  googleAnalyticsId String?
+  facebookPixelId   String?
+
+  // ── Custom code injection ─────────────────────────────────────
+  // customJS is deliberately NOT included — arbitrary JS injection from a
+  // settings field is a much bigger security surface (stored XSS if the
+  // Director's account is ever compromised) than CSS/meta tags. Add it
+  // later only if there's a real need, with extra scrutiny.
+  customCSS  String?
+  customHead String? // extra <meta>/<link> tags, e.g. a webfont link
+
+  // ── Audit ─────────────────────────────────────────────────────
+  updatedAt   DateTime @updatedAt
+  updatedById String?  // Staff.id of whoever last saved settings
+}
+
+
+// Reference permission keys (enforced in app code): "manage_rooms",
+// "manage_bookings", "manage_staff", "manage_settings", "view_reports",
+// "handle_tickets"
+// Company-wide branches. A Director has no branchId (sees everything);
+// Manager/Receptionist/Staff each belong to exactly one branch.
+model Branch {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  address   String?
+  city      String?
+  state     String?
+  phone     String?
+  email     String?
+  services  String[] @default([])
+  isActive  Boolean  @default(true)
+
+  // Paystack payout routing — set once by the Director so this branch's
+  // guest payments settle directly to its own bank account instead of the
+  // company's main Paystack account. See guestLookup/branch-settings
+  // patches for the pattern this follows.
+  paystackSubaccountCode  String?
+  settlementBankCode      String?
+  settlementBankName      String?
+  settlementAccountNumber String?
+  settlementAccountName   String?
+
+  managers     Manager[]
+  staffMembers Staff[]
+  roomTypes    RoomType[]
+  rooms      Room[]
+  bookings   Booking[]
+  tickets    Ticket[]
+  orders     Order[]
+  events     Event[]
+  stockItems StockItem[]
+  menuItems     MenuItem[]
+  laundryItems  LaundryItem[]
+  spaTreatments SpaTreatment[]
+  reviews       Review[]
+  promoCodes    PromoCode[]
+  groupBookings GroupBooking[]
+  wishlistItems WishlistItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// Company-wide. No branchId. Not creatable through the app — seeded
+// directly into the DB. Only a Director can create a Manager.
+model Director {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  isActive     Boolean  @default(true)
+
+  // ── Login lockout ─────────────────────────────────────────────────
+  loginAttempts Int       @default(0)
+  lockUntil     DateTime?
+
+  // ── Password reset ────────────────────────────────────────────────
+  passwordResetTokenHash String?
+  passwordResetExpires   DateTime?
+
+  // ── Two-factor auth (TOTP) ────────────────────────────────────────
+  twoFactorEnabled     Boolean   @default(false)
+  twoFactorSecret      String?
+  twoFactorPending     String?
+  twoFactorBackupCodes Json?
+  twoFactorEnabledAt   DateTime?
+  twoFactorAttempts    Int       @default(0)
+  twoFactorLockedUntil DateTime?
+
+  lastLogin    DateTime?
+  lastActivity DateTime?
+
+  refreshTokens   RefreshToken[]
+  createdManagers Manager[]       @relation("DirectorCreatedManagers")
+  ticketMessages  TicketMessage[] @relation("DirectorTicketMessages")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+// One branch each. Created only by a Director. Being a Manager doesn't
+// imply every permission — permissions[] still gates admin actions,
+// same as before.
+model Manager {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  roleTitle    String?
+  department   String?
+  permissions  String[]
+  isActive     Boolean  @default(true)
+
+  // ── Login lockout ─────────────────────────────────────────────────
+  loginAttempts Int       @default(0)
+  lockUntil     DateTime?
+
+  // ── Password reset ────────────────────────────────────────────────
+  passwordResetTokenHash String?
+  passwordResetExpires   DateTime?
+
+  // ── Two-factor auth (TOTP) ────────────────────────────────────────
+  twoFactorEnabled     Boolean   @default(false)
+  twoFactorSecret      String?
+  twoFactorPending     String?
+  twoFactorBackupCodes Json?
+  twoFactorEnabledAt   DateTime?
+  twoFactorAttempts    Int       @default(0)
+  twoFactorLockedUntil DateTime?
+
+  lastLogin    DateTime?
+  lastActivity DateTime?
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  createdByDirectorId String
+  createdByDirector   Director @relation("DirectorCreatedManagers", fields: [createdByDirectorId], references: [id])
+
+  refreshTokens   RefreshToken[]
+  createdStaff    Staff[]         @relation("ManagerCreatedStaff")
+  assignedTickets Ticket[]        @relation("ManagerAssignedTickets")
+  ticketMessages  TicketMessage[] @relation("ManagerTicketMessages")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+model Staff {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         String?   @default("STAFF") // free-text sub-role, e.g. "RECEPTIONIST", "HOUSEKEEPING" — actual capabilities are governed by permissions[]
+  roleTitle    String?   // free-text job title shown to guests/staff (e.g. "Front Desk Receptionist")
+  department   String?
+  phone        String?
+  avatarUrl    String?
+  permissions  String[]
+  isActive     Boolean   @default(true)
+  createdById  String?
+
+
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  createdByManagerId String
+  createdByManager   Manager @relation("ManagerCreatedStaff", fields: [createdByManagerId], references: [id])
+
+  // ── Login lockout ─────────────────────────────────────────────────
+  loginAttempts Int       @default(0)
+  lockUntil     DateTime? // account locked until this time; null = not locked
+
+  // ── Password reset ────────────────────────────────────────────────
+  // Store a hash of the reset token, never the raw value — same reason
+  // passwords are hashed. The raw token only ever exists in the email sent.
+  passwordResetTokenHash String?
+  passwordResetExpires   DateTime?
+
+  // ── Two-factor auth (TOTP) ────────────────────────────────────────
+  twoFactorEnabled      Boolean   @default(false)
+  twoFactorSecret       String?   // base32 TOTP secret, set once confirmed
+  twoFactorPending      String?   // temp secret during setup, not yet confirmed
+  twoFactorBackupCodes  Json?     // [{ codeHash, usedAt }] — bcrypt-hashed one-time codes
+  twoFactorEnabledAt    DateTime?
+  twoFactorAttempts     Int       @default(0) // consecutive wrong codes during a login attempt
+  twoFactorLockedUntil  DateTime?
+
+  lastLogin    DateTime?
+  lastActivity DateTime?
+
+  refreshTokens   RefreshToken[]
+  assignedTickets Ticket[]        @relation("StaffAssignedTickets")
+  ticketMessages  TicketMessage[] @relation("StaffTicketMessages")
+  createdPromoCodes PromoCode[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+model RoomType {
+  id           String   @id @default(uuid())
+  branchId     String
+  branch       Branch   @relation(fields: [branchId], references: [id])
+  name         String
+  description  String?
+  basePrice    Decimal  @db.Decimal(10, 2)
+  currency     String   @default("NGN")
+  maxOccupancy Int      @default(2)
+  amenities    String[]
+  images       String[]
+
+  rooms        Room[]
+  wishlistedBy WishlistItem[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+enum RoomStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+model Room {
+  id         String     @id @default(uuid())
+  branchId   String
+  branch     Branch     @relation(fields: [branchId], references: [id])
+  roomTypeId String
+  roomType   RoomType   @relation(fields: [roomTypeId], references: [id])
+
+  // Room numbers are only unique within a branch now, not globally —
+  // two branches can both have a "101".
+  roomNumber String
+  floor      String?
+  status     RoomStatus @default(ACTIVE)
+
+  bookings   Booking[]
+  orders     Order[]
+
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@unique([branchId, roomNumber])
+  @@index([branchId])
+}
+
+model Guest {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  phone        String?
+  // Nullable: a guest created via guest-checkout (no account) has no password
+  // until/unless they register. Login is only possible once this is set.
+  passwordHash String?
+
+  // Persists across visits regardless of account status, so staff can serve
+  // a returning guest well even if they've never logged in.
+  preferences     Json?    // { roomTemp: "cool", pillow: "firm", ... }
+  dietaryNotes    String?
+  specialRequests String?  // general standing notes staff can see
+
+   // ── Email verification ────────────────────────────────────────────
+  emailVerified            Boolean   @default(false)
+  emailVerifiedAt          DateTime?
+  emailVerificationTokenHash String?
+  emailVerificationExpires DateTime?
+
+  // ── Login lockout ─────────────────────────────────────────────────
+  loginAttempts Int       @default(0)
+  lockUntil     DateTime?
+
+  // ── Password reset ────────────────────────────────────────────────
+  passwordResetTokenHash String?
+  passwordResetExpires   DateTime?
+
+  // ── Two-factor auth (TOTP) ────────────────────────────────────────
+  twoFactorEnabled     Boolean   @default(false)
+  twoFactorSecret      String?
+  twoFactorPending     String?
+  twoFactorBackupCodes Json?
+  twoFactorEnabledAt   DateTime?
+  twoFactorAttempts    Int       @default(0)
+  twoFactorLockedUntil DateTime?
+
+  // Spendable balance — goes up on payment, down on redemption.
+  loyaltyPoints   Int @default(0)
+  // Never decreases — used only to compute tier, so redeeming points
+  // doesn't demote someone back down a tier.
+  lifetimePoints  Int @default(0)
+
+  refreshTokens RefreshToken[]
+  bookings  Booking[]
+  tickets   Ticket[]
+  orders    Order[]
+  reviews   Review[]
+  loyaltyTransactions LoyaltyTransaction[]
+  promoRedemptions    PromoRedemption[]
+  restrictedPromoCodes PromoCode[] @relation("PromoRestrictedToGuest")
+  wishlistItems        WishlistItem[]
+  groupBookings        GroupBooking[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model LoyaltyTransaction {
+  id      String @id @default(uuid())
+  guestId String
+  guest   Guest  @relation(fields: [guestId], references: [id])
+
+  points  Int    // positive = earned, negative = redeemed
+  reason  String // "Stay at <branch> — booking #...", "Redeemed 200 points"
+
+  bookingId String?
+  orderId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([guestId])
+}
+
+model PromoCode {
+  id            String       @id @default(uuid())
+  // null = company-wide (Director-created). Set = branch-only
+  // (Manager-created, or a Director scoping one to a single branch).
+  branchId      String?
+  branch        Branch?      @relation(fields: [branchId], references: [id])
+  code          String       @unique
+  description   String?
+  discountType  DiscountType
+  discountValue Decimal      @db.Decimal(10, 2) // percent (0-100) or a fixed currency amount
+
+  // Empty = applies to everything. Otherwise a subset of:
+  // "BOOKING","ROOM_SERVICE","RESTAURANT","BAR","SPA","LAUNDRY"
+  appliesTo String[] @default([])
+
+  maxUses       Int? // null = unlimited
+  usedCount     Int  @default(0)
+  perGuestLimit Int? @default(1)
+
+  // Set only for loyalty-redemption codes — locks the code to one guest.
+  restrictToGuestId String?
+  restrictToGuest   Guest?  @relation("PromoRestrictedToGuest", fields: [restrictToGuestId], references: [id])
+
+  startsAt  DateTime?
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+
+  // Nullable so system-generated loyalty-redemption codes don't need a
+  // staff author.
+  createdById String?
+  createdBy   Staff?  @relation(fields: [createdById], references: [id])
+
+  redemptions PromoRedemption[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model PromoRedemption {
+  id             String    @id @default(uuid())
+  promoCodeId    String
+  promoCode      PromoCode @relation(fields: [promoCodeId], references: [id])
+  guestId        String
+  guest          Guest     @relation(fields: [guestId], references: [id])
+  bookingId      String?   @unique
+  booking        Booking?  @relation(fields: [bookingId], references: [id])
+  orderId        String?   @unique
+  order          Order?    @relation(fields: [orderId], references: [id])
+  discountAmount Decimal   @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+
+  @@index([promoCodeId])
+  @@index([guestId])
+}
+model CorporateAccount {
+  id            String   @id @default(uuid())
+  companyName   String
+  contactName   String
+  contactEmail  String
+  contactPhone  String?
+  // e.g. 10.00 = 10% off every room in a group booking under this account.
+  negotiatedDiscountPercent Decimal? @db.Decimal(5, 2)
+  billingNotes  String?
+  isActive      Boolean  @default(true)
+
+  groupBookings GroupBooking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Wraps several individual room Bookings under one reservation — a wedding
+// block, a corporate retreat, a conference room-block.
+model GroupBooking {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  corporateAccountId String?
+  corporateAccount   CorporateAccount? @relation(fields: [corporateAccountId], references: [id])
+
+  groupName      String
+  contactGuestId String
+  contactGuest   Guest  @relation(fields: [contactGuestId], references: [id])
+
+  checkIn  DateTime      @db.Date
+  checkOut DateTime      @db.Date
+  status   BookingStatus @default(PENDING)
+
+  bookings Booking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+model WishlistItem {
+  id       String @id @default(uuid())
+  guestId  String
+  guest    Guest  @relation(fields: [guestId], references: [id])
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  roomTypeId String?
+  roomType   RoomType? @relation(fields: [roomTypeId], references: [id])
+  eventId    String?
+  event      Event?    @relation(fields: [eventId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CHECKED_IN
+  CHECKED_OUT
+  CANCELLED
+}
+
+model Booking {
+  id          String        @id @default(uuid())
+  branchId    String
+  branch      Branch        @relation(fields: [branchId], references: [id])
+  roomId      String
+  room        Room          @relation(fields: [roomId], references: [id])
+  guestId     String
+  guest       Guest         @relation(fields: [guestId], references: [id])
+
+  checkIn     DateTime      @db.Date
+  checkOut    DateTime      @db.Date
+  guestsCount Int           @default(1)
+  specialRequests String?
+  status      BookingStatus @default(PENDING)
+  totalAmount Decimal       @db.Decimal(10, 2)
+  currency    String        @default("NGN")
+
+  payment         BookingPayment?
+  orders          Order[]
+  review          Review?
+  promoRedemption PromoRedemption?
+
+  // Set only for a room booked as part of a group/corporate reservation.
+  groupBookingId String?
+  groupBooking   GroupBooking? @relation(fields: [groupBookingId], references: [id])
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([roomId, checkIn, checkOut])
+  @@index([branchId])
+  @@index([groupBookingId])
+  // Double-booking prevention enforced at DB level — see
+  // prisma/manual-sql/add_booking_overlap_constraint.sql
+}
+
+// One review per stay — tied to the specific booking so it can't be
+// posted before checkout and can't be duplicated for the same visit.
+model Review {
+  id        String       @id @default(uuid())
+  branchId  String
+  branch    Branch       @relation(fields: [branchId], references: [id])
+  guestId   String
+  guest     Guest        @relation(fields: [guestId], references: [id])
+  bookingId String       @unique
+  booking   Booking      @relation(fields: [bookingId], references: [id])
+
+  ratingValue Int          // 1-5
+  title       String?
+  body        String?
+  status      ReviewStatus @default(PENDING)
+
+  staffReplyBody String?
+  staffReplyAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, status])
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESSFUL
+  FAILED
+  REFUNDED
+}
+
+model BookingPayment {
+  id          String          @id @default(uuid())
+  bookingId   String          @unique
+  booking     Booking         @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  provider    String          @default("PAYSTACK")
+  providerRef String          @unique
+  amount      Decimal         @db.Decimal(10, 2)
+  currency    String          @default("NGN")
+  status      PaymentStatus   @default(PENDING)
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum TicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+model Ticket {
+  id       String         @id @default(uuid())
+  branchId String
+  branch   Branch         @relation(fields: [branchId], references: [id])
+  guestId  String
+  guest    Guest          @relation(fields: [guestId], references: [id])
+
+  subject  String
+  status   TicketStatus   @default(OPEN)
+  priority TicketPriority @default(NORMAL)
+
+  // Only one of these is ever set (app-enforced) — a ticket is assigned to
+  // a Manager or a Staff member, never both.
+  assignedManagerId   String?
+  assignedManager     Manager? @relation("ManagerAssignedTickets", fields: [assignedManagerId], references: [id])
+  assignedStaffId     String?
+  assignedStaffMember Staff?   @relation("StaffAssignedTickets", fields: [assignedStaffId], references: [id])
+
+  messages TicketMessage[]
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  resolvedAt DateTime?
+
+  @@index([status])
+  @@index([branchId])
+}
+
+enum SenderType {
+  GUEST
+  DIRECTOR
+  MANAGER
+  STAFF
+}
+
+model TicketMessage {
+  id         String     @id @default(uuid())
+  ticketId   String
+  ticket     Ticket     @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  senderType SenderType
+  // Exactly one of these is set, matching senderType.
+  directorId String?
+  director   Director? @relation("DirectorTicketMessages", fields: [directorId], references: [id])
+  managerId  String?
+  manager    Manager?  @relation("ManagerTicketMessages", fields: [managerId], references: [id])
+  staffId    String?
+  staff      Staff?    @relation("StaffTicketMessages", fields: [staffId], references: [id])
+  guestName  String?
+
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+enum OrderType {
+  ROOM_SERVICE
+  RESTAURANT
+  BAR
+  EVENT_TICKET
+  SPA
+  LAUNDRY
+  OTHER
+}
+
+enum OrderStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Singleton — exactly one row, ever. Company-wide branding shown on the
+// public website (name, description, logo) and controlled ONLY by the
+// Director via PATCH /api/director/settings. Deliberately separate from
+// Branch — a branch has its own name/address/services, this is the
+// umbrella company identity above all of them.
+model CompanySettings {
+  id          String   @id @default(uuid())
+  platformName String  @default("Our Hotel") // shown everywhere until the Director sets a real one
+  description String?
+  logoUrl     String?
+  email       String?
+  phone       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Everything that isn't a room booking: restaurant orders, spa, laundry,
+// room service, and event ticket purchases. `items` is free-form JSON since
+// its shape varies by type (menu items vs. ticket count, etc).
+model Order {
+  id       String    @id @default(uuid())
+  branchId String
+  branch   Branch    @relation(fields: [branchId], references: [id])
+  guestId  String
+  guest    Guest     @relation(fields: [guestId], references: [id])
+
+  // Which room/stay this order belongs to — so kitchen/spa/front-desk staff
+  // always know exactly where to deliver. Optional: a guest ordering ahead
+  // of check-in, or a walk-in restaurant/bar order, has neither.
+  roomId    String?
+  room      Room?    @relation(fields: [roomId], references: [id])
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  type        OrderType
+  items       Json?         // only used by OTHER — every catalog-backed type uses `lines` instead
+  lines       OrderLine[]
+  totalAmount Decimal?      @db.Decimal(10, 2) // nullable — complimentary orders skip payment
+  currency    String        @default("NGN")
+  status      OrderStatus   @default(PENDING)
+
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id])
+
+  spaAppointment SpaAppointment?
+
+  promoRedemption PromoRedemption?
+
+  paymentRef    String?       @unique
+  paymentStatus PaymentStatus?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+  @@index([guestId])
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  branchId    String
+  branch      Branch   @relation(fields: [branchId], references: [id])
+
+  name        String
+  description String?
+  startsAt    DateTime
+  endsAt      DateTime?
+  capacity    Int?
+  price       Decimal? @db.Decimal(10, 2)
+  currency    String   @default("NGN")
+  images      String[] @default([])
+
+  orders       Order[]
+  wishlistedBy WishlistItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+// One catalog for both Restaurant (FOOD) and Bar (DRINK) — a hotel's room
+// service menu is usually a subset of the restaurant/bar menu, so an item
+// just flags itself as room-service-eligible rather than being duplicated
+// into a separate table.
+model MenuItem {
+  id          String       @id @default(uuid())
+  branchId    String
+  branch      Branch       @relation(fields: [branchId], references: [id])
+  category    MenuCategory
+  name        String
+  description String?
+  price       Decimal      @db.Decimal(10, 2)
+  currency    String       @default("NGN")
+  image       String?
+  dietaryTags String[]     @default([]) // "vegan", "gluten-free", "halal", ...
+  isAvailable Boolean      @default(true)
+  availableForRoomService Boolean @default(false)
+
+  orderLines  OrderLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId, category])
+}
+
+model LaundryItem {
+  id              String   @id @default(uuid())
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  name            String   // "Shirt — wash & press", "Suit — dry clean", "Wash & fold (per kg)"
+  price           Decimal  @db.Decimal(10, 2)
+  currency        String   @default("NGN")
+  turnaroundHours Int      @default(24)
+  isAvailable     Boolean  @default(true)
+
+  orderLines OrderLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+model SpaTreatment {
+  id              String   @id @default(uuid())
+  branchId        String
+  branch          Branch   @relation(fields: [branchId], references: [id])
+  name            String
+  description     String?
+  durationMinutes Int
+  price           Decimal  @db.Decimal(10, 2)
+  currency        String   @default("NGN")
+  image           String?
+  isAvailable     Boolean  @default(true)
+
+  appointments SpaAppointment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+// One per Order. Gives spa a real appointment time, which it never had
+// before — a spa "order" used to just be an opaque JSON blob with no
+// scheduling concept at all.
+model SpaAppointment {
+  id              String       @id @default(uuid())
+  orderId         String       @unique
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  treatmentId     String
+  treatment       SpaTreatment @relation(fields: [treatmentId], references: [id])
+  scheduledAt     DateTime
+  durationMinutes Int          // snapshotted from the treatment at booking time
+
+  createdAt DateTime @default(now())
+
+  @@index([treatmentId, scheduledAt])
+  // App-level overlap check enforced in createOrder(). A DB-level exclusion
+  // constraint (same idea as the booking one) would close the race-condition
+  // window entirely — not built here, flagged as still-open.
+}
+
+// Line items for catalog-backed order types (ROOM_SERVICE, RESTAURANT, BAR,
+// LAUNDRY). Exactly one of menuItemId/laundryItemId is set depending on
+// source — Prisma has no native "one of several relations" type, so this is
+// the pragmatic two-nullable-FKs pattern. Price/name are snapshotted at
+// order time so a later menu price change never rewrites past receipts.
+model OrderLine {
+  id            String       @id @default(uuid())
+  orderId       String
+  order         Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  menuItemId    String?
+  menuItem      MenuItem?    @relation(fields: [menuItemId], references: [id])
+  laundryItemId String?
+  laundryItem   LaundryItem? @relation(fields: [laundryItemId], references: [id])
+
+  itemName  String
+  quantity  Int     @default(1)
+  unitPrice Decimal @db.Decimal(10, 2)
+  notes     String?
+}
+
+// Minimal shape for now — round 2's stockController.js patch will confirm
+// exact fields against what the admin panel's Stock page actually needs.
+model StockItem {
+  id       String @id @default(uuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id])
+
+  name     String
+  quantity Int    @default(0)
+  unit     String? // e.g. "bottles", "kg", "rolls"
+  lowStockThreshold Int? @default(5)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([branchId])
+}
+
+// One row per issued refresh token, for exactly one of Staff or Guest.
+// Storing a hash (not the raw token) means a leaked database dump alone
+// isn't enough to impersonate anyone — same principle as password hashing.
+// Rotated on every use (old row revoked, new row created) and revocable
+// individually, which is what makes "log out" and "log out everywhere"
+// actually mean something, unlike a bare stateless JWT.
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique
+
+  directorId String?
+  director   Director? @relation(fields: [directorId], references: [id], onDelete: Cascade)
+  managerId  String?
+  manager    Manager?  @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  staffId String?
+  staff   Staff?  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  guestId String?
+  guest   Guest?  @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  userAgent String?
+  ip        String?
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([directorId])
+  @@index([managerId])
+  @@index([staffId])
+  @@index([guestId])
+}
