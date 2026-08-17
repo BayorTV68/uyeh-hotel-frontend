@@ -381,9 +381,11 @@ function hasPermission(key) {
   return (staff.permissions || []).includes(key);
 }
 function branchPath(path) {
-  const staff = getStaff();
-  if (!staff || !staff.branchId) throw new Error("No branch context for this account");
-  return `/branches/${staff.branchId}/admin${path}`;
+  // Manager/Staff: branch comes from the JWT server-side, nothing to add.
+  // Director: no branchId on their account — omitting it means "all
+  // branches" for GET/list routes. Creates/updates still require a branch,
+  // which the Director-side UI doesn't yet let you pick (known gap).
+  return `/manager${path}`;
 }
 
 async function adminRequest(path, options = {}) {
@@ -406,43 +408,90 @@ async function adminRequest(path, options = {}) {
 }
 
 const adminApi = {
-  login: (email, password) =>
-    fetch(`${API_BASE}/auth/director/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    }).then(async (res) => {
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Login failed");
-      return data;
-    }),
+  // Tries Director, then Manager, then Staff — there's one login form for
+  // all three account types, and the backend has a separate endpoint per
+  // type rather than one shared one.
+  login: async (email, password) => {
+    const attempts = [
+      { type: "director", url: "/auth/director/login" },
+      { type: "manager", url: "/auth/manager/login" },
+      { type: "staff", url: "/auth/staff/login" },
+    ];
+    let lastError = "Login failed";
+    for (const { type, url } of attempts) {
+      try {
+        const res = await fetch(`${API_BASE}${url}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          // Backend returns the account under a type-specific key
+          // (director/manager/staff), and only the Staff object actually
+          // has a `role` field. Normalize all three into one shape so the
+          // rest of the app can just use `staff.role` / `staff.permissions`
+          // without caring which endpoint answered.
+          const account = data[type];
+          return {
+            token: data.token,
+            refreshToken: data.refreshToken,
+            staff: { ...account, role: account.role || type.toUpperCase() },
+          };
+        }
+        // 401 = wrong account type or wrong password for THIS type — try
+        // the next type. Anything else (423 locked, 500, etc.) is a real
+        // error worth surfacing immediately.
+        if (res.status !== 401) throw new Error(data.error || "Login failed");
+        lastError = data.error || lastError;
+      } catch (err) {
+        if (err.message && err.message !== "Login failed") throw err;
+      }
+    }
+    throw new Error(lastError);
+  },
 
-  getSettings: () => adminRequest("/settings"),
-  updateSettings: (payload) => adminRequest("/admin/settings", { method: "PATCH", body: JSON.stringify(payload) }),
+  // Branch-level settings (a branch's own operational settings)
+  getSettings: () => adminRequest("/manager/branch-settings"),
+  updateSettings: (payload) => adminRequest("/manager/branch-settings", { method: "PATCH", body: JSON.stringify(payload) }),
 
-  // NEW — Branches (Director-only on the backend, not built yet)
-  listBranches: () => adminRequest("/admin/branches"),
-  createBranch: (payload) => adminRequest("/admin/branches", { method: "POST", body: JSON.stringify(payload) }),
-  updateBranch: (id, payload) => adminRequest(`/admin/branches/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  // Branches — Director only
+  listBranches: () => adminRequest("/director/branches"),
+  createBranch: (payload) => adminRequest("/director/branches", { method: "POST", body: JSON.stringify(payload) }),
+  updateBranch: (id, payload) => adminRequest(`/director/branches/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
-  // NEW — Company-wide rollup (Director dashboard, not built yet)
-  getCompanyOverview: () => adminRequest("/admin/company/overview"),
+  // Company-wide rollup — Director dashboard
+  getCompanyOverview: () => adminRequest("/director/company/overview"),
 
   listRoomTypes: () => adminRequest(branchPath("/room-types")),
   createRoomType: (payload) => adminRequest(branchPath("/room-types"), { method: "POST", body: JSON.stringify(payload) }),
   updateRoomType: (id, payload) => adminRequest(branchPath(`/room-types/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
   listRooms: () => adminRequest(branchPath("/rooms")),
   createRoom: (payload) => adminRequest(branchPath("/rooms"), { method: "POST", body: JSON.stringify(payload) }),
-  // No generic PATCH /rooms/:id exists on the backend yet — only /rooms/:id/status.
-  // This will 404 until that route is added. Use updateRoomStatus for status changes.
-  updateRoom: (id, payload) => adminRequest(branchPath(`/rooms/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  // No generic PATCH /rooms/:id on the backend — status is the only
+  // editable field via a dedicated route. Kept as an alias so existing
+  // call sites that only ever pass { status } keep working.
+  updateRoom: (id, payload) => adminRequest(branchPath(`/rooms/${id}/status`), { method: "PATCH", body: JSON.stringify({ status: payload.status }) }),
   updateRoomStatus: (id, status) => adminRequest(branchPath(`/rooms/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
 
-  // NEW — Offerings: food, drinks, services — priced per branch
-  listOfferings: (category) => adminRequest(`/admin/offerings${category ? `?category=${category}` : ""}`),
-  createOffering: (payload) => adminRequest("/admin/offerings", { method: "POST", body: JSON.stringify(payload) }),
-  updateOffering: (id, payload) => adminRequest(`/admin/offerings/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteOffering: (id) => adminRequest(`/admin/offerings/${id}`, { method: "DELETE" }),
+  // Offerings — split across the real per-category endpoints. The
+  // Offerings page (below) is rewritten to call these three sets directly
+  // rather than a single generic "offering" — the real schema has no
+  // unified table.
+  listMenuItems: (category) => adminRequest(branchPath(`/menu${category ? `?category=${category}` : ""}`)),
+  createMenuItem: (payload) => adminRequest(branchPath("/menu"), { method: "POST", body: JSON.stringify(payload) }),
+  updateMenuItem: (id, payload) => adminRequest(branchPath(`/menu/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteMenuItem: (id) => adminRequest(branchPath(`/menu/${id}`), { method: "DELETE" }),
+
+  listLaundryItems: () => adminRequest(branchPath("/laundry-items")),
+  createLaundryItem: (payload) => adminRequest(branchPath("/laundry-items"), { method: "POST", body: JSON.stringify(payload) }),
+  updateLaundryItem: (id, payload) => adminRequest(branchPath(`/laundry-items/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteLaundryItem: (id) => adminRequest(branchPath(`/laundry-items/${id}`), { method: "DELETE" }),
+
+  listSpaTreatments: () => adminRequest(branchPath("/spa-treatments")),
+  createSpaTreatment: (payload) => adminRequest(branchPath("/spa-treatments"), { method: "POST", body: JSON.stringify(payload) }),
+  updateSpaTreatment: (id, payload) => adminRequest(branchPath(`/spa-treatments/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteSpaTreatment: (id) => adminRequest(branchPath(`/spa-treatments/${id}`), { method: "DELETE" }),
 
   listBookings: (status) => adminRequest(branchPath(`/bookings${status ? `?status=${status}` : ""}`)),
   updateBookingStatus: (id, status) => adminRequest(branchPath(`/bookings/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
@@ -467,29 +516,50 @@ const adminApi = {
   replyToTicket: (id, message) => adminRequest(branchPath(`/tickets/${id}/messages`), { method: "POST", body: JSON.stringify({ message }) }),
   resolveTicket: (id) => adminRequest(branchPath(`/tickets/${id}/resolve`), { method: "PATCH" }),
 
-  // NEW — Payments & Invoicing
+  // Payments & Invoicing
   listTransactions: (filters = {}) => {
     const qs = new URLSearchParams(filters).toString();
-    return adminRequest(`/admin/transactions${qs ? `?${qs}` : ""}`);
+    return adminRequest(branchPath(`/transactions${qs ? `?${qs}` : ""}`));
   },
-  getTransaction: (id) => adminRequest(`/admin/transactions/${id}`),
-  recordPayment: (payload) => adminRequest("/admin/transactions", { method: "POST", body: JSON.stringify(payload) }),
-  refundTransaction: (id, payload) => adminRequest(`/admin/transactions/${id}/refund`, { method: "PATCH", body: JSON.stringify(payload) }),
-  getInvoiceUrl: (transactionId) => `${API_BASE}/admin/transactions/${transactionId}/invoice`,
+  getTransaction: (id) => adminRequest(branchPath(`/transactions/${id}`)),
+  recordPayment: (payload) => adminRequest(branchPath("/transactions"), { method: "POST", body: JSON.stringify(payload) }),
+  refundTransaction: (id, payload) => adminRequest(branchPath(`/transactions/${id}/refund`), { method: "PATCH", body: JSON.stringify(payload) }),
+  // Returns printable HTML, not a static URL — auth is a Bearer header,
+  // which a plain <a href target=_blank> can't send. Fetch it and open
+  // the result in a new tab instead (see viewInvoice() below).
+  fetchInvoiceHtml: (transactionId) =>
+    fetch(`${API_BASE}${branchPath(`/transactions/${transactionId}/invoice`)}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    }).then((res) => res.text()),
 
-  // NEW — Audit Log (Director only, enforced server-side)
+  // Audit Log — Director only, enforced server-side
   listAuditLogs: (filters = {}) => {
     const qs = new URLSearchParams(filters).toString();
-    return adminRequest(`/admin/audit-logs${qs ? `?${qs}` : ""}`);
+    return adminRequest(`/director/audit-log${qs ? `?${qs}` : ""}`);
   },
 
-  // NEW — Analytics (Director only)
+  // Analytics — not built on the backend yet. Left pointing at a
+  // not-yet-real endpoint on purpose so the page shows a clear "couldn't
+  // load" error instead of silently looking broken like before.
   getAnalytics: () => adminRequest("/admin/analytics"),
 
-  // NEW — Site-wide settings (Director only) vs branch settings (existing getSettings/updateSettings stays branch-scoped)
-  getSiteSettings: () => adminRequest("/admin/site-settings"),
-  updateSiteSettings: (payload) => adminRequest("/admin/site-settings", { method: "PATCH", body: JSON.stringify(payload) }),
+  // Site-wide settings — Director only (company branding, feature flags, etc.)
+  getSiteSettings: () => adminRequest("/director/settings"),
+  updateSiteSettings: (payload) => adminRequest("/director/settings", { method: "PATCH", body: JSON.stringify(payload) }),
 };
+
+// Opens a fetched (authenticated) invoice in a new tab. Use this instead of
+// a plain <a href> — see the Transactions page changes below.
+async function viewInvoice(transactionId) {
+  try {
+    const html = await adminApi.fetchInvoiceHtml(transactionId);
+    const win = window.open("", "_blank");
+    win.document.write(html);
+    win.document.close();
+  } catch (err) {
+    showNotice("transactionsNotice", "Couldn't open invoice: " + err.message);
+  }
+}
 
 /* ============================================================
    NAV CONFIG
@@ -1292,6 +1362,16 @@ async function deleteEventConfirm(id) {
    ============================================================ */
 const OFFERING_CATEGORY_LABELS = { food: "Food", drink: "Drink", service: "Service" };
 
+// category -> { fetch, create, update, label } — one entry per real backend
+// table. "food"/"drink" both live in MenuItem (category FOOD/DRINK);
+// laundry and spa are their own tables with their own required fields.
+const OFFERING_TYPES = {
+  food:    { label: "Food",    list: () => adminApi.listMenuItems("FOOD"),  create: adminApi.createMenuItem,    update: adminApi.updateMenuItem,    key: "menuItems" },
+  drink:   { label: "Drink",   list: () => adminApi.listMenuItems("DRINK"), create: adminApi.createMenuItem,    update: adminApi.updateMenuItem,    key: "menuItems" },
+  laundry: { label: "Laundry", list: adminApi.listLaundryItems,             create: adminApi.createLaundryItem, update: adminApi.updateLaundryItem, key: "laundryItems" },
+  spa:     { label: "Spa",     list: adminApi.listSpaTreatments,            create: adminApi.createSpaTreatment,update: adminApi.updateSpaTreatment,key: "spaTreatments" },
+};
+
 async function loadOfferingsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
@@ -1309,19 +1389,22 @@ async function loadOfferingsPage() {
         <h3 id="offeringModalTitle">Add item</h3>
         <form id="offeringForm">
           <input type="hidden" id="ofId">
-          <div class="form-field"><label>Name</label><input type="text" id="ofName" required></div>
           <div class="form-row">
             <div class="form-field">
               <label>Category</label>
-              <select id="ofCategory" required>
+              <select id="ofCategory" required onchange="toggleOfferingFields()">
                 <option value="food">Food</option>
                 <option value="drink">Drink</option>
-                <option value="service">Service</option>
+                <option value="laundry">Laundry</option>
+                <option value="spa">Spa</option>
               </select>
             </div>
             <div class="form-field"><label>Price (&#8358;) — this branch</label><input type="number" id="ofPrice" min="0" step="1" required></div>
           </div>
-          <div class="form-field"><label>Description</label><textarea id="ofDescription" rows="2"></textarea></div>
+          <div class="form-field"><label>Name</label><input type="text" id="ofName" required></div>
+          <div class="form-field" id="ofDescriptionField"><label>Description</label><textarea id="ofDescription" rows="2"></textarea></div>
+          <div class="form-field" id="ofTurnaroundField" style="display:none;"><label>Turnaround (hours)</label><input type="number" id="ofTurnaround" min="1" value="24"></div>
+          <div class="form-field" id="ofDurationField" style="display:none;"><label>Duration (minutes)</label><input type="number" id="ofDuration" min="1" value="60"></div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeOfferingModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="ofSubmitBtn">Save item</button>
@@ -1331,24 +1414,39 @@ async function loadOfferingsPage() {
     </div>
   `;
   document.getElementById("offeringForm").addEventListener("submit", submitOfferingForm);
+  toggleOfferingFields();
   refreshOfferingsTable();
+}
+
+function toggleOfferingFields() {
+  const cat = document.getElementById("ofCategory").value;
+  document.getElementById("ofDescriptionField").style.display = cat === "spa" || cat === "food" || cat === "drink" ? "" : "none";
+  document.getElementById("ofTurnaroundField").style.display = cat === "laundry" ? "" : "none";
+  document.getElementById("ofDurationField").style.display = cat === "spa" ? "" : "none";
 }
 
 async function refreshOfferingsTable() {
   try {
-    const { offerings } = await adminApi.listOfferings();
+    const results = await Promise.all(
+      Object.entries(OFFERING_TYPES).map(async ([cat, cfg]) => {
+        const data = await cfg.list();
+        const items = data[cfg.key] || data.menuItems || data.laundryItems || data.spaTreatments || [];
+        return items.map((item) => ({ ...item, _category: cat }));
+      })
+    );
+    const offerings = results.flat();
     document.getElementById("offeringsBody").innerHTML = offerings.length ? offerings.map((o) => `
       <tr>
         <td>${o.name}</td>
-        <td>${OFFERING_CATEGORY_LABELS[o.category] || o.category}</td>
+        <td>${OFFERING_TYPES[o._category].label}</td>
         <td>&#8358;${Number(o.price).toLocaleString()}</td>
-        <td><span class="badge badge-${o.isActive ? "active" : "inactive"}">${o.isActive ? "Active" : "Inactive"}</span></td>
+        <td><span class="badge badge-${o.isAvailable ? "active" : "inactive"}">${o.isAvailable ? "Active" : "Inactive"}</span></td>
         <td>
           <button class="btn btn-sm btn-outline" onclick='openOfferingModal(${JSON.stringify(o).replace(/'/g, "&#39;")})'>Edit</button>
-          <button class="btn btn-sm btn-outline" onclick="toggleOfferingActive('${o.id}', ${o.isActive})">${o.isActive ? "Deactivate" : "Activate"}</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleOfferingActive('${o._category}', '${o.id}', ${o.isAvailable})">${o.isAvailable ? "Deactivate" : "Activate"}</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No items yet — add food, drinks, or services above.</td></tr>`;
+    `).join("") : `<tr><td colspan="5" class="empty-state">No items yet — add food, drinks, laundry, or spa items above.</td></tr>`;
   } catch (err) {
     document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
   }
@@ -1358,12 +1456,16 @@ function openOfferingModal(o) {
   document.getElementById("offeringModalTitle").textContent = o ? "Edit item" : "Add item";
   document.getElementById("offeringForm").reset();
   document.getElementById("ofId").value = o ? o.id : "";
+  document.getElementById("ofCategory").disabled = !!o; // category can't change after creation — different table
   if (o) {
+    document.getElementById("ofCategory").value = o._category;
     document.getElementById("ofName").value = o.name;
-    document.getElementById("ofCategory").value = o.category;
     document.getElementById("ofPrice").value = o.price;
     document.getElementById("ofDescription").value = o.description || "";
+    if (o._category === "laundry") document.getElementById("ofTurnaround").value = o.turnaroundHours || 24;
+    if (o._category === "spa") document.getElementById("ofDuration").value = o.durationMinutes || 60;
   }
+  toggleOfferingFields();
   document.getElementById("offeringModal").style.display = "flex";
 }
 function closeOfferingModal() { document.getElementById("offeringModal").style.display = "none"; }
@@ -1374,14 +1476,25 @@ async function submitOfferingForm(e) {
   btn.disabled = true;
   try {
     const id = document.getElementById("ofId").value;
-    const payload = {
+    const category = document.getElementById("ofCategory").value;
+    const cfg = OFFERING_TYPES[category];
+
+    const base = {
       name: document.getElementById("ofName").value,
-      category: document.getElementById("ofCategory").value,
       price: Number(document.getElementById("ofPrice").value),
-      description: document.getElementById("ofDescription").value || undefined,
     };
-    if (id) { await adminApi.updateOffering(id, payload); showNotice("offeringsNotice", "Item updated.", "success"); }
-    else { await adminApi.createOffering(payload); showNotice("offeringsNotice", "Item added.", "success"); }
+    if (category === "food" || category === "drink") {
+      base.category = category.toUpperCase();
+      base.description = document.getElementById("ofDescription").value || undefined;
+    } else if (category === "laundry") {
+      base.turnaroundHours = Number(document.getElementById("ofTurnaround").value) || 24;
+    } else if (category === "spa") {
+      base.description = document.getElementById("ofDescription").value || undefined;
+      base.durationMinutes = Number(document.getElementById("ofDuration").value) || 60;
+    }
+
+    if (id) { await cfg.update(id, base); showNotice("offeringsNotice", "Item updated.", "success"); }
+    else { await cfg.create(base); showNotice("offeringsNotice", "Item added.", "success"); }
     closeOfferingModal();
     refreshOfferingsTable();
   } catch (err) {
@@ -1390,8 +1503,8 @@ async function submitOfferingForm(e) {
     btn.disabled = false;
   }
 }
-async function toggleOfferingActive(id, currentlyActive) {
-  try { await adminApi.updateOffering(id, { isActive: !currentlyActive }); refreshOfferingsTable(); }
+async function toggleOfferingActive(category, id, currentlyActive) {
+  try { await OFFERING_TYPES[category].update(id, { isAvailable: !currentlyActive }); refreshOfferingsTable(); }
   catch (err) { showNotice("offeringsNotice", err.message); }
 }
 
@@ -1441,7 +1554,7 @@ async function advanceBooking(id, status) {
    TRANSACTIONS / PAYMENTS / INVOICING
    ============================================================ */
 const TXN_SOURCE_LABELS = { booking: "Room booking", food: "Food", drink: "Drink", service: "Service", event: "Event" };
-const TXN_METHOD_LABELS = { CARD: "Card", TRANSFER: "Transfer", CASH: "Cash", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
+const TXN_METHOD_LABELS = { CARD: "Card", TRANSFER: "Transfer", CASH: "Cash", PAYSTACK: "Paystack" };
 
 async function loadTransactionsPage() {
   const container = document.getElementById("pageContent");
@@ -1514,7 +1627,6 @@ async function loadTransactionsPage() {
               <option value="CARD">Card</option>
               <option value="TRANSFER">Transfer</option>
               <option value="PAYSTACK">Paystack</option>
-              <option value="FLUTTERWAVE">Flutterwave</option>
             </select>
           </div>
           <div class="modal-actions">
@@ -1558,7 +1670,7 @@ async function refreshTransactionsTable() {
         <td>&#8358;${Number(t.amount).toLocaleString()}</td>
         <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
         <td>
-          <a class="btn btn-sm btn-outline" href="${adminApi.getInvoiceUrl(t.id)}" target="_blank" rel="noopener">Invoice</a>
+          <button class="btn btn-sm btn-outline" onclick="viewInvoice('${t.id}')">Invoice</button>
           ${t.status === "PAID" ? `<button class="btn btn-sm btn-danger" onclick="refundTransactionRow('${t.id}')">Refund</button>` : ""}
         </td>
       </tr>
