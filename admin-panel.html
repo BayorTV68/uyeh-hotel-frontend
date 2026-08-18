@@ -506,9 +506,14 @@ const adminApi = {
   updateEvent: (id, payload) => adminRequest(branchPath(`/events/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
   deleteEvent: (id) => adminRequest(branchPath(`/events/${id}`), { method: "DELETE" }),
 
+  listDepartments: () => adminRequest(branchPath("/departments")),
   listStaff: () => adminRequest(branchPath("/staff")),
   createStaff: (payload) => adminRequest(branchPath("/staff"), { method: "POST", body: JSON.stringify(payload) }),
   updateStaff: (id, payload) => adminRequest(branchPath(`/staff/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+
+  listManagers: (branchId) => adminRequest(`/director/managers${branchId ? `?branchId=${branchId}` : ""}`),
+  createManager: (payload) => adminRequest("/director/managers", { method: "POST", body: JSON.stringify(payload) }),
+  updateManager: (id, payload) => adminRequest(`/director/managers/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   listTickets: (status) => adminRequest(branchPath(`/tickets${status ? `?status=${status}` : ""}`)),
   getTicket: (id) => adminRequest(branchPath(`/tickets/${id}`)),
@@ -533,6 +538,20 @@ const adminApi = {
     }).then((res) => res.text()),
 
   // Audit Log — Director only, enforced server-side
+  listBlogPosts: (branchId) => adminRequest(`/manager/blog${branchId ? `?branchId=${branchId}` : ""}`),
+  createBlogPost: (payload, branchId) => adminRequest(`/manager/blog${branchId ? `?branchId=${branchId}` : ""}`, { method: "POST", body: JSON.stringify(payload) }),
+  updateBlogPost: (id, payload, branchId) => adminRequest(`/manager/blog/${id}${branchId ? `?branchId=${branchId}` : ""}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBlogPost: (id, branchId) => adminRequest(`/manager/blog/${id}${branchId ? `?branchId=${branchId}` : ""}`, { method: "DELETE" }),
+  uploadBlogImage: (id, file) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    return fetch(`${API_BASE}/manager/blog/${id}/image`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+
+  listSubscribers: (status) => adminRequest(`/director/newsletter/subscribers${status ? `?status=${status}` : ""}`),
+  listCampaigns: () => adminRequest("/director/newsletter/campaigns"),
+  createCampaign: (payload) => adminRequest("/director/newsletter/campaigns", { method: "POST", body: JSON.stringify(payload) }),
+
   listAuditLogs: (filters = {}) => {
     const qs = new URLSearchParams(filters).toString();
     return adminRequest(`/director/audit-log${qs ? `?${qs}` : ""}`);
@@ -595,6 +614,13 @@ const NAV_GROUPS = [
     id: "finance", label: "Finance", icon: "fa-sack-dollar",
     items: [{ page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" }],
   },
+  {
+    id: "marketing", label: "Marketing", icon: "fa-bullhorn",
+    items: [
+      { page: "blog", label: "Blog", icon: "fa-newspaper", permission: "manage_blog" },
+      { page: "newsletter", label: "Newsletter", icon: "fa-envelope-open-text", directorOnlyItem: true },
+    ],
+  },
 ];
 const SETTINGS_ITEM = { page: "settings", label: "Branch Settings", icon: "fa-gear", permission: "manage_settings" };
 const SITE_SETTINGS_ITEM = { page: "sitesettings", label: "Site Settings", icon: "fa-globe" };
@@ -611,7 +637,10 @@ function renderSidebar() {
 
   const groupsHtml = NAV_GROUPS.map((group) => {
     if (group.directorOnly && !director) return "";
-    const visibleItems = group.items.filter((item) => director || !item.permission || (staff.permissions || []).includes(item.permission));
+    const visibleItems = group.items.filter((item) => {
+      if (item.directorOnlyItem) return director;
+      return director || !item.permission || (staff.permissions || []).includes(item.permission);
+    });
     if (!visibleItems.length) return "";
     return `
       <div class="nav-group open" data-group="${group.id}">
@@ -683,6 +712,8 @@ const PAGE_LOADERS = {
   analytics: loadAnalyticsPage,
   settings: loadSettingsPage,
   sitesettings: loadSiteSettingsPage,
+  blog: loadBlogPage,
+  newsletter: loadNewsletterPage,
 };
 
 function switchPage(page) {
@@ -846,12 +877,20 @@ async function loadBranchesPage() {
         <h3 id="branchModalTitle">Open new branch</h3>
         <form id="branchForm">
           <input type="hidden" id="bId">
-          <div class="form-field"><label>Branch name</label><input type="text" id="bName" required></div>
+          <div class="form-field"><label>Branch name</label><input type="text" id="bName" required oninput="autofillBranchSlug()"></div>
+          <div class="form-field">
+            <label>Slug <span style="color:var(--text-muted); font-weight:400;">(used in booking links — auto-filled from the name, edit if you like)</span></label>
+            <input type="text" id="bSlug" pattern="[a-z0-9-]+" title="lowercase letters, numbers, and hyphens only" oninput="this.dataset.touched='1'">
+          </div>
           <div class="form-row">
             <div class="form-field"><label>City</label><input type="text" id="bCity" required></div>
             <div class="form-field"><label>State / Region</label><input type="text" id="bState"></div>
           </div>
           <div class="form-field"><label>Address</label><input type="text" id="bAddress"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Phone</label><input type="text" id="bPhone"></div>
+            <div class="form-field"><label>Email</label><input type="email" id="bEmail"></div>
+          </div>
           <div class="form-field">
             <label>Services this branch offers</label>
             <div class="checkbox-grid" id="bServices">
@@ -907,14 +946,29 @@ function openBranchModal(branch) {
   document.getElementById("branchModalTitle").textContent = branch ? "Edit branch" : "Open new branch";
   document.getElementById("branchForm").reset();
   document.getElementById("bId").value = branch ? branch.id : "";
+  const slugField = document.getElementById("bSlug");
   if (branch) {
     document.getElementById("bName").value = branch.name;
+    slugField.value = branch.slug || "";
+    slugField.disabled = true; // slug is baked into existing booking links — don't let an edit silently break them
     document.getElementById("bCity").value = branch.city;
     document.getElementById("bState").value = branch.state || "";
     document.getElementById("bAddress").value = branch.address || "";
+    document.getElementById("bPhone").value = branch.phone || "";
+    document.getElementById("bEmail").value = branch.email || "";
     document.querySelectorAll("#bServices input").forEach((cb) => { cb.checked = (branch.services || []).includes(cb.value); });
+  } else {
+    slugField.disabled = false;
+    slugField.value = "";
   }
   document.getElementById("branchModal").style.display = "flex";
+}
+
+function autofillBranchSlug() {
+  const slugField = document.getElementById("bSlug");
+  if (slugField.disabled || slugField.dataset.touched === "1") return; // editing existing branch, or user already typed their own
+  slugField.value = document.getElementById("bName").value
+    .trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 function closeBranchModal() { document.getElementById("branchModal").style.display = "none"; }
 
@@ -930,8 +984,11 @@ async function submitBranchForm(e) {
       city: document.getElementById("bCity").value,
       state: document.getElementById("bState").value || undefined,
       address: document.getElementById("bAddress").value || undefined,
+      phone: document.getElementById("bPhone").value || undefined,
+      email: document.getElementById("bEmail").value || undefined,
       services,
     };
+    if (!id) payload.slug = document.getElementById("bSlug").value || undefined; // slug is create-only — PATCH /branches/:id doesn't accept it
     if (id) { await adminApi.updateBranch(id, payload); showNotice("branchesNotice", "Branch updated.", "success"); }
     else { await adminApi.createBranch(payload); showNotice("branchesNotice", "Branch opened. Appoint a Manager from Staff.", "success"); }
     closeBranchModal();
@@ -999,10 +1056,9 @@ async function loadRoomsPage() {
           <div class="form-field">
             <label>Status</label>
             <select id="rStatus">
-              <option value="AVAILABLE">Available</option>
-              <option value="OCCUPIED">Occupied</option>
-              <option value="CLEANING">Cleaning</option>
+              <option value="ACTIVE">Active (sellable)</option>
               <option value="MAINTENANCE">Maintenance</option>
+              <option value="INACTIVE">Inactive</option>
             </select>
           </div>
           <div class="modal-actions">
@@ -1136,8 +1192,8 @@ async function loadStockPage() {
       `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
     <div id="stockNotice"></div>
     <div class="panel">
-      <table><thead><tr><th>Name</th><th>Category</th><th>Quantity</th><th>Unit</th><th>Reorder level</th><th></th></tr></thead>
-        <tbody id="stockBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      <table><thead><tr><th>Name</th><th>Quantity</th><th>Unit</th><th>Low-stock threshold</th><th></th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
 
@@ -1147,13 +1203,10 @@ async function loadStockPage() {
         <form id="stockForm">
           <input type="hidden" id="stId">
           <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
-          <div class="form-row">
-            <div class="form-field"><label>Category</label><input type="text" id="stCategory" placeholder="kitchen, housekeeping, bar…"></div>
-            <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
-          </div>
+          <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
           <div class="form-row">
             <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
-            <div class="form-field"><label>Reorder level</label><input type="number" id="stReorderLevel" min="0" step="1" value="0" required></div>
+            <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stReorderLevel" min="0" step="1" value="5" required></div>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
@@ -1173,10 +1226,9 @@ async function refreshStock() {
     document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
       <tr>
         <td>${s.name}</td>
-        <td>${s.category || "—"}</td>
-        <td>${s.quantity <= s.reorderLevel ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
+        <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
         <td>${s.unit}</td>
-        <td>${s.reorderLevel}</td>
+        <td>${s.lowStockThreshold}</td>
         <td>
           <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-outline" onclick="deleteStockItemConfirm('${s.id}')">Delete</button>
@@ -1211,10 +1263,9 @@ async function submitStockForm(e) {
     const id = document.getElementById("stId").value;
     const payload = {
       name: document.getElementById("stName").value,
-      category: document.getElementById("stCategory").value || undefined,
       unit: document.getElementById("stUnit").value || "unit",
       quantity: Number(document.getElementById("stQuantity").value),
-      reorderLevel: Number(document.getElementById("stReorderLevel").value),
+      lowStockThreshold: Number(document.getElementById("stReorderLevel").value),
     };
     if (id) { await adminApi.updateStockItem(id, payload); showNotice("stockNotice", "Item updated.", "success"); }
     else { await adminApi.createStockItem(payload); showNotice("stockNotice", "Item added.", "success"); }
@@ -1405,6 +1456,13 @@ async function loadOfferingsPage() {
           <div class="form-field" id="ofDescriptionField"><label>Description</label><textarea id="ofDescription" rows="2"></textarea></div>
           <div class="form-field" id="ofTurnaroundField" style="display:none;"><label>Turnaround (hours)</label><input type="number" id="ofTurnaround" min="1" value="24"></div>
           <div class="form-field" id="ofDurationField" style="display:none;"><label>Duration (minutes)</label><input type="number" id="ofDuration" min="1" value="60"></div>
+          <div class="form-field" id="ofRoomServiceField" style="display:none;">
+            <label class="checkbox-item"><input type="checkbox" id="ofRoomService"> Available for room service</label>
+          </div>
+          <div class="form-field" id="ofDietaryField" style="display:none;">
+            <label>Dietary tags <span style="color:var(--text-muted); font-weight:400;">(comma-separated — vegan, halal, gluten-free…)</span></label>
+            <input type="text" id="ofDietaryTags" placeholder="vegan, halal">
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeOfferingModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="ofSubmitBtn">Save item</button>
@@ -1423,6 +1481,9 @@ function toggleOfferingFields() {
   document.getElementById("ofDescriptionField").style.display = cat === "spa" || cat === "food" || cat === "drink" ? "" : "none";
   document.getElementById("ofTurnaroundField").style.display = cat === "laundry" ? "" : "none";
   document.getElementById("ofDurationField").style.display = cat === "spa" ? "" : "none";
+  const isFoodOrDrink = cat === "food" || cat === "drink";
+  document.getElementById("ofRoomServiceField").style.display = isFoodOrDrink ? "" : "none";
+  document.getElementById("ofDietaryField").style.display = isFoodOrDrink ? "" : "none";
 }
 
 async function refreshOfferingsTable() {
@@ -1464,6 +1525,10 @@ function openOfferingModal(o) {
     document.getElementById("ofDescription").value = o.description || "";
     if (o._category === "laundry") document.getElementById("ofTurnaround").value = o.turnaroundHours || 24;
     if (o._category === "spa") document.getElementById("ofDuration").value = o.durationMinutes || 60;
+    if (o._category === "food" || o._category === "drink") {
+      document.getElementById("ofRoomService").checked = !!o.availableForRoomService;
+      document.getElementById("ofDietaryTags").value = (o.dietaryTags || []).join(", ");
+    }
   }
   toggleOfferingFields();
   document.getElementById("offeringModal").style.display = "flex";
@@ -1486,6 +1551,9 @@ async function submitOfferingForm(e) {
     if (category === "food" || category === "drink") {
       base.category = category.toUpperCase();
       base.description = document.getElementById("ofDescription").value || undefined;
+      base.availableForRoomService = document.getElementById("ofRoomService").checked;
+      const tags = document.getElementById("ofDietaryTags").value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (tags.length) base.dietaryTags = tags;
     } else if (category === "laundry") {
       base.turnaroundHours = Number(document.getElementById("ofTurnaround").value) || 24;
     } else if (category === "spa") {
@@ -1716,6 +1784,263 @@ async function refundTransactionRow(id) {
 }
 
 /* ============================================================
+   BLOG
+   ============================================================ */
+let _blogBranchFilter = "";
+
+async function loadBlogPage() {
+  const container = document.getElementById("pageContent");
+  const director = isDirector();
+  let branchOptionsHtml = "";
+  if (director) {
+    try {
+      const { branches } = await adminApi.listBranches();
+      branchOptionsHtml = `<option value="">Company-wide</option>` + branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+    } catch { /* branch picker is a nice-to-have here — post list still loads without it */ }
+  }
+
+  container.innerHTML = `
+    ${pageHeader("Blog", "Posts publish to the public site instantly and auto-email your newsletter list.",
+      `<button class="btn btn-primary" onclick="openBlogModal()">Write a post</button>`)}
+    <div id="blogNotice"></div>
+    ${director ? `
+      <div class="panel" style="margin-bottom:16px; padding:14px 20px;">
+        <label style="font-size:0.85rem; color:var(--text-muted); margin-right:10px;">Viewing</label>
+        <select id="blogBranchFilter" onchange="_blogBranchFilter=this.value; refreshBlogTable();" style="width:auto; display:inline-block;">
+          ${branchOptionsHtml}
+        </select>
+      </div>
+    ` : ""}
+    <div class="panel">
+      <table><thead><tr><th>Title</th><th>Scope</th><th>Status</th><th>Published</th><th>Newsletter</th><th></th></tr></thead>
+        <tbody id="blogBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="blogModal" style="display:none;">
+      <div class="modal">
+        <h3 id="blogModalTitle">Write a post</h3>
+        <form id="blogForm">
+          <input type="hidden" id="bpId">
+          ${director ? `<div class="form-field"><label>Scope</label><select id="bpBranch">${branchOptionsHtml}</select></div>` : ""}
+          <div class="form-field"><label>Title</label><input type="text" id="bpTitle" required oninput="document.getElementById('bpSlugPreview').textContent=this.value.trim().toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')"></div>
+          <div class="form-field"><label>URL slug <span id="bpSlugPreview" style="color:var(--text-muted); font-weight:400;"></span></label></div>
+          <div class="form-field"><label>Excerpt <span style="color:var(--text-muted); font-weight:400;">(shown in the post list and newsletter preview)</span></label><textarea id="bpExcerpt" rows="2"></textarea></div>
+          <div class="form-field"><label>Content</label><textarea id="bpContent" rows="10" required></textarea></div>
+          <div class="form-field"><label>Cover image URL <span style="color:var(--text-muted); font-weight:400;">(or upload after saving as a draft)</span></label><input type="text" id="bpCoverImageUrl"></div>
+          <div class="form-field"><label>Tags <span style="color:var(--text-muted); font-weight:400;">(comma-separated)</span></label><input type="text" id="bpTags" placeholder="offers, events"></div>
+          <div class="form-field">
+            <label class="checkbox-item"><input type="checkbox" id="bpAutoNewsletter" checked> Email this to newsletter subscribers when published</label>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeBlogModal()">Cancel</button>
+            <button type="button" class="btn btn-outline" id="bpDraftBtn" onclick="submitBlogForm(false)">Save draft</button>
+            <button type="button" class="btn btn-primary" id="bpPublishBtn" onclick="submitBlogForm(true)">Publish</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  await refreshBlogTable();
+}
+
+async function refreshBlogTable() {
+  try {
+    const { posts } = await adminApi.listBlogPosts(_blogBranchFilter || undefined);
+    document.getElementById("blogBody").innerHTML = posts.length ? posts.map((p) => `
+      <tr>
+        <td>${p.title}</td>
+        <td>${p.branch ? p.branch.name : "Company-wide"}</td>
+        <td><span class="badge ${p.status === "PUBLISHED" ? "badge-success" : "badge-muted"}">${p.status === "PUBLISHED" ? "Published" : "Draft"}</span></td>
+        <td>${p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "—"}</td>
+        <td>${p.campaign ? (p.campaign.status === "SENT" ? `Sent to ${p.campaign.sentCount}` : p.campaign.status) : (p.autoNewsletter ? "Pending" : "Off")}</td>
+        <td style="text-align:right;">
+          <button class="btn-icon" onclick='openBlogModal(${JSON.stringify(p).replace(/'/g, "&#39;")})' title="Edit"><i class="fas fa-pen"></i></button>
+          <button class="btn-icon" onclick="deleteBlogPost('${p.id}')" title="Delete"><i class="fas fa-trash"></i></button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No posts yet.</td></tr>`;
+  } catch (err) {
+    document.getElementById("blogBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openBlogModal(post) {
+  document.getElementById("blogModalTitle").textContent = post ? "Edit post" : "Write a post";
+  document.getElementById("blogForm").reset();
+  document.getElementById("bpId").value = post ? post.id : "";
+  document.getElementById("bpSlugPreview").textContent = post ? post.slug : "";
+  if (post) {
+    document.getElementById("bpTitle").value = post.title;
+    document.getElementById("bpExcerpt").value = post.excerpt || "";
+    document.getElementById("bpContent").value = post.content;
+    document.getElementById("bpCoverImageUrl").value = post.coverImageUrl || "";
+    document.getElementById("bpTags").value = (post.tags || []).join(", ");
+    document.getElementById("bpAutoNewsletter").checked = post.autoNewsletter;
+    const branchSelect = document.getElementById("bpBranch");
+    if (branchSelect) branchSelect.value = post.branch ? post.branch.id : "";
+    const publishBtn = document.getElementById("bpPublishBtn");
+    if (post.status === "PUBLISHED") { publishBtn.textContent = "Save changes"; document.getElementById("bpDraftBtn").style.display = "none"; }
+    else { publishBtn.textContent = "Publish"; document.getElementById("bpDraftBtn").style.display = ""; }
+  } else {
+    document.getElementById("bpPublishBtn").textContent = "Publish";
+    document.getElementById("bpDraftBtn").style.display = "";
+  }
+  document.getElementById("blogModal").style.display = "flex";
+}
+
+function closeBlogModal() { document.getElementById("blogModal").style.display = "none"; }
+
+async function submitBlogForm(publish) {
+  const id = document.getElementById("bpId").value;
+  const branchSelect = document.getElementById("bpBranch");
+  const branchId = branchSelect ? (branchSelect.value || undefined) : undefined;
+  const tags = document.getElementById("bpTags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  const payload = {
+    title: document.getElementById("bpTitle").value,
+    excerpt: document.getElementById("bpExcerpt").value || undefined,
+    content: document.getElementById("bpContent").value,
+    coverImageUrl: document.getElementById("bpCoverImageUrl").value || undefined,
+    tags,
+    autoNewsletter: document.getElementById("bpAutoNewsletter").checked,
+  };
+  // Editing an already-published post and hitting the (now "Save changes")
+  // button shouldn't silently revert it to draft.
+  const isEditingPublished = id && document.getElementById("bpPublishBtn").textContent === "Save changes";
+  if (publish || isEditingPublished) payload.status = "PUBLISHED";
+
+  const btn = publish ? document.getElementById("bpPublishBtn") : document.getElementById("bpDraftBtn");
+  btn.disabled = true;
+  try {
+    if (id) await adminApi.updateBlogPost(id, payload, branchId);
+    else await adminApi.createBlogPost(payload, branchId);
+    closeBlogModal();
+    showNotice("blogNotice", publish ? "Post published — newsletter dispatch may take a minute." : "Draft saved.", "success");
+    refreshBlogTable();
+  } catch (err) {
+    showNotice("blogNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteBlogPost(id) {
+  if (!confirm("Delete this post? This can't be undone.")) return;
+  try {
+    await adminApi.deleteBlogPost(id, _blogBranchFilter || undefined);
+    refreshBlogTable();
+  } catch (err) {
+    showNotice("blogNotice", err.message);
+  }
+}
+
+/* ============================================================
+   NEWSLETTER — Director only
+   ============================================================ */
+async function loadNewsletterPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Newsletter", "Manage subscribers and send campaigns. Published blog posts auto-send here too.",
+      `<button class="btn btn-primary" onclick="openCampaignModal()">New campaign</button>`)}
+    <div id="newsletterNotice"></div>
+    <div class="stat-grid" id="subscriberStats" style="margin-bottom:24px;"></div>
+
+    <div class="panel" style="margin-bottom:24px;">
+      <h3 style="padding:16px 20px 0;">Subscribers</h3>
+      <table><thead><tr><th>Email</th><th>Name</th><th>Status</th><th>Source</th><th>Joined</th></tr></thead>
+        <tbody id="subscribersBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h3 style="padding:16px 20px 0;">Campaigns</h3>
+      <table><thead><tr><th>Subject</th><th>Source</th><th>Status</th><th>Sent to</th><th>Sent</th></tr></thead>
+        <tbody id="campaignsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="campaignModal" style="display:none;">
+      <div class="modal">
+        <h3>New campaign</h3>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;">Sends immediately to every confirmed subscriber. This can't be undone or scheduled for later yet.</p>
+        <form id="campaignForm">
+          <div class="form-field"><label>Subject</label><input type="text" id="cpSubject" required></div>
+          <div class="form-field"><label>Content (HTML)</label><textarea id="cpHtml" rows="10" required placeholder="&lt;p&gt;Your update goes here…&lt;/p&gt;"></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeCampaignModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="cpSubmitBtn">Send now</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("campaignForm").addEventListener("submit", submitCampaignForm);
+  await Promise.all([refreshSubscribers(), refreshCampaigns()]);
+}
+
+async function refreshSubscribers() {
+  try {
+    const { subscribers, counts } = await adminApi.listSubscribers();
+    document.getElementById("subscriberStats").innerHTML = `
+      <div class="stat-card"><div class="stat-label">Confirmed</div><div class="stat-value">${counts.CONFIRMED || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value">${counts.PENDING || 0}</div></div>
+      <div class="stat-card"><div class="stat-label">Unsubscribed</div><div class="stat-value">${counts.UNSUBSCRIBED || 0}</div></div>
+    `;
+    document.getElementById("subscribersBody").innerHTML = subscribers.length ? subscribers.map((s) => `
+      <tr>
+        <td>${s.email}</td>
+        <td>${s.name || "—"}</td>
+        <td><span class="badge ${s.status === "CONFIRMED" ? "badge-success" : s.status === "PENDING" ? "badge-warning" : "badge-muted"}">${s.status}</span></td>
+        <td>${(s.source || "—").replace(/_/g, " ")}</td>
+        <td>${new Date(s.createdAt).toLocaleDateString()}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No subscribers yet.</td></tr>`;
+  } catch (err) {
+    showNotice("newsletterNotice", err.message);
+  }
+}
+
+async function refreshCampaigns() {
+  try {
+    const { campaigns } = await adminApi.listCampaigns();
+    document.getElementById("campaignsBody").innerHTML = campaigns.length ? campaigns.map((c) => `
+      <tr>
+        <td>${c.subject}</td>
+        <td>${c.blogPost ? `Blog post: ${c.blogPost.title}` : "Manual"}</td>
+        <td><span class="badge ${c.status === "SENT" ? "badge-success" : c.status === "FAILED" ? "badge-error" : "badge-warning"}">${c.status}</span></td>
+        <td>${c.sentCount}${c.failedCount ? ` (${c.failedCount} failed)` : ""}</td>
+        <td>${c.sentAt ? new Date(c.sentAt).toLocaleString() : "—"}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No campaigns sent yet.</td></tr>`;
+  } catch (err) {
+    showNotice("newsletterNotice", err.message);
+  }
+}
+
+function openCampaignModal() { document.getElementById("campaignModal").style.display = "flex"; }
+function closeCampaignModal() { document.getElementById("campaignModal").style.display = "none"; document.getElementById("campaignForm").reset(); }
+
+async function submitCampaignForm(e) {
+  e.preventDefault();
+  if (!confirm("Send this to every confirmed subscriber now?")) return;
+  const btn = document.getElementById("cpSubmitBtn");
+  btn.disabled = true;
+  try {
+    await adminApi.createCampaign({
+      subject: document.getElementById("cpSubject").value,
+      html: document.getElementById("cpHtml").value,
+    });
+    closeCampaignModal();
+    showNotice("newsletterNotice", "Sending — delivery counts will update shortly.", "success");
+    refreshCampaigns();
+  } catch (err) {
+    showNotice("newsletterNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
    STAFF
    ============================================================ */
 async function loadStaffPage() {
@@ -1764,6 +2089,10 @@ async function loadStaffPage() {
             <input type="text" id="sTitle" placeholder="e.g. Front Desk Receptionist">
           </div>
           <div class="form-field">
+            <label>Department <span style="color:var(--text-muted); font-weight:400;">(optional — auto-checks the matching permissions below)</span></label>
+            <select id="sDepartment" onchange="applyDepartmentPermissions()"><option value="">— none —</option></select>
+          </div>
+          <div class="form-field">
             <label>Permissions</label>
             <div class="checkbox-grid">
               <label class="checkbox-item"><input type="checkbox" value="manage_rooms"> Manage rooms</label>
@@ -1775,6 +2104,7 @@ async function loadStaffPage() {
               <label class="checkbox-item"><input type="checkbox" value="handle_tickets"> Handle tickets</label>
               <label class="checkbox-item"><input type="checkbox" value="manage_payments"> Record & view payments</label>
               <label class="checkbox-item"><input type="checkbox" value="view_reports"> View reports</label>
+              <label class="checkbox-item"><input type="checkbox" value="manage_blog"> Manage blog</label>
             </div>
           </div>
           <div class="modal-actions">
@@ -1787,7 +2117,22 @@ async function loadStaffPage() {
   `;
 
   document.getElementById("staffForm").addEventListener("submit", submitStaffForm);
+  try {
+    const { departments } = await adminApi.listDepartments();
+    window._departmentCatalog = departments || {};
+    document.getElementById("sDepartment").innerHTML =
+      `<option value="">— none —</option>` +
+      Object.keys(departments || {}).map((d) => `<option value="${d}">${d}</option>`).join("");
+  } catch { /* non-fatal — department stays optional */ }
   refreshStaffTable();
+}
+
+function applyDepartmentPermissions() {
+  const dept = document.getElementById("sDepartment").value;
+  const suggested = (window._departmentCatalog || {})[dept] || [];
+  document.querySelectorAll('#staffForm .checkbox-grid input').forEach((cb) => {
+    if (suggested.includes(cb.value)) cb.checked = true;
+  });
 }
 
 async function refreshStaffTable() {
@@ -1822,20 +2167,38 @@ async function submitStaffForm(e) {
   btn.disabled = true;
   try {
     const permissions = Array.from(document.querySelectorAll('#staffForm .checkbox-grid input:checked')).map((el) => el.value);
-    const payload = {
-      name: document.getElementById("sName").value,
-      email: document.getElementById("sEmail").value,
-      password: document.getElementById("sPassword").value,
-      role: document.getElementById("sRole").value,
-      title: document.getElementById("sTitle").value || undefined,
-      permissions,
-    };
+    const role = document.getElementById("sRole").value;
     const branchSelect = document.getElementById("sBranch");
-    if (branchSelect) payload.branchId = branchSelect.value;
 
-    await adminApi.createStaff(payload);
+    const department = document.getElementById("sDepartment").value || undefined;
+    if (role === "MANAGER") {
+      // Directors only — a real Manager account, not a mislabeled Staff row.
+      const payload = {
+        name: document.getElementById("sName").value,
+        email: document.getElementById("sEmail").value,
+        password: document.getElementById("sPassword").value,
+        roleTitle: document.getElementById("sTitle").value || undefined,
+        department,
+        branchId: branchSelect ? branchSelect.value : undefined,
+        permissions,
+      };
+      await adminApi.createManager(payload);
+      showNotice("staffNotice", "Manager account created.", "success");
+    } else {
+      const payload = {
+        name: document.getElementById("sName").value,
+        email: document.getElementById("sEmail").value,
+        password: document.getElementById("sPassword").value,
+        roleTitle: document.getElementById("sTitle").value || undefined,
+        department,
+        permissions,
+      };
+      if (branchSelect) payload.branchId = branchSelect.value;
+      await adminApi.createStaff(payload);
+      showNotice("staffNotice", "Staff account created.", "success");
+    }
+
     closeStaffModal();
-    showNotice("staffNotice", "Staff account created.", "success");
     refreshStaffTable();
   } catch (err) {
     showNotice("staffNotice", err.message);
@@ -2141,8 +2504,8 @@ function renderSiteSettingsTab(tab) {
         <div class="form-row">
           <div class="form-field"><label>Default currency</label>
             <select id="ssCurrency">
-              <option value="NGN" ${s.currency === "NGN" ? "selected" : ""}>NGN (&#8358;)</option>
-              <option value="USD" ${s.currency === "USD" ? "selected" : ""}>USD ($)</option>
+              <option value="NGN" ${s.baseCurrency === "NGN" ? "selected" : ""}>NGN (&#8358;)</option>
+              <option value="USD" ${s.baseCurrency === "USD" ? "selected" : ""}>USD ($)</option>
             </select>
           </div>
           <div class="form-field"><label>Tax rate (%)</label><input type="number" id="ssTaxRate" min="0" max="100" step="0.1" value="${s.taxRatePercent || 0}"></div>
@@ -2194,7 +2557,7 @@ async function submitSiteSettingsForm(e) {
         checkInTime: document.getElementById("ssCheckIn").value,
         checkOutTime: document.getElementById("ssCheckOut").value,
         cancellationPolicy: document.getElementById("ssCancellation").value,
-        currency: document.getElementById("ssCurrency").value,
+        baseCurrency: document.getElementById("ssCurrency").value,
         taxRatePercent: Number(document.getElementById("ssTaxRate").value),
       };
     } else if (tab === "seo") {

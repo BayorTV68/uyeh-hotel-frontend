@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Oxygen Hotel — Book Your Stay</title>
+<title>Book Your Stay</title>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <style>
@@ -154,7 +154,7 @@ tr:last-child td { border-bottom: none; }
 
 <div class="auth-screen" id="authScreen">
   <div class="auth-card">
-    <div class="brand">Oxygen <span>Hotel</span></div>
+    <div class="brand" id="authBrand">Our Hotel</div>
     <p class="sub">Book your stay, manage reservations, and get support — all in one place.</p>
     <div class="auth-tabs">
       <button class="auth-tab-btn active" data-tab="login" onclick="switchAuthTab('login')">Log in</button>
@@ -180,7 +180,7 @@ tr:last-child td { border-bottom: none; }
 
 <div id="appShell" style="display:none;">
   <div class="navbar">
-    <div class="nav-brand" onclick="switchPage('search')"><div class="logo-icon">O</div>Oxygen <span>&nbsp;Hotel</span></div>
+    <div class="nav-brand" onclick="switchPage('search')"><div class="logo-icon" id="navBrandIcon">H</div><span id="navBrandText">Our Hotel</span></div>
     <div class="nav-links" id="navLinks"></div>
     <div class="nav-user">
       <span class="nav-user-name" id="navUserName"></span>
@@ -197,15 +197,39 @@ tr:last-child td { border-bottom: none; }
    ============================================================ */
 const API_BASE = "/api"; // adjust to your deployed backend base URL
 function getToken() { return localStorage.getItem("guest_token"); }
+function getRefreshToken() { return localStorage.getItem("guest_refresh_token"); }
 function getGuest() { try { return JSON.parse(localStorage.getItem("guest_user")); } catch { return null; } }
-function setSession(token, guest) { localStorage.setItem("guest_token", token); localStorage.setItem("guest_user", JSON.stringify(guest)); }
-function clearSession() { localStorage.removeItem("guest_token"); localStorage.removeItem("guest_user"); }
+function setSession(token, refreshToken, guest) {
+  localStorage.setItem("guest_token", token);
+  localStorage.setItem("guest_refresh_token", refreshToken || "");
+  localStorage.setItem("guest_user", JSON.stringify(guest));
+}
+function clearSession() {
+  localStorage.removeItem("guest_token");
+  localStorage.removeItem("guest_refresh_token");
+  localStorage.removeItem("guest_user");
+}
 
 /* ============================================================
-   API — guest-scoped. The backend must derive "which guest" from
-   the token on every /guest/* call below; this panel never sends
-   a guestId, so a guest can never view or act on another guest's
+   API — guest-scoped. The backend derives "which guest" from the
+   token on every /guest/* call below; this panel never sends a
+   guestId, so a guest can never view or act on another guest's
    bookings/tickets/payments by editing a request.
+
+   IMPORTANT — paths corrected against the real backend:
+   - There is no /public/* prefix anywhere. Branch listing and
+     branch-scoped browsing (room types, availability, menu, bar
+     menu, spa treatments, laundry items, events, reviews) all live
+     directly under /branches/:branchId/... on publicRoutes.
+   - Booking/ticket CREATION, cancellation, and detail-lookup are
+     also on publicRoutes (branch-scoped), NOT under /guest/* — the
+     /guest/* namespace only has the account-scoped LIST views
+     (bookings, orders, tickets) plus profile/preferences/loyalty/
+     wishlist/reviews.
+   - createBooking requires a specific roomId, not a room TYPE id —
+     see checkAvailability() below, which returns individual rooms.
+   - Payment is a separate step after booking/order creation, not
+     part of it — see initiateBookingPayment/initiateOrderPayment.
    ============================================================ */
 async function guestRequest(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
@@ -221,23 +245,61 @@ const guestApi = {
   register: (payload) => guestRequest("/auth/guest/register", { method: "POST", body: JSON.stringify(payload) }),
   login: (email, password) => guestRequest("/auth/guest/login", { method: "POST", body: JSON.stringify({ email, password }) }),
 
-  listBranches: () => guestRequest("/public/branches"),
-  searchRoomTypes: (params) => { const qs = new URLSearchParams(params).toString(); return guestRequest(`/public/room-types?${qs}`); },
-  listOfferings: (branchId) => guestRequest(`/public/offerings?branchId=${branchId}`),
+  // Platform name — set only by the Director (see hotel-server settings backbone)
+  getSettings: () => guestRequest("/settings"),
 
-  createBooking: (payload) => guestRequest("/guest/bookings", { method: "POST", body: JSON.stringify(payload) }),
+  listBranches: () => guestRequest("/branches"),
+  getBranch: (branchId) => guestRequest(`/branches/${branchId}`),
+  // Returns individual Room records (each with a real roomId + nested roomType),
+  // not aggregated room-type search results — there is no separate "search"
+  // endpoint. Grouping by type for display happens client-side below.
+  checkAvailability: (branchId, checkIn, checkOut) =>
+    guestRequest(`/branches/${branchId}/availability?checkIn=${checkIn}&checkOut=${checkOut}`),
+
+  createBooking: (branchId, payload) => guestRequest(`/branches/${branchId}/bookings`, { method: "POST", body: JSON.stringify(payload) }),
+  initiateBookingPayment: (branchId, bookingId, callbackUrl) =>
+    guestRequest(`/branches/${branchId}/bookings/${bookingId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
   listMyBookings: () => guestRequest("/guest/bookings"),
-  cancelBooking: (id) => guestRequest(`/guest/bookings/${id}/cancel`, { method: "PATCH" }),
-  getInvoiceUrl: (bookingId) => `${API_BASE}/guest/bookings/${bookingId}/invoice`,
+  cancelBooking: (branchId, id) => guestRequest(`/branches/${branchId}/bookings/${id}/cancel`, { method: "PATCH" }),
+  // No invoice route exists on the backend yet — intentionally not offered
+  // in this panel rather than linking to something that 404s.
 
   listMyTickets: () => guestRequest("/guest/tickets"),
-  createTicket: (payload) => guestRequest("/guest/tickets", { method: "POST", body: JSON.stringify(payload) }),
-  getTicket: (id) => guestRequest(`/guest/tickets/${id}`),
-  replyToTicket: (id, message) => guestRequest(`/guest/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
+  createTicket: (branchId, payload) => guestRequest(`/branches/${branchId}/tickets`, { method: "POST", body: JSON.stringify(payload) }),
+  getTicket: (branchId, id) => guestRequest(`/branches/${branchId}/tickets/${id}`),
+  // Requires server-patch-15 (adds POST /branches/:branchId/tickets/:id/messages
+  // for guests — that route did not exist in the original backend at all).
+  replyToTicket: (branchId, id, message) => guestRequest(`/branches/${branchId}/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
 
   getProfile: () => guestRequest("/guest/profile"),
   updateProfile: (payload) => guestRequest("/guest/profile", { method: "PATCH", body: JSON.stringify(payload) }),
   changePassword: (payload) => guestRequest("/guest/profile/password", { method: "PATCH", body: JSON.stringify(payload) }),
+  updatePreferences: (payload) => guestRequest("/guest/preferences", { method: "PATCH", body: JSON.stringify(payload) }),
+  listMyOrders: () => guestRequest("/guest/orders"),
+
+  // --- Loyalty (new section) ---
+  getLoyalty: () => guestRequest("/guest/loyalty"),
+  redeemLoyaltyPoints: (points) => guestRequest("/guest/loyalty/redeem", { method: "POST", body: JSON.stringify({ points }) }),
+
+  // --- Wishlist (new section) ---
+  listWishlist: () => guestRequest("/guest/wishlist"),
+  addWishlistItem: (payload) => guestRequest("/guest/wishlist", { method: "POST", body: JSON.stringify(payload) }),
+  removeWishlistItem: (id) => guestRequest(`/guest/wishlist/${id}`, { method: "DELETE" }),
+
+  // --- Reviews (new section) ---
+  createReview: (payload) => guestRequest("/guest/reviews", { method: "POST", body: JSON.stringify(payload) }),
+
+  // --- Events (was "coming soon" — real endpoint exists) ---
+  listEvents: (branchId) => guestRequest(`/branches/${branchId}/events`),
+
+  // --- Ordering (new section) — catalog browsing per type, all branch-scoped ---
+  getMenu: (branchId) => guestRequest(`/branches/${branchId}/menu`),
+  getBarMenu: (branchId) => guestRequest(`/branches/${branchId}/bar-menu`),
+  getSpaTreatments: (branchId) => guestRequest(`/branches/${branchId}/spa-treatments`),
+  getLaundryItems: (branchId) => guestRequest(`/branches/${branchId}/laundry-items`),
+  createOrder: (branchId, payload) => guestRequest(`/branches/${branchId}/orders`, { method: "POST", body: JSON.stringify(payload) }),
+  initiateOrderPayment: (branchId, orderId, callbackUrl) =>
+    guestRequest(`/branches/${branchId}/orders/${orderId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
 };
 
 /* ============================================================
@@ -255,21 +317,40 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Logging in…";
   try {
-    const { token, guest } = await guestApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
-    setSession(token, guest); showApp();
+    const result = await guestApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (result.requires2FA) {
+      throw new Error("This account has two-factor authentication enabled. 2FA login isn't wired into this panel yet.");
+    }
+    setSession(result.token, result.refreshToken, result.guest);
+    showApp();
   } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Log in"; }
 });
 document.getElementById("registerForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("registerBtn"); btn.disabled = true; btn.textContent = "Creating account…";
   try {
-    const { token, guest } = await guestApi.register({
+    const result = await guestApi.register({
       name: document.getElementById("regName").value, email: document.getElementById("regEmail").value,
       phone: document.getElementById("regPhone").value || undefined, password: document.getElementById("regPassword").value,
     });
-    setSession(token, guest); showApp();
+    setSession(result.token, result.refreshToken, result.guest);
+    showApp();
   } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Create account"; }
 });
+
+/* ============================================================
+   PLATFORM NAME — set only by the Director, never hardcoded
+   ============================================================ */
+async function hydratePlatformName() {
+  try {
+    const { settings } = await guestApi.getSettings();
+    const name = settings.platformName || settings.name || "Our Hotel";
+    document.title = document.title.replace("Our Hotel", name).replace("Book Your Stay", `Book Your Stay — ${name}`);
+    const authBrand = document.getElementById("authBrand"); if (authBrand) authBrand.textContent = name;
+    const navBrandText = document.getElementById("navBrandText"); if (navBrandText) navBrandText.textContent = name;
+    const navBrandIcon = document.getElementById("navBrandIcon"); if (navBrandIcon) navBrandIcon.textContent = name.charAt(0).toUpperCase();
+  } catch (err) { /* keep the "Our Hotel" fallback already in the HTML */ }
+}
 
 /* ============================================================
    NAV
@@ -277,7 +358,10 @@ document.getElementById("registerForm").addEventListener("submit", async (e) => 
 const NAV_LINKS = [
   { page: "search", label: "Book a Stay", icon: "fa-magnifying-glass" },
   { page: "bookings", label: "My Bookings", icon: "fa-calendar-check" },
+  { page: "order", label: "Order", icon: "fa-utensils" },
   { page: "events", label: "Events", icon: "fa-champagne-glasses" },
+  { page: "loyalty", label: "Loyalty", icon: "fa-gem" },
+  { page: "wishlist", label: "Wishlist", icon: "fa-heart" },
   { page: "support", label: "Support", icon: "fa-headset", badgeId: "supportNavBadge" },
   { page: "profile", label: "Profile", icon: "fa-user" },
 ];
@@ -292,15 +376,17 @@ function renderNav() {
     </div>
   `).join("");
 }
-function setActiveNav(page) { document.querySelectorAll(".nav-link").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page)); }
+function setActiveNav(page) {
+  document.querySelectorAll(".nav-link").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page));
+}
 
-/* ============================================================
-   ROUTER
-   ============================================================ */
 const PAGE_LOADERS = {
   search: loadSearchPage,
   bookings: loadMyBookingsPage,
-  events: () => loadComingSoon("Events", "Browse and book hotel events soon."),
+  order: loadOrderPage,
+  events: loadEventsPage,
+  loyalty: loadLoyaltyPage,
+  wishlist: loadWishlistPage,
   support: loadSupportPage,
   profile: loadProfilePage,
 };
@@ -324,8 +410,8 @@ function pageHeader(title, subtitle) { return `<div class="page-header"><h1 clas
 /* ============================================================
    SEARCH & BOOK
    ============================================================ */
-let _searchOfferingsCache = [];
 let _searchContext = null;
+let _availableRoomsCache = []; // flat list of real Room records from the last search
 
 async function loadSearchPage() {
   const container = document.getElementById("pageContent");
@@ -370,21 +456,29 @@ async function runRoomSearch() {
   _searchContext = { branchId, checkIn, checkOut, guests };
 
   try {
-    const [{ roomTypes }, { offerings }] = await Promise.all([
-      guestApi.searchRoomTypes({ branchId, checkIn, checkOut, guests }),
-      guestApi.listOfferings(branchId),
-    ]);
-    _searchOfferingsCache = offerings || [];
+    const { availableRooms } = await guestApi.checkAvailability(branchId, checkIn, checkOut);
+    _availableRoomsCache = availableRooms || [];
 
-    resultsEl.innerHTML = roomTypes.length ? `
+    // Group the flat room list by room TYPE for display — one card per
+    // type, showing a live count — while keeping each individual room's
+    // real id available for when a specific room needs to be booked.
+    const byType = {};
+    _availableRoomsCache.forEach((r) => {
+      const key = r.roomType.id;
+      if (!byType[key]) byType[key] = { roomType: r.roomType, rooms: [] };
+      byType[key].rooms.push(r);
+    });
+    const grouped = Object.values(byType);
+
+    resultsEl.innerHTML = grouped.length ? `
       <div class="room-grid">
-        ${roomTypes.map((rt) => `
+        ${grouped.map(({ roomType, rooms }) => `
           <div class="room-card">
-            <h3>${rt.name}</h3>
-            <div class="meta">Sleeps up to ${rt.maxOccupancy} &middot; ${rt.availableCount ?? "—"} available</div>
-            <div class="price">&#8358;${Number(rt.basePrice).toLocaleString()}<span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;"> / night</span></div>
-            <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${rt.description || ""}</p>
-            <button class="btn btn-primary btn-block" onclick='openBookingModal(${JSON.stringify(rt).replace(/'/g, "&#39;")})'>Book this room</button>
+            <h3>${roomType.name}</h3>
+            <div class="meta">Sleeps up to ${roomType.maxOccupancy} &middot; ${rooms.length} available</div>
+            <div class="price">&#8358;${Number(roomType.basePrice).toLocaleString()}<span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;"> / night</span></div>
+            <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${roomType.description || ""}</p>
+            <button class="btn btn-primary btn-block" onclick='openBookingModal(${JSON.stringify(roomType).replace(/'/g, "&#39;")})'>Book this room</button>
           </div>
         `).join("")}
       </div>
@@ -400,13 +494,6 @@ function openBookingModal(roomType) {
   const nights = Math.max(1, Math.round((new Date(_searchContext.checkOut) - new Date(_searchContext.checkIn)) / 86400000));
   const roomSubtotal = roomType.basePrice * nights;
 
-  const addonsHtml = _searchOfferingsCache.length ? _searchOfferingsCache.map((o) => `
-    <label class="checkbox-item">
-      <input type="checkbox" class="bk-addon" value="${o.id}" data-price="${o.price}" onchange="recalcBookingTotal()">
-      ${o.name} — &#8358;${Number(o.price).toLocaleString()}
-    </label>
-  `).join("") : `<p style="color:var(--text-muted); font-size:0.84rem;">No add-ons available at this branch.</p>`;
-
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay";
   overlay.id = "bookingModal";
@@ -419,35 +506,21 @@ function openBookingModal(roomType) {
           <div class="form-field"><label>Guest name</label><input type="text" id="bkGuestName" value="${guest.name}" required></div>
           <div class="form-field"><label>Phone</label><input type="text" id="bkPhone" value="${guest.phone || ""}"></div>
         </div>
-        <div class="form-field"><label>Add-ons</label>${addonsHtml}</div>
-        <div class="form-field">
-          <label>Payment method</label>
-          <select id="bkMethod" required>
-            <option value="PAYSTACK">Paystack</option><option value="FLUTTERWAVE">Flutterwave</option>
-            <option value="CARD">Card</option><option value="TRANSFER">Bank transfer</option>
-          </select>
-        </div>
+        <div class="form-field"><label>Special requests <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><textarea id="bkRequests" rows="2"></textarea></div>
+        <div class="form-field"><label>Promo code <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="bkPromo" placeholder="e.g. LOYALTY-AB12CD"></div>
         <div class="summary-line"><span>${nights} night${nights > 1 ? "s" : ""} &times; &#8358;${Number(roomType.basePrice).toLocaleString()}</span><span>&#8358;${roomSubtotal.toLocaleString()}</span></div>
-        <div class="summary-line"><span>Add-ons</span><span id="bkAddonsTotal">&#8358;0</span></div>
-        <div class="summary-line total"><span>Total</span><span id="bkGrandTotal">&#8358;${roomSubtotal.toLocaleString()}</span></div>
+        <div class="summary-line total"><span>Total</span><span>&#8358;${roomSubtotal.toLocaleString()} <span style="font-weight:400; font-size:0.76rem; color:var(--text-muted);">(promo discount applied at checkout, if valid)</span></span></div>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">You'll pay securely via Paystack on the next step — card, bank transfer, or USSD.</p>
         <div class="modal-actions">
           <button type="button" class="btn btn-outline" onclick="closeBookingModal()">Cancel</button>
-          <button type="submit" class="btn btn-primary" id="bkSubmitBtn">Confirm & pay</button>
+          <button type="submit" class="btn btn-primary" id="bkSubmitBtn">Continue to payment</button>
         </div>
       </form>
     </div>
   `;
   document.body.appendChild(overlay);
   overlay.dataset.roomTypeId = roomType.id;
-  overlay.dataset.roomSubtotal = roomSubtotal;
   document.getElementById("bookingForm").addEventListener("submit", (e) => submitBookingForm(e, roomType));
-}
-function recalcBookingTotal() {
-  const overlay = document.getElementById("bookingModal");
-  const roomSubtotal = Number(overlay.dataset.roomSubtotal);
-  const addonsTotal = Array.from(document.querySelectorAll(".bk-addon:checked")).reduce((sum, el) => sum + Number(el.dataset.price), 0);
-  document.getElementById("bkAddonsTotal").textContent = `\u20a6${addonsTotal.toLocaleString()}`;
-  document.getElementById("bkGrandTotal").textContent = `\u20a6${(roomSubtotal + addonsTotal).toLocaleString()}`;
 }
 function closeBookingModal() { const el = document.getElementById("bookingModal"); if (el) el.remove(); }
 
@@ -455,22 +528,28 @@ async function submitBookingForm(e, roomType) {
   e.preventDefault();
   const btn = document.getElementById("bkSubmitBtn"); btn.disabled = true; btn.textContent = "Processing…";
   try {
-    const addonIds = Array.from(document.querySelectorAll(".bk-addon:checked")).map((el) => el.value);
-    const { booking, paymentUrl } = await guestApi.createBooking({
-      roomTypeId: roomType.id,
-      branchId: _searchContext.branchId,
+    // Pick the first still-available real room of the chosen type — the
+    // backend books a specific room, not a type, and this panel doesn't
+    // currently expose per-room selection (e.g. floor/room number) beyond
+    // "give me one of this type."
+    const room = _availableRoomsCache.find((r) => r.roomType.id === roomType.id);
+    if (!room) throw new Error("That room type is no longer available — please search again.");
+
+    const { booking } = await guestApi.createBooking(_searchContext.branchId, {
+      roomId: room.id,
       checkIn: _searchContext.checkIn,
       checkOut: _searchContext.checkOut,
-      guests: Number(_searchContext.guests),
-      guestName: document.getElementById("bkGuestName").value,
-      phone: document.getElementById("bkPhone").value || undefined,
-      offeringIds: addonIds,
-      paymentMethod: document.getElementById("bkMethod").value,
+      guestsCount: Number(_searchContext.guests),
+      specialRequests: document.getElementById("bkRequests").value || undefined,
+      promoCode: document.getElementById("bkPromo").value || undefined,
+      guest: { name: document.getElementById("bkGuestName").value, email: getGuest().email, phone: document.getElementById("bkPhone").value || undefined },
     });
+
+    // Booking is created PENDING — payment is a separate step.
+    const { authorizationUrl } = await guestApi.initiateBookingPayment(_searchContext.branchId, booking.id, window.location.origin + window.location.pathname);
     closeBookingModal();
-    if (paymentUrl) {
-      // Gateway (Paystack/Flutterwave) hosted checkout — hand off to it.
-      window.location.href = paymentUrl;
+    if (authorizationUrl) {
+      window.location.href = authorizationUrl;
     } else {
       showNotice("searchNotice", `Booking confirmed! Reference: ${booking.id}. See it under "My Bookings".`, "success");
       switchPage("bookings");
@@ -478,7 +557,7 @@ async function submitBookingForm(e, roomType) {
   } catch (err) {
     showNotice("bookingModalNotice", err.message);
   } finally {
-    btn.disabled = false; btn.textContent = "Confirm & pay";
+    btn.disabled = false; btn.textContent = "Continue to payment";
   }
 }
 
@@ -504,8 +583,8 @@ async function loadMyBookingsPage() {
           <span class="badge badge-${b.status.toLowerCase()}">${b.status}</span>
         </div>
         <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
-          <a class="btn btn-sm btn-outline" href="${guestApi.getInvoiceUrl(b.id)}" target="_blank" rel="noopener">View invoice</a>
-          ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.id}')">Cancel booking</button>` : ""}
+          ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.branchId}','${b.id}')">Cancel booking</button>` : ""}
+          ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.roomType.name}')">Leave a review</button>` : ""}
         </div>
       </div>
     `).join("") : `<div class="empty-state">You haven't booked with us yet. <a href="#" onclick="switchPage('search'); return false;" style="color:var(--brass-dark); font-weight:600;">Find a room →</a></div>`;
@@ -514,10 +593,373 @@ async function loadMyBookingsPage() {
     showNotice("myBookingsNotice", err.message);
   }
 }
-async function cancelMyBooking(id) {
+async function cancelMyBooking(branchId, id) {
   if (!confirm("Cancel this booking? This can't be undone.")) return;
-  try { await guestApi.cancelBooking(id); loadMyBookingsPage(); }
+  try { await guestApi.cancelBooking(branchId, id); loadMyBookingsPage(); }
   catch (err) { showNotice("myBookingsNotice", err.message); }
+}
+
+function openReviewModal(bookingId, roomTypeName) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "reviewModal";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Review your stay — ${roomTypeName}</h3>
+      <div id="reviewNotice"></div>
+      <form id="reviewForm">
+        <div class="form-field">
+          <label>Rating</label>
+          <select id="rvRating" required>
+            <option value="5">★★★★★ Excellent</option>
+            <option value="4">★★★★ Very good</option>
+            <option value="3">★★★ Average</option>
+            <option value="2">★★ Poor</option>
+            <option value="1">★ Very poor</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Title <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="rvTitle"></div>
+        <div class="form-field"><label>Your review <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><textarea id="rvBody" rows="3"></textarea></div>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">Reviews are checked by the branch before appearing publicly.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('reviewModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="rvSubmitBtn">Submit review</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("reviewForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("rvSubmitBtn"); btn.disabled = true;
+    try {
+      const { message } = await guestApi.createReview({
+        bookingId, ratingValue: Number(document.getElementById("rvRating").value),
+        title: document.getElementById("rvTitle").value || undefined,
+        body: document.getElementById("rvBody").value || undefined,
+      });
+      overlay.remove();
+      showNotice("myBookingsNotice", message || "Thanks for your review!", "success");
+    } catch (err) {
+      document.getElementById("reviewNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ============================================================
+   EVENTS (was "coming soon" — real endpoint, now wired)
+   ============================================================ */
+async function loadEventsPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = "";
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { /* handled below */ }
+
+  container.innerHTML = `
+    ${pageHeader("Events", "Upcoming events at our branches.")}
+    <div class="form-field" style="max-width:320px;"><label>Branch</label><select id="evBranch" onchange="loadEventsForBranch()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
+    <div id="eventsNotice"></div>
+    <div id="eventsList"><div class="loading-state">Pick a branch to see its events.</div></div>
+  `;
+  if (branchOptions) loadEventsForBranch();
+}
+async function loadEventsForBranch() {
+  const branchId = document.getElementById("evBranch").value;
+  const listEl = document.getElementById("eventsList");
+  if (!branchId) return;
+  listEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { events } = await guestApi.listEvents(branchId);
+    listEl.innerHTML = events.length ? `<div class="room-grid">${events.map((ev) => `
+      <div class="room-card">
+        <h3>${ev.name}</h3>
+        <div class="meta">${new Date(ev.startsAt).toLocaleString()}${ev.capacity ? ` &middot; ${ev.capacity} spots` : ""}</div>
+        ${ev.price ? `<div class="price">&#8358;${Number(ev.price).toLocaleString()}</div>` : `<div class="price">Free</div>`}
+        <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${ev.description || ""}</p>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-primary btn-block" onclick="startEventOrder('${branchId}','${ev.id}','${ev.name.replace(/'/g, "&#39;")}')">Get ticket</button>
+          <button class="btn btn-outline" title="Save to wishlist" onclick="addToWishlist({branchId:'${branchId}', eventId:'${ev.id}'})"><i class="fas fa-heart"></i></button>
+        </div>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">No events scheduled at this branch right now.</div>`;
+  } catch (err) {
+    listEl.innerHTML = "";
+    showNotice("eventsNotice", err.message);
+  }
+}
+function startEventOrder(branchId, eventId, eventName) {
+  switchPage("order");
+  setTimeout(() => {
+    document.getElementById("orBranch").value = branchId;
+    document.getElementById("orType").value = "EVENT_TICKET";
+    loadOrderCatalog();
+  }, 50);
+}
+
+/* ============================================================
+   LOYALTY (new section)
+   ============================================================ */
+async function loadLoyaltyPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Loyalty", "Earn points on stays, redeem them for a discount code.")}
+    <div id="loyaltyNotice"></div>
+    <div id="loyaltyContent"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { points, tier, history } = await guestApi.getLoyalty();
+    document.getElementById("loyaltyContent").innerHTML = `
+      <div class="panel" style="text-align:center; margin-bottom:20px;">
+        <div style="font-size:2.4rem; font-weight:700; font-family:var(--font-display,serif);">${points}</div>
+        <div style="color:var(--text-muted); margin-bottom:4px;">points available</div>
+        <span class="badge badge-confirmed">${tier} tier</span>
+      </div>
+      <div class="panel" style="margin-bottom:20px;">
+        <h3 style="margin-bottom:12px;">Redeem points</h3>
+        <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">Redeem in blocks of 100 for a one-time discount code you can apply at checkout.</p>
+        <form id="redeemForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+          <div class="form-field" style="margin-bottom:0;"><label>Points (multiples of 100)</label><input type="number" id="rdPoints" min="100" step="100" value="100" style="max-width:140px;"></div>
+          <button type="submit" class="btn btn-primary" id="rdSubmitBtn">Redeem</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:12px;">History</h3>
+        ${history.length ? history.map((h) => `
+          <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border-soft); font-size:0.86rem;">
+            <span>${h.reason}</span>
+            <span style="font-weight:600; color:${h.points > 0 ? 'var(--success,#2f7d5f)' : 'var(--danger,#a3392a)'};">${h.points > 0 ? "+" : ""}${h.points}</span>
+          </div>
+        `).join("") : `<p style="color:var(--text-muted); font-size:0.86rem;">No activity yet.</p>`}
+      </div>
+    `;
+    document.getElementById("redeemForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("rdSubmitBtn"); btn.disabled = true;
+      try {
+        const { code, discountValue } = await guestApi.redeemLoyaltyPoints(Number(document.getElementById("rdPoints").value));
+        showNotice("loyaltyNotice", `Code ${code || ""} created${discountValue ? ` — worth ₦${Number(discountValue).toLocaleString()}` : ""}. Enter it at checkout.`, "success");
+        loadLoyaltyPage();
+      } catch (err) { showNotice("loyaltyNotice", err.message); btn.disabled = false; }
+    });
+  } catch (err) {
+    document.getElementById("loyaltyContent").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   WISHLIST (new section)
+   ============================================================ */
+async function loadWishlistPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Wishlist", "Rooms and events you've saved.")}
+    <div id="wishlistNotice"></div>
+    <div id="wishlistContent"><div class="loading-state">Loading…</div></div>
+  `;
+  await refreshWishlist();
+}
+async function refreshWishlist() {
+  try {
+    const { wishlist } = await guestApi.listWishlist();
+    document.getElementById("wishlistContent").innerHTML = wishlist.length ? `<div class="room-grid">${wishlist.map((w) => `
+      <div class="room-card">
+        <h3>${w.roomType ? w.roomType.name : (w.event ? w.event.name : "Saved item")}</h3>
+        <div class="meta">${w.branch ? w.branch.name : ""}</div>
+        <button class="btn btn-sm btn-outline btn-block" onclick="removeFromWishlist('${w.id}')">Remove</button>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">Nothing saved yet — tap the heart icon on a room or event to save it here.</div>`;
+  } catch (err) {
+    document.getElementById("wishlistContent").innerHTML = "";
+    showNotice("wishlistNotice", err.message);
+  }
+}
+async function addToWishlist(payload) {
+  try { await guestApi.addWishlistItem(payload); showNotice("eventsNotice", "Saved to wishlist.", "success"); }
+  catch (err) { showNotice("eventsNotice", err.message); }
+}
+async function removeFromWishlist(id) {
+  try { await guestApi.removeWishlistItem(id); refreshWishlist(); }
+  catch (err) { showNotice("wishlistNotice", err.message); }
+}
+
+/* ============================================================
+   ORDER (new section) — Room Service / Restaurant / Bar / Laundry /
+   Spa / Event Ticket, one type-dispatched flow matching the real
+   createOrder() controller's payload shape per type.
+   ============================================================ */
+let _orderCart = []; // [{ id, name, price, quantity }] for line-item types
+
+async function loadOrderPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = "";
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { /* handled below */ }
+
+  container.innerHTML = `
+    ${pageHeader("Order Something", "Room service, restaurant, bar, laundry, spa — order directly, pay through Paystack.")}
+    <div class="form-row" style="margin-bottom:20px;">
+      <div class="form-field"><label>Branch</label><select id="orBranch" onchange="loadOrderCatalog()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
+      <div class="form-field">
+        <label>What would you like to order?</label>
+        <select id="orType" onchange="loadOrderCatalog()">
+          <option value="ROOM_SERVICE">Room service</option>
+          <option value="RESTAURANT">Restaurant (dine-in)</option>
+          <option value="BAR">Bar</option>
+          <option value="LAUNDRY">Laundry</option>
+          <option value="SPA">Spa treatment</option>
+        </select>
+      </div>
+    </div>
+    <div id="orderNotice"></div>
+    <div id="orderCatalog"><div class="loading-state">Pick a branch to see what's available.</div></div>
+    <div id="orderCartSummary"></div>
+  `;
+  _orderCart = [];
+  if (branchOptions) loadOrderCatalog();
+}
+
+async function loadOrderCatalog() {
+  const branchId = document.getElementById("orBranch").value;
+  const type = document.getElementById("orType").value;
+  const catalogEl = document.getElementById("orderCatalog");
+  if (!branchId) return;
+  catalogEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+  _orderCart = [];
+  renderOrderCartSummary();
+
+  try {
+    if (type === "SPA") {
+      const { spaTreatments } = await guestApi.getSpaTreatments(branchId);
+      catalogEl.innerHTML = spaTreatments.length ? `<div class="offering-grid">${spaTreatments.map((t) => `
+        <div class="offering-card">
+          <b>${t.name}</b> — &#8358;${Number(t.price).toLocaleString()} <span style="color:var(--text-muted); font-size:0.8rem;">(${t.durationMinutes} min)</span>
+          <p style="font-size:0.82rem; color:var(--text-muted); margin:6px 0;">${t.description || ""}</p>
+          <button class="btn btn-sm btn-primary" onclick='bookSpaTreatment(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Book slot</button>
+        </div>
+      `).join("")}</div>` : `<div class="empty-state">No spa treatments available at this branch.</div>`;
+      return;
+    }
+
+    let items = [];
+    let priceField = "price", idField = "id";
+    if (type === "ROOM_SERVICE" || type === "RESTAURANT") {
+      const { menuItems } = await guestApi.getMenu(branchId);
+      items = type === "ROOM_SERVICE" ? menuItems.filter((m) => m.availableForRoomService) : menuItems;
+    } else if (type === "BAR") {
+      const { menuItems } = await guestApi.getBarMenu(branchId);
+      items = menuItems;
+    } else if (type === "LAUNDRY") {
+      const { laundryItems } = await guestApi.getLaundryItems(branchId);
+      items = laundryItems;
+    }
+
+    catalogEl.innerHTML = items.length ? `<div class="offering-grid">${items.map((it) => `
+      <div class="offering-card">
+        <b>${it.name}</b> — &#8358;${Number(it.price).toLocaleString()}
+        <p style="font-size:0.82rem; color:var(--text-muted); margin:6px 0;">${it.description || ""}</p>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="number" min="1" value="1" id="qty-${it.id}" style="width:60px; padding:6px; border:1px solid var(--border,#ddd); border-radius:6px;">
+          <button class="btn btn-sm btn-primary" onclick='addToOrderCart(${JSON.stringify(it).replace(/'/g, "&#39;")})'>Add</button>
+        </div>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">Nothing available here right now.</div>`;
+  } catch (err) {
+    catalogEl.innerHTML = "";
+    showNotice("orderNotice", err.message);
+  }
+}
+
+function addToOrderCart(item) {
+  const qty = Math.max(1, Number(document.getElementById(`qty-${item.id}`).value) || 1);
+  const existing = _orderCart.find((l) => l.id === item.id);
+  if (existing) existing.quantity += qty;
+  else _orderCart.push({ id: item.id, name: item.name, price: Number(item.price), quantity: qty });
+  renderOrderCartSummary();
+}
+function removeFromOrderCart(id) {
+  _orderCart = _orderCart.filter((l) => l.id !== id);
+  renderOrderCartSummary();
+}
+function renderOrderCartSummary() {
+  const el = document.getElementById("orderCartSummary");
+  if (!_orderCart.length) { el.innerHTML = ""; return; }
+  const total = _orderCart.reduce((sum, l) => sum + l.price * l.quantity, 0);
+  el.innerHTML = `
+    <div class="panel" style="margin-top:20px;">
+      <h3 style="margin-bottom:10px;">Your order</h3>
+      ${_orderCart.map((l) => `
+        <div class="summary-line"><span>${l.name} &times; ${l.quantity}</span><span>&#8358;${(l.price * l.quantity).toLocaleString()} <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="removeFromOrderCart('${l.id}')">&times;</button></span></div>
+      `).join("")}
+      <div class="summary-line total"><span>Total</span><span>&#8358;${total.toLocaleString()}</span></div>
+      <button class="btn btn-primary btn-block" style="margin-top:10px;" id="orSubmitBtn" onclick="submitOrder()">Place order &amp; pay</button>
+    </div>
+  `;
+}
+
+async function submitOrder() {
+  const branchId = document.getElementById("orBranch").value;
+  const type = document.getElementById("orType").value;
+  const btn = document.getElementById("orSubmitBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Processing…"; }
+  try {
+    const lineField = type === "LAUNDRY" ? "laundryItemId" : "menuItemId";
+    const lines = _orderCart.map((l) => ({ [lineField]: l.id, quantity: l.quantity }));
+    const { order } = await guestApi.createOrder(branchId, {
+      type, lines,
+      guest: getGuest() ? undefined : undefined, // logged-in guest — backend uses the token
+    });
+    const { authorizationUrl } = await guestApi.initiateOrderPayment(branchId, order.id, window.location.origin + window.location.pathname);
+    if (authorizationUrl) {
+      window.location.href = authorizationUrl;
+    } else {
+      _orderCart = [];
+      showNotice("orderNotice", "Order placed!", "success");
+      renderOrderCartSummary();
+    }
+  } catch (err) {
+    showNotice("orderNotice", err.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Place order & pay"; }
+  }
+}
+
+function bookSpaTreatment(treatment) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "spaModal";
+  const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Book — ${treatment.name}</h3>
+      <div id="spaModalNotice"></div>
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">${treatment.durationMinutes} minutes &middot; &#8358;${Number(treatment.price).toLocaleString()}</p>
+      <form id="spaForm">
+        <div class="form-field"><label>Date &amp; time</label><input type="datetime-local" id="spTime" min="${now.toISOString().slice(0,16)}" required></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('spaModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="spSubmitBtn">Book &amp; pay</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("spaForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const branchId = document.getElementById("orBranch").value;
+    const btn = document.getElementById("spSubmitBtn"); btn.disabled = true;
+    try {
+      const { order } = await guestApi.createOrder(branchId, {
+        type: "SPA", treatmentId: treatment.id, scheduledAt: new Date(document.getElementById("spTime").value).toISOString(),
+      });
+      const { authorizationUrl } = await guestApi.initiateOrderPayment(branchId, order.id, window.location.origin + window.location.pathname);
+      overlay.remove();
+      if (authorizationUrl) window.location.href = authorizationUrl;
+      else showNotice("orderNotice", "Spa appointment booked!", "success");
+    } catch (err) {
+      document.getElementById("spaModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ============================================================
@@ -536,6 +978,7 @@ async function loadSupportPage() {
 async function refreshSupportTickets() {
   try {
     const { tickets } = await guestApi.listMyTickets();
+    window._myTickets = tickets; // so openTicketThread can look up branchId without a re-fetch
     document.getElementById("ticketsList").innerHTML = tickets.length ? tickets.map((t) => `
       <div class="panel" style="cursor:pointer;" onclick="openTicketThread('${t.id}')">
         <div style="display:flex; justify-content:space-between; align-items:center;">
@@ -558,8 +1001,8 @@ function openNewTicketModal() {
       <h3>New support request</h3>
       <div id="newTicketNotice"></div>
       <form id="newTicketForm">
+        <div class="form-field"><label>Which branch is this about?</label><select id="ntBranch"></select></div>
         <div class="form-field"><label>Subject</label><input type="text" id="ntSubject" required></div>
-        <div class="form-field"><label>Related booking ID <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="ntBookingId"></div>
         <div class="form-field"><label>Message</label><textarea id="ntMessage" rows="4" required></textarea></div>
         <div class="modal-actions">
           <button type="button" class="btn btn-outline" onclick="document.getElementById('newTicketModal').remove()">Cancel</button>
@@ -568,13 +1011,17 @@ function openNewTicketModal() {
       </form>
     </div>`;
   document.body.appendChild(overlay);
+  guestApi.listBranches().then(({ branches }) => {
+    document.getElementById("ntBranch").innerHTML = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  }).catch(() => { document.getElementById("ntBranch").innerHTML = `<option value="">Couldn't load branches</option>`; });
+
   document.getElementById("newTicketForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const btn = document.getElementById("ntSubmitBtn"); btn.disabled = true;
     try {
-      await guestApi.createTicket({
+      const branchId = document.getElementById("ntBranch").value;
+      await guestApi.createTicket(branchId, {
         subject: document.getElementById("ntSubject").value,
-        bookingId: document.getElementById("ntBookingId").value || undefined,
         message: document.getElementById("ntMessage").value,
       });
       overlay.remove(); showNotice("supportNotice", "Support request sent.", "success"); refreshSupportTickets();
@@ -583,37 +1030,38 @@ function openNewTicketModal() {
   });
 }
 async function openTicketThread(id) {
+  const summary = (window._myTickets || []).find((t) => t.id === id);
+  const branchId = summary ? summary.branchId : null;
+
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay"; overlay.id = "ticketThreadModal";
   overlay.innerHTML = `<div class="modal"><div class="loading-state">Loading…</div></div>`;
   document.body.appendChild(overlay);
   try {
-    const { ticket } = await guestApi.getTicket(id);
-    const guest = getGuest();
+    if (!branchId) throw new Error("Couldn't determine which branch this ticket belongs to — please refresh and try again.");
+    const { ticket } = await guestApi.getTicket(branchId, id);
     overlay.querySelector(".modal").innerHTML = `
       <h3>${ticket.subject} <span class="badge badge-${ticket.status.toLowerCase()}" style="margin-left:8px;">${ticket.status}</span></h3>
       <div class="chat-thread">
         ${(ticket.messages || []).map((m) => `
-          <div class="chat-bubble ${m.senderType === "guest" ? "mine" : "theirs"}">
+          <div class="chat-bubble ${m.senderType === "GUEST" ? "mine" : "theirs"}">
             ${m.message}
-            <div class="meta">${m.senderType === "guest" ? "You" : "Staff"} &middot; ${(m.createdAt||"").replace("T"," ").slice(0,16)}</div>
+            <div class="meta">${m.senderType === "GUEST" ? "You" : "Staff"} &middot; ${(m.createdAt||"").replace("T"," ").slice(0,16)}</div>
           </div>
         `).join("") || `<p style="color:var(--text-muted); font-size:0.84rem;">No messages yet.</p>`}
       </div>
-      ${ticket.status !== "RESOLVED" ? `
-        <form id="replyForm">
-          <div class="form-field"><textarea id="replyMessage" rows="2" placeholder="Write a reply…" required></textarea></div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="document.getElementById('ticketThreadModal').remove()">Close</button>
-            <button type="submit" class="btn btn-primary" id="replySubmitBtn">Send reply</button>
-          </div>
-        </form>` : `<div class="modal-actions"><button class="btn btn-outline" onclick="document.getElementById('ticketThreadModal').remove()">Close</button></div>`}
+      <form id="replyForm">
+        <div class="form-field"><textarea id="replyMessage" rows="2" placeholder="Write a reply…" required></textarea></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('ticketThreadModal').remove()">Close</button>
+          <button type="submit" class="btn btn-primary" id="replySubmitBtn">Send reply</button>
+        </div>
+      </form>
     `;
-    const replyForm = document.getElementById("replyForm");
-    if (replyForm) replyForm.addEventListener("submit", async (e) => {
+    document.getElementById("replyForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       const btn = document.getElementById("replySubmitBtn"); btn.disabled = true;
-      try { await guestApi.replyToTicket(id, document.getElementById("replyMessage").value); overlay.remove(); openTicketThread(id); }
+      try { await guestApi.replyToTicket(branchId, id, document.getElementById("replyMessage").value); overlay.remove(); refreshSupportTickets(); openTicketThread(id); }
       catch (err) { alert(err.message); btn.disabled = false; }
     });
   } catch (err) {
@@ -630,6 +1078,7 @@ async function loadProfilePage() {
     ${pageHeader("Profile", "Your account details.")}
     <div class="tabs">
       <button class="tab-btn active" data-tab="details" onclick="switchProfileTab('details')">Details</button>
+      <button class="tab-btn" data-tab="preferences" onclick="switchProfileTab('preferences')">Preferences</button>
       <button class="tab-btn" data-tab="password" onclick="switchProfileTab('password')">Password</button>
     </div>
     <div id="profileNotice"></div>
@@ -665,8 +1114,27 @@ function renderProfileTab(tab) {
         const { profile } = await guestApi.updateProfile({ name: document.getElementById("pfName").value,
           phone: document.getElementById("pfPhone").value, email: document.getElementById("pfEmail").value });
         window._guestProfile = profile;
-        const session = getGuest(); session.name = profile.name; setSession(getToken(), session); renderNav();
+        const session = getGuest(); session.name = profile.name; setSession(getToken(), getRefreshToken(), session); renderNav();
         showNotice("profileNotice", "Profile updated.", "success");
+      } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+    });
+  } else if (tab === "preferences") {
+    panel.innerHTML = `
+      <form id="preferencesForm">
+        <div class="form-field"><label>Dietary notes <span style="color:var(--text-muted); font-weight:400;">(allergies, restrictions)</span></label><textarea id="pfDietary" rows="2">${p.dietaryNotes || ""}</textarea></div>
+        <div class="form-field"><label>Standing requests <span style="color:var(--text-muted); font-weight:400;">(room preferences, anything staff should know ahead of time)</span></label><textarea id="pfRequests" rows="2">${p.specialRequests || ""}</textarea></div>
+        <button type="submit" class="btn btn-primary" id="pefSubmitBtn">Save preferences</button>
+      </form>`;
+    document.getElementById("preferencesForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("pefSubmitBtn"); btn.disabled = true;
+      try {
+        const { profile } = await guestApi.updatePreferences({
+          dietaryNotes: document.getElementById("pfDietary").value,
+          specialRequests: document.getElementById("pfRequests").value,
+        });
+        window._guestProfile = { ...window._guestProfile, ...profile };
+        showNotice("profileNotice", "Preferences saved.", "success");
       } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
     });
   } else {
@@ -718,6 +1186,7 @@ document.getElementById("mobileNavToggle").addEventListener("click", () => {
 });
 
 // Boot
+hydratePlatformName();
 if (getToken() && getGuest()) { showApp(); } else { showAuth(); }
 </script>
 </body>

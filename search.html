@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Locations — Uyeh Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12181B; --emerald: #1F3A34; --brass: #C9A227; --brass-soft: #E4C868;
+    --ivory: #F7F4EC; --stone: #A69C8C; --ember: #B5502E; --line: rgba(201,162,39,0.24);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ivory); color: var(--ink); font-family: 'Inter', sans-serif; line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+  .eyebrow { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); }
+
+  nav { background: var(--ivory); padding: 22px 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+  .brand { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; }
+  .brand span { color: var(--brass); }
+  .navlinks { display: flex; gap: 32px; font-size: 0.88rem; font-weight: 500; }
+
+  .hero { background: var(--emerald); color: var(--ivory); padding: 76px 40px 56px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before { content:""; position:absolute; inset:0; background-image: repeating-linear-gradient(0deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 60px); opacity: 0.4; }
+  .hero-inner { position: relative; }
+  .hero .eyebrow { color: var(--brass-soft); }
+  .hero h1 { font-size: clamp(2.2rem, 5.5vw, 3.6rem); margin: 12px 0 30px; }
+
+  .search-box {
+    max-width: 640px; margin: 0 auto;
+    display: flex; background: var(--ivory); border-radius: 2px; overflow: hidden;
+  }
+  .search-box input {
+    flex: 1; border: none; padding: 16px 18px; font-family: 'Inter'; font-size: 0.95rem; background: transparent; color: var(--ink);
+  }
+  .search-box input:focus { outline: none; }
+  .search-box .sb-icon { padding: 0 18px; display: flex; align-items: center; color: var(--stone); font-family: 'Space Mono', monospace; }
+
+  .filters { max-width: 1080px; margin: 0 auto; padding: 40px 40px 0; display: flex; flex-wrap: wrap; gap: 10px; }
+  .filter-chip {
+    font-family: 'Space Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 9px 16px; border: 1px solid var(--emerald); color: var(--emerald); border-radius: 999px;
+    cursor: pointer; background: transparent; transition: all 0.2s;
+  }
+  .filter-chip.active, .filter-chip:hover { background: var(--emerald); color: var(--ivory); }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 40px 40px 100px; }
+  .results-meta { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--stone); margin-bottom: 26px; }
+
+  .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 26px; }
+  .listing-card { background: white; border: 1px solid var(--line); padding: 0; overflow: hidden; transition: border-color 0.25s, transform 0.25s; }
+  .listing-card:hover { border-color: var(--brass); transform: translateY(-3px); }
+  .lc-head { background: var(--emerald); color: var(--ivory); padding: 26px; position: relative; }
+  .lc-head::before { content:""; position:absolute; inset:0; background-image: repeating-linear-gradient(45deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 40px); opacity: 0.35; }
+  .lc-head-inner { position: relative; }
+  .lc-city { font-family: 'Space Mono', monospace; font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass-soft); }
+  .lc-name { font-family: 'Fraunces', serif; font-size: 1.4rem; margin-top: 6px; }
+  .lc-body { padding: 22px 26px 26px; }
+  .lc-address { font-size: 0.86rem; color: #444; margin-bottom: 16px; min-height: 20px; }
+  .lc-services { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+  .lc-services span { font-family: 'Space Mono', monospace; font-size: 0.64rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--emerald); border: 1px solid var(--line); padding: 3px 10px; border-radius: 999px; }
+  .btn {
+    display: block; width: 100%; text-align: center;
+    font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 12px 20px; background: var(--emerald); color: var(--ivory); border: 1px solid var(--emerald);
+    transition: background 0.2s, color 0.2s;
+  }
+  .btn:hover { background: transparent; color: var(--emerald); }
+
+  .empty-note, .loading { text-align: center; color: var(--stone); font-family: 'Space Mono', monospace; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 60px 0; }
+  .error-note { text-align: center; color: var(--ember); padding: 60px 0; }
+
+  footer { background: var(--ink); color: rgba(247,244,236,0.6); padding: 50px 40px; text-align: center; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="index.html">Uyeh <span>Hotel</span></a>
+  <div class="navlinks">
+    <a href="about.html">About</a>
+    <a href="support.html">Contact</a>
+    <a href="login.html">Sign in</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">Our Locations</div>
+    <h1>Find your property</h1>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="Search by city or property name&hellip;">
+      <div class="sb-icon">&#8981;</div>
+    </div>
+  </div>
+</header>
+
+<div class="filters" id="serviceFilters"></div>
+
+<main>
+  <div class="results-meta" id="resultsMeta"></div>
+  <div class="results-grid" id="resultsGrid"><p class="loading">Loading locations&hellip;</p></div>
+</main>
+
+<footer>&copy; <span id="year"></span> Uyeh Hotel. All rights reserved.</footer>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+document.getElementById("year").textContent = new Date().getFullYear();
+
+let allBranches = [];
+let activeService = null;
+
+const SERVICE_LABELS = { rooms: "Rooms", events: "Events", restaurant: "Restaurant", bar: "Bar", spa: "Spa", laundry: "Laundry" };
+
+function render() {
+  const q = document.getElementById("searchInput").value.trim().toLowerCase();
+  let filtered = allBranches.filter((b) => {
+    const matchesQuery = !q || [b.name, b.city, b.state, b.address].filter(Boolean).join(" ").toLowerCase().includes(q);
+    const matchesService = !activeService || (b.services || []).includes(activeService);
+    return matchesQuery && matchesService;
+  });
+
+  document.getElementById("resultsMeta").textContent =
+    `${filtered.length} location${filtered.length === 1 ? "" : "s"}${activeService ? ` &middot; ${SERVICE_LABELS[activeService] || activeService}` : ""}`.replace("&middot;", "·");
+
+  const grid = document.getElementById("resultsGrid");
+  if (!filtered.length) {
+    grid.innerHTML = `<p class="empty-note" style="grid-column:1/-1;">No locations match your search.</p>`;
+    return;
+  }
+
+  grid.innerHTML = filtered.map((b) => `
+    <div class="listing-card">
+      <div class="lc-head">
+        <div class="lc-head-inner">
+          <div class="lc-city">${[b.city, b.state].filter(Boolean).join(", ") || "Location"}</div>
+          <div class="lc-name">${b.name}</div>
+        </div>
+      </div>
+      <div class="lc-body">
+        <div class="lc-address">${b.address || "Address available on request"}</div>
+        <div class="lc-services">${(b.services || []).map((s) => `<span>${SERVICE_LABELS[s] || s}</span>`).join("")}</div>
+        <a class="btn" href="hotel-details.html?branch=${b.id}">View property</a>
+      </div>
+    </div>
+  `).join("");
+}
+
+async function loadBranches() {
+  try {
+    const res = await fetch(`${API_BASE}/branches`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't load locations.");
+    allBranches = data.branches || [];
+
+    // Build service filter chips only for services that actually appear.
+    const services = [...new Set(allBranches.flatMap((b) => b.services || []))];
+    document.getElementById("serviceFilters").innerHTML = services.length
+      ? [`<button class="filter-chip active" data-service="">All</button>`]
+          .concat(services.map((s) => `<button class="filter-chip" data-service="${s}">${SERVICE_LABELS[s] || s}</button>`))
+          .join("")
+      : "";
+    document.querySelectorAll(".filter-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        document.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        activeService = chip.dataset.service || null;
+        render();
+      });
+    });
+
+    render();
+  } catch (err) {
+    document.getElementById("resultsGrid").innerHTML = `<p class="error-note" style="grid-column:1/-1;">${err.message}</p>`;
+  }
+}
+
+document.getElementById("searchInput").addEventListener("input", render);
+loadBranches();
+</script>
+</body>
+</html>

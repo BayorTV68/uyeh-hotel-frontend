@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Blog — Our Hotel</title>
+<meta name="description" id="pageDescription" content="News, offers, and stories from Our Hotel.">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #14181f; --ink-soft: #1c222b; --ivory: #f6f1e7; --ivory-dim: #ede5d4;
+  --brass: #b98d45; --brass-light: #d9b876; --teal: #2f5d5a; --teal-light: #3f7a76;
+  --text-muted: #6b6355; --text-on-ink: #ede6d6; --radius: 3px;
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+.site-nav { position: sticky; top: 0; z-index: 50; background: rgba(20, 24, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(217, 184, 118, 0.15); }
+.site-nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+.brand { font-family: var(--font-display); font-size: 1.3rem; color: var(--ivory); letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 10px; }
+.brand span { color: var(--brass-light); }
+.brand-logo { height: 32px; width: auto; display: block; }
+.nav-links { display: flex; gap: 36px; align-items: center; }
+.nav-links a { color: var(--text-on-ink); font-size: 0.92rem; letter-spacing: 0.02em; transition: color 0.2s; }
+.nav-links a:hover, .nav-links a.active { color: var(--brass-light); }
+.nav-cta { border: 1px solid var(--brass); color: var(--brass-light) !important; padding: 9px 20px; border-radius: var(--radius); font-size: 0.85rem !important; }
+.nav-cta:hover { background: var(--brass); color: var(--ink) !important; }
+.nav-toggle { display: none; background: none; border: none; color: var(--ivory); font-size: 1.5rem; cursor: pointer; }
+@media (max-width: 860px) {
+  .nav-links { position: fixed; top: 76px; left: 0; right: 0; background: var(--ink); flex-direction: column; padding: 24px 32px; gap: 20px; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: all 0.25s; }
+  .nav-links.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+  .nav-toggle { display: block; }
+}
+
+.page-header { background: var(--ink); color: var(--text-on-ink); padding: 80px 0 64px; position: relative; overflow: hidden; }
+.page-header::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.14) 0, transparent 45%); pointer-events: none; }
+.page-header .wrap { position: relative; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 20px; }
+.eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--brass); }
+.page-header h1 { font-size: clamp(2.2rem, 4.5vw, 3.2rem); max-width: 18ch; }
+
+section { padding: 72px 0; }
+
+.filter-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 40px; }
+.filter-chip { font-size: 0.82rem; letter-spacing: 0.02em; color: var(--teal); background: rgba(47, 93, 90, 0.08); padding: 7px 16px; border-radius: 20px; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+.filter-chip:hover, .filter-chip.active { background: var(--teal); color: var(--ivory); }
+
+.post-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 32px; }
+.post-card { background: #fff; border: 1px solid rgba(107, 99, 85, 0.12); border-radius: 4px; overflow: hidden; transition: transform 0.25s, box-shadow 0.25s; display: flex; flex-direction: column; }
+.post-card:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(20, 24, 31, 0.25); }
+.post-card-image { height: 180px; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-light) 60%, var(--brass) 140%); background-size: cover; background-position: center; }
+.post-card-body { padding: 24px 26px 28px; flex: 1; display: flex; flex-direction: column; }
+.post-card-body .post-meta { font-size: 0.76rem; letter-spacing: 0.05em; text-transform: uppercase; color: var(--brass); margin-bottom: 10px; }
+.post-card-body h3 { font-size: 1.25rem; margin-bottom: 10px; }
+.post-card-body p { color: var(--text-muted); font-size: 0.92rem; flex: 1; }
+.post-card-body .read-more { margin-top: 16px; font-size: 0.85rem; color: var(--teal); font-weight: 600; }
+
+.loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
+
+/* ---- Newsletter block ---- */
+.newsletter-band { background: linear-gradient(135deg, var(--teal) 0%, var(--ink) 100%); color: var(--ivory); text-align: center; padding: 80px 0; }
+.newsletter-band h2 { color: var(--ivory); font-size: clamp(1.7rem, 3vw, 2.3rem); margin-bottom: 14px; }
+.newsletter-band p { color: rgba(237,230,214,0.7); max-width: 44ch; margin: 0 auto 28px; font-size: 0.98rem; }
+.newsletter-form { display: flex; gap: 10px; max-width: 440px; margin: 0 auto; flex-wrap: wrap; justify-content: center; }
+.newsletter-form input { flex: 1; min-width: 220px; padding: 13px 16px; border-radius: var(--radius); border: 1px solid rgba(237,230,214,0.25); background: rgba(255,255,255,0.06); color: var(--ivory); font-family: var(--font-body); font-size: 0.92rem; }
+.newsletter-form input::placeholder { color: rgba(237,230,214,0.45); }
+.newsletter-form input:focus { outline: none; border-color: var(--brass-light); }
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 13px 26px; border-radius: var(--radius); font-size: 0.9rem; letter-spacing: 0.02em; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover { background: var(--brass-light); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.newsletter-note { font-size: 0.78rem; color: rgba(237,230,214,0.5); margin-top: 14px; }
+
+footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 48px 0 32px; }
+.footer-bottom { border-top: 1px solid rgba(237, 230, 214, 0.1); padding-top: 24px; font-size: 0.8rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+</style>
+</head>
+<body>
+
+<nav class="site-nav">
+  <div class="wrap">
+    <a href="index.html" class="brand" id="navBrand">Our Hotel</a>
+    <div class="nav-links" id="navLinks">
+      <a href="index.html">Home</a>
+      <a href="index.html#locations">Locations</a>
+      <a href="blog.html" class="active">Blog</a>
+      <a href="contact.html">Contact</a>
+      <a href="location.html" class="nav-cta">Book now</a>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">&#9776;</button>
+  </div>
+</nav>
+
+<header class="page-header">
+  <div class="wrap">
+    <span class="eyebrow">From the team</span>
+    <h1>News, offers, and stories</h1>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <div class="filter-row" id="tagFilters"></div>
+    <div class="post-grid" id="postGrid"><div class="loading-state">Loading posts…</div></div>
+  </div>
+</section>
+
+<section class="newsletter-band">
+  <div class="wrap">
+    <h2>Don't miss the next one</h2>
+    <p>Offers, new openings, and stories from every location — straight to your inbox, no spam.</p>
+    <form class="newsletter-form" id="newsletterForm">
+      <input type="email" id="newsletterEmail" placeholder="you@email.com" required>
+      <button type="submit" class="btn btn-primary" id="newsletterSubmitBtn">Subscribe</button>
+    </form>
+    <p class="newsletter-note" id="newsletterNote">We'll send a confirmation link — you're only added once you click it.</p>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-bottom">
+      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Our Hotel</span>. All rights reserved.</span>
+      <a href="index.html">&larr; Back to home</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  const API_BASE = window.__API_BASE__ || "/api";
+
+  async function apiRequest(path, options = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function initNav() {
+    const toggle = document.getElementById("navToggle");
+    const links = document.getElementById("navLinks");
+    if (toggle && links) toggle.addEventListener("click", () => links.classList.toggle("open"));
+  }
+
+  async function hydrateBrand() {
+    try {
+      const { settings } = await apiRequest("/settings");
+      const name = settings.platformName || "Our Hotel";
+      document.title = document.title.replace("Our Hotel", name);
+      document.getElementById("footerCopyrightName").textContent = name;
+      const navBrand = document.getElementById("navBrand");
+      if (settings.logoUrl) navBrand.innerHTML = `<img class="brand-logo" src="${settings.logoUrl}" alt="${name}">`;
+      else navBrand.textContent = name;
+    } catch (err) {
+      console.warn("Could not load platform name, using fallback:", err.message);
+    }
+  }
+
+  let allPosts = [];
+  function renderPosts(posts) {
+    const grid = document.getElementById("postGrid");
+    if (!posts.length) {
+      grid.innerHTML = `<div class="empty-state">No posts published yet — check back soon.</div>`;
+      return;
+    }
+    grid.innerHTML = posts.map((p) => `
+      <a href="blog-post.html?slug=${encodeURIComponent(p.slug)}" class="post-card">
+        <div class="post-card-image" style="${p.coverImageUrl ? `background-image:url('${p.coverImageUrl}')` : ""}"></div>
+        <div class="post-card-body">
+          <div class="post-meta">${p.branch ? p.branch.name : "Company news"} &middot; ${new Date(p.publishedAt).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}</div>
+          <h3>${p.title}</h3>
+          <p>${p.excerpt || ""}</p>
+          <span class="read-more">Read more &rarr;</span>
+        </div>
+      </a>
+    `).join("");
+  }
+
+  function renderTagFilters(posts) {
+    const tags = [...new Set(posts.flatMap((p) => p.tags || []))];
+    const container = document.getElementById("tagFilters");
+    if (!tags.length) { container.innerHTML = ""; return; }
+    container.innerHTML = `<span class="filter-chip active" data-tag="">All posts</span>` +
+      tags.map((t) => `<span class="filter-chip" data-tag="${t}">${t}</span>`).join("");
+    container.querySelectorAll(".filter-chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        container.querySelectorAll(".filter-chip").forEach((c) => c.classList.remove("active"));
+        chip.classList.add("active");
+        const tag = chip.dataset.tag;
+        renderPosts(tag ? allPosts.filter((p) => (p.tags || []).includes(tag)) : allPosts);
+      });
+    });
+  }
+
+  async function loadPosts() {
+    try {
+      const { posts } = await apiRequest("/blog");
+      allPosts = posts;
+      renderTagFilters(posts);
+      renderPosts(posts);
+    } catch (err) {
+      document.getElementById("postGrid").innerHTML = `<div class="empty-state">Couldn't load posts right now — please try again shortly.</div>`;
+    }
+  }
+
+  async function submitNewsletterSignup(e) {
+    e.preventDefault();
+    const btn = document.getElementById("newsletterSubmitBtn");
+    const note = document.getElementById("newsletterNote");
+    const email = document.getElementById("newsletterEmail").value;
+    btn.disabled = true;
+    try {
+      const { message } = await apiRequest("/newsletter/subscribe", { method: "POST", body: JSON.stringify({ email }) });
+      note.textContent = message;
+      document.getElementById("newsletterEmail").value = "";
+    } catch (err) {
+      note.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initNav();
+    hydrateBrand();
+    loadPosts();
+    document.getElementById("newsletterForm").addEventListener("submit", submitNewsletterSignup);
+    document.getElementById("year").textContent = new Date().getFullYear();
+  });
+})();
+</script>
+</body>
+</html>

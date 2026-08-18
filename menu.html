@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dining — Uyeh Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12181B;
+    --emerald: #1F3A34;
+    --brass: #C9A227;
+    --brass-soft: #E4C868;
+    --ivory: #F7F4EC;
+    --stone: #A69C8C;
+    --ember: #B5502E;
+    --line: rgba(201, 162, 39, 0.28);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ivory); color: var(--ink); font-family: 'Inter', sans-serif; line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+  .eyebrow { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); }
+
+  nav {
+    background: var(--ivory);
+    padding: 22px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; }
+  .brand span { color: var(--brass); }
+  .navlinks { display: flex; gap: 32px; font-size: 0.88rem; font-weight: 500; }
+
+  /* ---- Hero ---- */
+  .hero {
+    background: var(--emerald);
+    color: var(--ivory);
+    text-align: center;
+    padding: 90px 40px 70px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(45deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 46px);
+    opacity: 0.4;
+  }
+  .hero-inner { position: relative; }
+  .hero .eyebrow { color: var(--brass-soft); }
+  .hero h1 { font-size: clamp(2.4rem, 6vw, 4.4rem); margin: 14px 0 10px; }
+  .hero p { color: rgba(247,244,236,0.75); max-width: 46ch; margin: 0 auto; }
+
+  /* ---- Course tabs ---- */
+  .tabs {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--ivory);
+    border-bottom: 1px solid var(--line);
+    display: flex; justify-content: center; gap: 6px;
+    padding: 18px 20px;
+    flex-wrap: wrap;
+  }
+  .tab-btn {
+    font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 10px 18px; border: 1px solid var(--emerald); color: var(--emerald);
+    background: transparent; cursor: pointer; border-radius: 999px; transition: all 0.2s;
+  }
+  .tab-btn.active, .tab-btn:hover { background: var(--emerald); color: var(--ivory); }
+
+  main { max-width: 880px; margin: 0 auto; padding: 70px 40px 100px; }
+
+  .course { margin-bottom: 64px; }
+  .course-head { text-align: center; margin-bottom: 34px; }
+  .course-head h2 { font-size: 1.9rem; }
+  .course-head .rule {
+    width: 60px; height: 1px; background: var(--brass); margin: 14px auto 0;
+  }
+
+  .dish {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 6px 18px;
+    padding: 18px 0;
+    border-bottom: 1px dotted var(--line);
+    align-items: baseline;
+  }
+  .dish-name { font-family: 'Fraunces', serif; font-size: 1.18rem; }
+  .dish-price { font-family: 'Space Mono', monospace; font-size: 1rem; color: var(--brass); white-space: nowrap; }
+  .dish-desc { grid-column: 1 / -1; font-size: 0.88rem; color: #4a4a4a; max-width: 60ch; }
+  .dish-tags { grid-column: 1 / -1; display: flex; gap: 8px; margin-top: 2px; }
+  .dish-tags span {
+    font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--emerald); border: 1px solid var(--line); padding: 2px 8px; border-radius: 999px;
+  }
+  .dish-room-service { grid-column: 1 / -1; font-family: 'Space Mono', monospace; font-size: 0.66rem; color: var(--stone); letter-spacing: 0.05em; }
+
+  .empty-note, .loading { text-align: center; color: var(--stone); font-family: 'Space Mono', monospace; font-size: 0.8rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 40px 0; }
+  .error-note { text-align: center; color: var(--ember); padding: 40px 0; }
+
+  .footnote { text-align: center; margin-top: 60px; font-size: 0.82rem; color: var(--stone); }
+  .footnote .rule { width: 40px; height: 1px; background: var(--line); margin: 0 auto 18px; }
+
+  footer { background: var(--ink); color: rgba(247,244,236,0.6); padding: 50px 40px; text-align: center; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="index.html">Uyeh <span>Hotel</span></a>
+  <div class="navlinks">
+    <a href="search.html">Locations</a>
+    <a href="events.html">Events</a>
+    <a href="spa.html">Spa</a>
+    <a href="login.html">Sign in</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow" id="branchEyebrow">Restaurant &amp; Bar</div>
+    <h1>The Table</h1>
+    <p id="heroSub">A considered menu of food and drink, priced and prepared for this property.</p>
+  </div>
+</header>
+
+<div class="tabs" id="tabs" style="display:none;">
+  <button class="tab-btn active" data-target="food">Food</button>
+  <button class="tab-btn" data-target="drink">Bar</button>
+</div>
+
+<main>
+  <div id="menuArea"><p class="loading">Setting the table&hellip;</p></div>
+</main>
+
+<footer>&copy; <span id="year"></span> Uyeh Hotel. All rights reserved.</footer>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+document.getElementById("year").textContent = new Date().getFullYear();
+
+const branchId = new URLSearchParams(window.location.search).get("branch");
+
+// Dietary tags shown as short, elegant labels rather than raw enum text.
+const TAG_LABELS = { vegan: "Vegan", "gluten-free": "Gluten-free", halal: "Halal", vegetarian: "Vegetarian", "dairy-free": "Dairy-free", spicy: "Spicy" };
+
+function money(n, currency) {
+  return `${currency === "NGN" ? "\u20A6" : (currency || "") + " "}${Number(n).toLocaleString()}`;
+}
+
+function renderCourse(title, items) {
+  if (!items.length) return "";
+  return `
+    <div class="course">
+      <div class="course-head"><h2>${title}</h2><div class="rule"></div></div>
+      ${items.map((item) => `
+        <div class="dish">
+          <div class="dish-name">${item.name}</div>
+          <div class="dish-price">${money(item.price, item.currency)}</div>
+          ${item.description ? `<div class="dish-desc">${item.description}</div>` : ""}
+          ${(item.dietaryTags || []).length ? `<div class="dish-tags">${item.dietaryTags.map((t) => `<span>${TAG_LABELS[t] || t}</span>`).join("")}</div>` : ""}
+          ${item.availableForRoomService ? `<div class="dish-room-service">Available via room service</div>` : ""}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+// A light grouping over MenuCategory=FOOD so the food tab doesn't read as
+// one flat list — grouped by keyword hints in the name/description since
+// the schema itself only has FOOD/DRINK, not finer courses.
+function groupFood(items) {
+  const groups = { Starters: [], Mains: [], Desserts: [], "From the Kitchen": [] };
+  const starterWords = /starter|salad|soup|appet/i;
+  const dessertWords = /dessert|cake|ice cream|sweet|pastry/i;
+  items.forEach((item) => {
+    const haystack = `${item.name} ${item.description || ""}`;
+    if (starterWords.test(haystack)) groups.Starters.push(item);
+    else if (dessertWords.test(haystack)) groups.Desserts.push(item);
+    else groups.Mains.push(item);
+  });
+  // Collapse empty buckets, and if nothing matched any keyword, just use one bucket.
+  const populated = Object.entries(groups).filter(([, v]) => v.length);
+  if (populated.length <= 1) return { "From the Kitchen": items };
+  return Object.fromEntries(populated);
+}
+
+async function loadMenu() {
+  const area = document.getElementById("menuArea");
+  if (!branchId) {
+    area.innerHTML = `<p class="error-note">No location selected. Go back to <a href="search.html" style="text-decoration:underline;">locations</a> and choose a property.</p>`;
+    return;
+  }
+
+  try {
+    const [branchRes, foodRes, drinkRes] = await Promise.all([
+      fetch(`${API_BASE}/branches/${branchId}`),
+      fetch(`${API_BASE}/branches/${branchId}/menu`),
+      fetch(`${API_BASE}/branches/${branchId}/bar-menu`),
+    ]);
+
+    if (branchRes.ok) {
+      const { branch } = await branchRes.json();
+      document.getElementById("branchEyebrow").textContent = `Restaurant & Bar · ${branch.name}`;
+      document.title = `Dining at ${branch.name} — Uyeh Hotel`;
+    }
+
+    const foodData = foodRes.ok ? await foodRes.json() : { menuItems: [] };
+    const drinkData = drinkRes.ok ? await drinkRes.json() : { menuItems: [] };
+    const foodItems = foodData.menuItems || [];
+    const drinkItems = drinkData.menuItems || [];
+
+    if (!foodItems.length && !drinkItems.length) {
+      area.innerHTML = `<p class="empty-note">The menu for this property isn't published yet — please check back soon.</p>`;
+      return;
+    }
+
+    document.getElementById("tabs").style.display = "flex";
+
+    const foodGroups = groupFood(foodItems);
+    const foodHtml = foodItems.length
+      ? Object.entries(foodGroups).map(([title, items]) => renderCourse(title, items)).join("")
+      : `<p class="empty-note">No food items published yet.</p>`;
+
+    const drinkHtml = drinkItems.length
+      ? renderCourse("Bar", drinkItems)
+      : `<p class="empty-note">No bar menu published yet.</p>`;
+
+    area.innerHTML = `
+      <div id="panel-food">${foodHtml}</div>
+      <div id="panel-drink" style="display:none;">${drinkHtml}</div>
+      <div class="footnote"><div class="rule"></div>Prices include applicable service charges. Ask your server about today's specials and dietary accommodations.</div>
+    `;
+
+    document.querySelectorAll(".tab-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById("panel-food").style.display = btn.dataset.target === "food" ? "block" : "none";
+        document.getElementById("panel-drink").style.display = btn.dataset.target === "drink" ? "block" : "none";
+      });
+    });
+  } catch (err) {
+    area.innerHTML = `<p class="error-note">Couldn't load the menu: ${err.message}</p>`;
+  }
+}
+
+loadMenu();
+</script>
+</body>
+</html>

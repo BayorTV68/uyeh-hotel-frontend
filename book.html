@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book — Uyeh Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12181B; --emerald: #1F3A34; --brass: #C9A227; --brass-soft: #E4C868;
+    --ivory: #F7F4EC; --stone: #A69C8C; --ember: #B5502E; --line: rgba(201,162,39,0.24);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ivory); color: var(--ink); font-family: 'Inter', sans-serif; line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+  .eyebrow { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); }
+
+  nav { background: var(--ivory); padding: 22px 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+  .brand { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; }
+  .brand span { color: var(--brass); }
+  .breadcrumb { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--stone); }
+
+  .layout { max-width: 1080px; margin: 0 auto; padding: 56px 40px 100px; display: grid; grid-template-columns: 1fr 1.2fr; gap: 50px; }
+  @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } }
+
+  /* Summary panel */
+  .summary { background: var(--emerald); color: var(--ivory); padding: 34px; position: sticky; top: 24px; align-self: start; }
+  .summary .eyebrow { color: var(--brass-soft); }
+  .summary h2 { font-size: 1.5rem; margin: 10px 0 4px; }
+  .summary .branch-name { font-size: 0.86rem; color: rgba(247,244,236,0.7); margin-bottom: 24px; }
+  .summary-row { display: flex; justify-content: space-between; padding: 12px 0; border-top: 1px solid rgba(201,162,39,0.3); font-size: 0.9rem; }
+  .summary-row:last-of-type { border-bottom: 1px solid rgba(201,162,39,0.3); margin-bottom: 20px; }
+  .summary-row .label { color: rgba(247,244,236,0.65); }
+  .summary-total { display: flex; justify-content: space-between; align-items: baseline; }
+  .summary-total .t-label { font-family: 'Space Mono', monospace; font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--brass-soft); }
+  .summary-total .t-value { font-family: 'Fraunces', serif; font-size: 1.9rem; }
+
+  /* Form panel */
+  .form-panel { background: white; border: 1px solid var(--line); padding: 34px; }
+  .form-panel h2 { font-size: 1.4rem; margin-bottom: 24px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stone); margin-bottom: 6px; }
+  .field input, .field textarea {
+    width: 100%; padding: 12px 14px; border: 1px solid var(--line); background: var(--ivory);
+    font-family: 'Inter'; font-size: 0.92rem; border-radius: 2px; resize: vertical;
+  }
+  .field input:focus, .field textarea:focus { outline: none; border-color: var(--brass); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
+
+  .promo-row { display: flex; gap: 10px; }
+  .promo-row input { flex: 1; }
+  .btn-apply {
+    font-family: 'Space Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 0 18px; background: transparent; color: var(--emerald); border: 1px solid var(--emerald); cursor: pointer;
+  }
+  .btn-apply:hover { background: var(--emerald); color: var(--ivory); }
+
+  .btn {
+    display: block; width: 100%; text-align: center;
+    font-family: 'Space Mono', monospace; font-size: 0.78rem; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 16px 22px; background: var(--emerald); color: var(--ivory); border: 1px solid var(--emerald);
+    cursor: pointer; transition: background 0.2s, color 0.2s; margin-top: 10px;
+  }
+  .btn:hover { background: transparent; color: var(--emerald); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .notice { margin-top: 16px; font-size: 0.88rem; padding: 12px 14px; border-radius: 2px; }
+  .notice.ok { background: rgba(31,58,52,0.08); color: var(--emerald); border: 1px solid rgba(31,58,52,0.25); }
+  .notice.no { background: rgba(181,80,46,0.08); color: var(--ember); border: 1px solid rgba(181,80,46,0.25); }
+
+  .loading, .empty-note { color: var(--stone); font-family: 'Space Mono', monospace; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 60px 0; text-align: center; }
+  .error-note { color: var(--ember); padding: 60px 40px; text-align: center; }
+
+  /* Post-payment state */
+  .confirm-panel { max-width: 620px; margin: 90px auto; padding: 50px 40px; background: white; border: 1px solid var(--line); text-align: center; }
+  .confirm-panel .cp-mark { font-size: 2.4rem; color: var(--brass); margin-bottom: 16px; }
+  .confirm-panel h2 { font-size: 1.7rem; margin-bottom: 14px; }
+  .confirm-panel p { color: #444; margin-bottom: 26px; }
+
+  footer { background: var(--ink); color: rgba(247,244,236,0.6); padding: 50px 40px; text-align: center; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="index.html">Uyeh <span>Hotel</span></a>
+  <div class="breadcrumb" id="breadcrumb">&larr; Back</div>
+</nav>
+
+<div id="stateArea"><p class="loading">Checking availability&hellip;</p></div>
+
+<div class="layout" id="layout" style="display:none;">
+  <div class="summary">
+    <div class="eyebrow">Your stay</div>
+    <h2 id="sumRoomName">&nbsp;</h2>
+    <div class="branch-name" id="sumBranchName"></div>
+
+    <div class="summary-row"><span class="label">Check-in</span><span id="sumCheckIn">—</span></div>
+    <div class="summary-row"><span class="label">Check-out</span><span id="sumCheckOut">—</span></div>
+    <div class="summary-row"><span class="label">Nights</span><span id="sumNights">—</span></div>
+    <div class="summary-row"><span class="label">Rate</span><span id="sumRate">—</span></div>
+
+    <div class="summary-total">
+      <div><div class="t-label">Total</div><div class="t-value" id="sumTotal">—</div></div>
+    </div>
+  </div>
+
+  <div class="form-panel">
+    <h2>Guest details</h2>
+    <form id="bookingForm">
+      <div class="field-row">
+        <div class="field"><label>Full name</label><input type="text" id="gName" required></div>
+        <div class="field"><label>Email</label><input type="email" id="gEmail" required></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Phone</label><input type="tel" id="gPhone"></div>
+        <div class="field"><label>Number of guests</label><input type="number" id="gCount" min="1" value="1" required></div>
+      </div>
+      <div class="field"><label>Special requests (optional)</label><textarea id="gRequests" rows="3"></textarea></div>
+      <div class="field">
+        <label>Promo code (optional)</label>
+        <div class="promo-row">
+          <input type="text" id="gPromo" placeholder="e.g. WELCOME10">
+        </div>
+      </div>
+      <button type="submit" class="btn" id="submitBtn">Continue to payment</button>
+      <div id="formNotice"></div>
+    </form>
+  </div>
+</div>
+
+<footer>&copy; <span id="year"></span> Uyeh Hotel. All rights reserved.</footer>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+document.getElementById("year").textContent = new Date().getFullYear();
+
+const params = new URLSearchParams(window.location.search);
+const branchId = params.get("branch");
+const roomTypeId = params.get("roomType");
+const checkIn = params.get("checkIn");
+const checkOut = params.get("checkOut");
+
+let resolvedRoom = null;
+let resolvedRoomType = null;
+
+function money(n, currency) {
+  return `${currency === "NGN" ? "\u20A6" : (currency || "") + " "}${Number(n).toLocaleString()}`;
+}
+function fmtDate(d) {
+  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+function showError(msg) {
+  document.getElementById("stateArea").innerHTML = `<p class="error-note">${msg}</p>`;
+}
+
+// Paystack redirects back here after payment. Since there's no public
+// verify/lookup-by-reference route yet, this can only acknowledge that the
+// booking was created and payment was attempted — not confirm success.
+// The confirmation email sent at booking creation is the reliable record
+// until a verify endpoint exists.
+function showPostPaymentState() {
+  document.getElementById("stateArea").style.display = "none";
+  document.body.innerHTML = `
+    <nav><a class="brand" href="index.html">Uyeh <span>Hotel</span></a><div></div></nav>
+    <div class="confirm-panel">
+      <div class="cp-mark">&#10003;</div>
+      <h2>Thank you</h2>
+      <p>Your booking has been submitted and a confirmation was sent to your email. If payment completed successfully, your reservation is now confirmed — check your inbox for the receipt.</p>
+      <a class="btn" style="display:inline-block;width:auto;" href="index.html">Return home</a>
+    </div>
+    <footer>&copy; ${new Date().getFullYear()} Uyeh Hotel. All rights reserved.</footer>
+  `;
+}
+
+async function init() {
+  if (params.get("paid") === "1") { showPostPaymentState(); return; }
+
+  if (!branchId || !roomTypeId || !checkIn || !checkOut) {
+    showError(`Missing booking details. Start again from a <a href="search.html" style="text-decoration:underline;">property page</a>.`);
+    return;
+  }
+
+  try {
+    const [branchRes, roomTypesRes, availRes] = await Promise.all([
+      fetch(`${API_BASE}/branches/${branchId}`),
+      fetch(`${API_BASE}/branches/${branchId}/room-types`),
+      fetch(`${API_BASE}/branches/${branchId}/availability?${new URLSearchParams({ checkIn, checkOut, roomTypeId })}`),
+    ]);
+
+    const branchData = branchRes.ok ? await branchRes.json() : null;
+    const roomTypesData = roomTypesRes.ok ? await roomTypesRes.json() : { roomTypes: [] };
+    const availData = availRes.ok ? await availRes.json() : { availableRooms: [] };
+
+    resolvedRoomType = (roomTypesData.roomTypes || []).find((rt) => rt.id === roomTypeId);
+    if (!resolvedRoomType) throw new Error("This room type could not be found.");
+
+    resolvedRoom = (availData.availableRooms || [])[0];
+    if (!resolvedRoom) throw new Error("No rooms of this type are available for the selected dates. Please choose different dates.");
+
+    const nights = Math.ceil((new Date(checkOut) - new Date(checkIn)) / (1000 * 60 * 60 * 24));
+    const total = Number(resolvedRoomType.basePrice) * nights;
+
+    document.getElementById("breadcrumb").innerHTML = `&larr; <a href="room-details.html?branch=${branchId}&roomType=${roomTypeId}">Back to room</a>`;
+    document.getElementById("sumRoomName").textContent = resolvedRoomType.name;
+    document.getElementById("sumBranchName").textContent = branchData ? branchData.branch.name : "";
+    document.getElementById("sumCheckIn").textContent = fmtDate(checkIn);
+    document.getElementById("sumCheckOut").textContent = fmtDate(checkOut);
+    document.getElementById("sumNights").textContent = `${nights} night${nights === 1 ? "" : "s"}`;
+    document.getElementById("sumRate").textContent = `${money(resolvedRoomType.basePrice, resolvedRoomType.currency)} / night`;
+    document.getElementById("sumTotal").textContent = money(total, resolvedRoomType.currency);
+
+    document.getElementById("stateArea").style.display = "none";
+    document.getElementById("layout").style.display = "grid";
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+document.getElementById("bookingForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("submitBtn");
+  const notice = document.getElementById("formNotice");
+  btn.disabled = true;
+  btn.textContent = "Creating booking…";
+  notice.innerHTML = "";
+
+  try {
+    const bookingPayload = {
+      roomId: resolvedRoom.id,
+      checkIn, checkOut,
+      guestsCount: Number(document.getElementById("gCount").value) || 1,
+      specialRequests: document.getElementById("gRequests").value || undefined,
+      guest: {
+        name: document.getElementById("gName").value,
+        email: document.getElementById("gEmail").value,
+        phone: document.getElementById("gPhone").value || undefined,
+      },
+      promoCode: document.getElementById("gPromo").value || undefined,
+    };
+
+    const bookingRes = await fetch(`${API_BASE}/branches/${branchId}/bookings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(bookingPayload),
+    });
+    const bookingData = await bookingRes.json();
+    if (!bookingRes.ok) throw new Error(bookingData.error || "Couldn't create your booking.");
+
+    btn.textContent = "Redirecting to payment…";
+    const callbackUrl = `${window.location.origin}${window.location.pathname}?paid=1`;
+    const payRes = await fetch(`${API_BASE}/branches/${branchId}/bookings/${bookingData.booking.id}/initiate-payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callbackUrl }),
+    });
+    const payData = await payRes.json();
+    if (!payRes.ok) throw new Error(payData.error || "Booking was created, but payment couldn't be started. Contact support with your details.");
+
+    window.location.href = payData.authorizationUrl;
+  } catch (err) {
+    notice.innerHTML = `<div class="notice no">${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = "Continue to payment";
+  }
+});
+
+init();
+</script>
+</body>
+</html>

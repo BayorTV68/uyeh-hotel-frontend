@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Contact &amp; Support — Uyeh Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12181B; --emerald: #1F3A34; --brass: #C9A227; --brass-soft: #E4C868;
+    --ivory: #F7F4EC; --stone: #A69C8C; --ember: #B5502E; --line: rgba(201,162,39,0.24);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ivory); color: var(--ink); font-family: 'Inter', sans-serif; line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+  .eyebrow { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); }
+
+  nav { background: var(--ivory); padding: 22px 40px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--line); }
+  .brand { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; }
+  .brand span { color: var(--brass); }
+  .navlinks { display: flex; gap: 32px; font-size: 0.88rem; font-weight: 500; }
+
+  .hero { background: var(--emerald); color: var(--ivory); padding: 80px 40px 64px; text-align: center; position: relative; overflow: hidden; }
+  .hero::before { content:""; position:absolute; inset:0; background-image: repeating-linear-gradient(0deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 60px); opacity: 0.4; }
+  .hero-inner { position: relative; }
+  .hero .eyebrow { color: var(--brass-soft); }
+  .hero h1 { font-size: clamp(2.2rem, 5.5vw, 3.6rem); margin: 12px 0 10px; }
+  .hero p { max-width: 46ch; margin: 0 auto; color: rgba(247,244,236,0.75); }
+
+  .layout { max-width: 1080px; margin: 0 auto; padding: 70px 40px 100px; display: grid; grid-template-columns: 1fr 1.3fr; gap: 56px; }
+  @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } }
+
+  .directory h2 { font-size: 1.5rem; margin-bottom: 22px; }
+  .branch-card { border-top: 1px solid var(--line); padding: 20px 0; }
+  .branch-card:last-child { border-bottom: 1px solid var(--line); }
+  .branch-card .bc-name { font-family: 'Fraunces', serif; font-size: 1.15rem; margin-bottom: 6px; }
+  .branch-card .bc-line { font-size: 0.86rem; color: #444; }
+  .branch-card .bc-line a { color: var(--emerald); text-decoration: underline; text-underline-offset: 3px; }
+
+  .form-panel { background: white; border: 1px solid var(--line); padding: 34px; }
+  .form-panel h2 { font-size: 1.5rem; margin-bottom: 8px; }
+  .form-panel .sub { font-size: 0.88rem; color: var(--stone); margin-bottom: 28px; }
+
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stone); margin-bottom: 6px; }
+  .field input, .field select, .field textarea {
+    width: 100%; padding: 12px 14px; border: 1px solid var(--line); background: var(--ivory);
+    font-family: 'Inter'; font-size: 0.92rem; border-radius: 2px; resize: vertical;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--brass); }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
+
+  .btn {
+    display: inline-block; width: 100%; text-align: center;
+    font-family: 'Space Mono', monospace; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 15px 22px; background: var(--emerald); color: var(--ivory); border: 1px solid var(--emerald);
+    cursor: pointer; transition: background 0.2s, color 0.2s; margin-top: 6px;
+  }
+  .btn:hover { background: transparent; color: var(--emerald); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .notice { margin-top: 16px; font-size: 0.88rem; padding: 12px 14px; border-radius: 2px; }
+  .notice.ok { background: rgba(31,58,52,0.08); color: var(--emerald); border: 1px solid rgba(31,58,52,0.25); }
+  .notice.no { background: rgba(181,80,46,0.08); color: var(--ember); border: 1px solid rgba(181,80,46,0.25); }
+
+  .loading { color: var(--stone); font-family: 'Space Mono', monospace; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  footer { background: var(--ink); color: rgba(247,244,236,0.6); padding: 50px 40px; text-align: center; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="index.html">Uyeh <span>Hotel</span></a>
+  <div class="navlinks">
+    <a href="search.html">Locations</a>
+    <a href="about.html">About</a>
+    <a href="login.html">Sign in</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow">Contact &amp; Support</div>
+    <h1>We're here to help</h1>
+    <p>Reach the front desk directly, or send us a message and a member of our team will follow up.</p>
+  </div>
+</header>
+
+<div class="layout">
+  <div class="directory">
+    <h2>Our locations</h2>
+    <div id="branchDirectory"><p class="loading">Loading locations&hellip;</p></div>
+  </div>
+
+  <div class="form-panel">
+    <h2>Send a message</h2>
+    <p class="sub">Choose the property your message relates to, and tell us how we can help.</p>
+    <form id="ticketForm">
+      <div class="field">
+        <label>Property</label>
+        <select id="fBranch" required><option value="">Loading locations&hellip;</option></select>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Full name</label><input type="text" id="fName" required></div>
+        <div class="field"><label>Email</label><input type="email" id="fEmail" required></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Phone (optional)</label><input type="tel" id="fPhone"></div>
+        <div class="field">
+          <label>Priority</label>
+          <select id="fPriority">
+            <option value="NORMAL">Normal</option>
+            <option value="HIGH">High</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>Subject</label><input type="text" id="fSubject" required></div>
+      <div class="field"><label>Message</label><textarea id="fMessage" rows="5" required></textarea></div>
+      <button type="submit" class="btn" id="submitBtn">Send message</button>
+      <div id="formNotice"></div>
+    </form>
+  </div>
+</div>
+
+<footer>&copy; <span id="year"></span> Uyeh Hotel. All rights reserved.</footer>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+document.getElementById("year").textContent = new Date().getFullYear();
+
+let branchesCache = [];
+
+async function loadBranches() {
+  const dir = document.getElementById("branchDirectory");
+  const select = document.getElementById("fBranch");
+  try {
+    const res = await fetch(`${API_BASE}/branches`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't load locations.");
+    branchesCache = data.branches || [];
+
+    if (!branchesCache.length) {
+      dir.innerHTML = `<p class="loading">No locations published yet.</p>`;
+      select.innerHTML = `<option value="">No locations available</option>`;
+      return;
+    }
+
+    dir.innerHTML = branchesCache.map((b) => `
+      <div class="branch-card">
+        <div class="bc-name">${b.name}</div>
+        <div class="bc-line">${[b.address, b.city, b.state].filter(Boolean).join(", ") || "Address on request"}</div>
+        <div class="bc-line">${b.phone ? `<a href="tel:${b.phone}">${b.phone}</a>` : ""} ${b.phone && b.email ? "&middot;" : ""} ${b.email ? `<a href="mailto:${b.email}">${b.email}</a>` : ""}</div>
+      </div>
+    `).join("");
+
+    // Preselect from ?branch= if the visitor arrived from a specific property page.
+    const preselect = new URLSearchParams(window.location.search).get("branch");
+    select.innerHTML = branchesCache.map((b) => `<option value="${b.id}" ${b.id === preselect ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch (err) {
+    dir.innerHTML = `<p class="loading" style="color:var(--ember);">${err.message}</p>`;
+    select.innerHTML = `<option value="">Couldn't load locations</option>`;
+  }
+}
+
+document.getElementById("ticketForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("submitBtn");
+  const notice = document.getElementById("formNotice");
+  const branchId = document.getElementById("fBranch").value;
+
+  if (!branchId) {
+    notice.innerHTML = `<div class="notice no">Choose a property first.</div>`;
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  notice.innerHTML = "";
+
+  try {
+    const payload = {
+      subject: document.getElementById("fSubject").value,
+      message: document.getElementById("fMessage").value,
+      priority: document.getElementById("fPriority").value,
+      guest: {
+        name: document.getElementById("fName").value,
+        email: document.getElementById("fEmail").value,
+        phone: document.getElementById("fPhone").value || undefined,
+      },
+    };
+    const res = await fetch(`${API_BASE}/branches/${branchId}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't send your message.");
+    notice.innerHTML = `<div class="notice ok">Message sent — we'll follow up at ${payload.guest.email} shortly.</div>`;
+    document.getElementById("ticketForm").reset();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice no">${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Send message";
+  }
+});
+
+loadBranches();
+</script>
+</body>
+</html>

@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Uyeh Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12181B;
+    --emerald: #1F3A34;
+    --emerald-deep: #142622;
+    --brass: #C9A227;
+    --brass-soft: #E4C868;
+    --ivory: #F7F4EC;
+    --stone: #A69C8C;
+    --ember: #B5502E;
+    --line: rgba(201, 162, 39, 0.22);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--ivory);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    line-height: 1.6;
+  }
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--brass);
+  }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ---- Top strip ---- */
+  .topstrip {
+    background: var(--ink);
+    color: var(--ivory);
+    font-family: 'Space Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 10px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .topstrip a { opacity: 0.75; transition: opacity 0.2s; }
+  .topstrip a:hover { opacity: 1; }
+
+  nav {
+    background: var(--ivory);
+    padding: 22px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; letter-spacing: -0.01em; }
+  .brand span { color: var(--brass); }
+  .navlinks { display: flex; gap: 32px; font-size: 0.88rem; font-weight: 500; }
+  .navlinks a { position: relative; padding-bottom: 4px; }
+  .navlinks a::after { content: ""; position: absolute; left: 0; bottom: 0; width: 0; height: 1px; background: var(--brass); transition: width 0.25s; }
+  .navlinks a:hover::after { width: 100%; }
+
+  /* ---- Hero: typographic, no photo dependency ---- */
+  .hero {
+    position: relative;
+    background: var(--emerald);
+    color: var(--ivory);
+    padding: 90px 40px 70px;
+    overflow: hidden;
+  }
+  .hero::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 64px),
+      repeating-linear-gradient(90deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 64px);
+    opacity: 0.5;
+    pointer-events: none;
+  }
+  .hero-inner { position: relative; max-width: 1080px; margin: 0 auto; }
+  .hero-eyebrow { color: var(--brass-soft); }
+  .hero h1 {
+    font-size: clamp(2.6rem, 6vw, 5rem);
+    margin-top: 14px;
+    max-width: 14ch;
+  }
+  .hero-sub { margin-top: 18px; max-width: 46ch; color: rgba(247,244,236,0.75); font-size: 1.05rem; }
+
+  /* Keycard-style address strip */
+  .keycard {
+    margin-top: 48px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 1px solid rgba(201,162,39,0.35);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .keycard div { padding: 18px 22px; border-right: 1px solid rgba(201,162,39,0.25); }
+  .keycard div:last-child { border-right: none; }
+  .keycard .kc-label { font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--brass-soft); margin-bottom: 6px; }
+  .keycard .kc-value { font-size: 0.95rem; }
+  @media (max-width: 760px) { .keycard { grid-template-columns: 1fr 1fr; } .keycard div:nth-child(2) { border-right: none; } }
+
+  /* ---- Sections ---- */
+  section { padding: 76px 40px; max-width: 1080px; margin: 0 auto; }
+  .section-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 44px; border-bottom: 1px solid var(--line); padding-bottom: 20px; }
+  .section-head h2 { font-size: clamp(1.6rem, 3vw, 2.2rem); margin-top: 8px; }
+
+  /* Services strip */
+  .services-row { display: flex; flex-wrap: wrap; gap: 14px; }
+  .service-pill {
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 10px 18px;
+    border: 1px solid var(--emerald);
+    color: var(--emerald);
+    border-radius: 999px;
+  }
+
+  /* Room type cards */
+  .rooms-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 28px; }
+  .room-card {
+    background: white;
+    border: 1px solid var(--line);
+    padding: 28px;
+    transition: border-color 0.25s, transform 0.25s;
+  }
+  .room-card:hover { border-color: var(--brass); transform: translateY(-3px); }
+  .room-card .rc-name { font-size: 1.3rem; margin-bottom: 8px; }
+  .room-card .rc-meta { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--stone); margin-bottom: 14px; }
+  .room-card .rc-desc { font-size: 0.92rem; color: #444; margin-bottom: 18px; min-height: 42px; }
+  .room-card .rc-amenities { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+  .room-card .rc-amenities span { font-size: 0.7rem; color: var(--stone); border: 1px solid var(--line); padding: 3px 9px; border-radius: 999px; }
+  .rc-price-row { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid var(--line); padding-top: 16px; }
+  .rc-price { font-family: 'Fraunces', serif; font-size: 1.5rem; color: var(--ink); }
+  .rc-price small { font-family: 'Inter'; font-size: 0.7rem; color: var(--stone); font-weight: 400; }
+  .btn {
+    display: inline-block;
+    font-family: 'Space Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 12px 22px;
+    background: var(--emerald);
+    color: var(--ivory);
+    border: 1px solid var(--emerald);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+  }
+  .btn:hover { background: transparent; color: var(--emerald); }
+  .btn-ghost { background: transparent; color: var(--emerald); }
+  .btn-ghost:hover { background: var(--emerald); color: var(--ivory); }
+
+  /* Events */
+  .events-list { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+  .event-row { display: grid; grid-template-columns: 110px 1fr auto; gap: 24px; align-items: center; padding: 22px 0; border-bottom: 1px solid var(--line); }
+  .event-date { font-family: 'Space Mono', monospace; font-size: 0.78rem; color: var(--brass); text-transform: uppercase; }
+  .event-name { font-size: 1.15rem; font-family: 'Fraunces', serif; }
+
+  /* Reviews */
+  .reviews-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px,1fr)); gap: 24px; }
+  .review-card { background: white; border: 1px solid var(--line); padding: 24px; }
+  .review-stars { color: var(--brass); font-size: 0.9rem; margin-bottom: 10px; letter-spacing: 2px; }
+  .review-body { font-size: 0.92rem; color: #333; font-style: italic; margin-bottom: 14px; }
+  .review-name { font-family: 'Space Mono', monospace; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--stone); }
+
+  .empty-note { color: var(--stone); font-size: 0.9rem; font-style: italic; }
+  .loading { color: var(--stone); font-family: 'Space Mono', monospace; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; }
+  .error-note { color: var(--ember); font-size: 0.9rem; }
+
+  footer { background: var(--ink); color: rgba(247,244,236,0.6); padding: 50px 40px; text-align: center; font-size: 0.8rem; }
+  footer .brand { color: var(--ivory); justify-content: center; display: flex; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div class="topstrip">
+  <span>Uyeh Hotel &mdash; Reservations</span>
+  <a href="tel:">Call the front desk</a>
+</div>
+
+<nav>
+  <a class="brand" href="index.html">Uyeh <span>Hotel</span></a>
+  <div class="navlinks">
+    <a href="search.html">Locations</a>
+    <a href="events.html">Events</a>
+    <a href="menu.html">Dining</a>
+    <a href="login.html">Sign in</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-inner">
+    <div class="eyebrow hero-eyebrow" id="branchEyebrow">Loading location&hellip;</div>
+    <h1 id="branchName">&nbsp;</h1>
+    <p class="hero-sub" id="branchSub">Fetching details for this property.</p>
+
+    <div class="keycard" id="keycard" style="display:none;">
+      <div><div class="kc-label">Address</div><div class="kc-value" id="kcAddress">&mdash;</div></div>
+      <div><div class="kc-label">City / State</div><div class="kc-value" id="kcCity">&mdash;</div></div>
+      <div><div class="kc-label">Phone</div><div class="kc-value" id="kcPhone">&mdash;</div></div>
+      <div><div class="kc-label">Email</div><div class="kc-value" id="kcEmail">&mdash;</div></div>
+    </div>
+  </div>
+</header>
+
+<section id="servicesSection" style="display:none;">
+  <div class="section-head"><div><div class="eyebrow">On property</div><h2>Services & amenities</h2></div></div>
+  <div class="services-row" id="servicesRow"></div>
+</section>
+
+<section>
+  <div class="section-head">
+    <div><div class="eyebrow">Accommodation</div><h2>Rooms & suites</h2></div>
+  </div>
+  <div class="rooms-grid" id="roomsGrid"><p class="loading">Loading room types&hellip;</p></div>
+</section>
+
+<section id="eventsSection" style="display:none;">
+  <div class="section-head"><div><div class="eyebrow">What's on</div><h2>Upcoming events</h2></div></div>
+  <div class="events-list" id="eventsList"></div>
+</section>
+
+<section id="reviewsSection" style="display:none;">
+  <div class="section-head"><div><div class="eyebrow">In their words</div><h2>Guest reviews</h2></div></div>
+  <div class="reviews-grid" id="reviewsGrid"></div>
+</section>
+
+<footer>
+  <div class="brand">Uyeh <span style="color:var(--brass)">Hotel</span></div>
+  <div>&copy; <span id="year"></span> Uyeh Hotel. All rights reserved.</div>
+</footer>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+document.getElementById("year").textContent = new Date().getFullYear();
+
+function branchIdFromUrl() {
+  return new URLSearchParams(window.location.search).get("branch");
+}
+
+function money(n, currency) {
+  return `${currency === "NGN" ? "\u20A6" : (currency || "") + " "}${Number(n).toLocaleString()}`;
+}
+
+async function loadBranch() {
+  const branchId = branchIdFromUrl();
+  if (!branchId) {
+    document.getElementById("branchName").textContent = "No location selected";
+    document.getElementById("branchSub").innerHTML = `Choose a property from <a href="search.html" style="text-decoration:underline;color:inherit;">our locations</a>.`;
+    document.getElementById("branchEyebrow").textContent = "Missing ?branch= parameter";
+    document.getElementById("roomsGrid").innerHTML = "";
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API_BASE}/branches/${branchId}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't load this location.");
+    const b = data.branch;
+
+    document.getElementById("branchEyebrow").textContent = [b.city, b.state].filter(Boolean).join(", ") || "Uyeh Hotel";
+    document.getElementById("branchName").textContent = b.name;
+    document.getElementById("branchSub").textContent = "A closer look at rooms, dining, events and what our guests are saying.";
+    document.title = `${b.name} — Uyeh Hotel`;
+
+    document.getElementById("kcAddress").textContent = b.address || "—";
+    document.getElementById("kcCity").textContent = [b.city, b.state].filter(Boolean).join(", ") || "—";
+    document.getElementById("kcPhone").textContent = b.phone || "—";
+    document.getElementById("kcEmail").textContent = b.email || "—";
+    document.getElementById("keycard").style.display = "grid";
+
+    if (b.services && b.services.length) {
+      document.getElementById("servicesSection").style.display = "block";
+      document.getElementById("servicesRow").innerHTML = b.services
+        .map((s) => `<span class="service-pill">${s}</span>`).join("");
+    }
+
+    loadRoomTypes(branchId);
+    loadEvents(branchId);
+    loadReviews(branchId);
+  } catch (err) {
+    document.getElementById("branchName").textContent = "Couldn't load this location";
+    document.getElementById("branchSub").innerHTML = `<span class="error-note">${err.message}</span>`;
+    document.getElementById("roomsGrid").innerHTML = "";
+  }
+}
+
+async function loadRoomTypes(branchId) {
+  const grid = document.getElementById("roomsGrid");
+  try {
+    const res = await fetch(`${API_BASE}/branches/${branchId}/room-types`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't load room types.");
+    const roomTypes = data.roomTypes || [];
+    if (!roomTypes.length) {
+      grid.innerHTML = `<p class="empty-note">No room types published for this property yet.</p>`;
+      return;
+    }
+    grid.innerHTML = roomTypes.map((rt) => {
+      const availableCount = (rt.rooms || []).filter((r) => r.status === "ACTIVE").length;
+      return `
+        <div class="room-card">
+          <div class="rc-name">${rt.name}</div>
+          <div class="rc-meta">Sleeps ${rt.maxOccupancy} &middot; ${availableCount} room${availableCount === 1 ? "" : "s"} on this floor plan</div>
+          <div class="rc-desc">${rt.description || "Details available on request."}</div>
+          <div class="rc-amenities">${(rt.amenities || []).slice(0, 4).map((a) => `<span>${a}</span>`).join("")}</div>
+          <div class="rc-price-row">
+            <div class="rc-price">${money(rt.basePrice, rt.currency)}<small> / night</small></div>
+            <a class="btn" href="room-details.html?branch=${branchId}&roomType=${rt.id}">View room</a>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (err) {
+    grid.innerHTML = `<p class="error-note">${err.message}</p>`;
+  }
+}
+
+async function loadEvents(branchId) {
+  try {
+    const res = await fetch(`${API_BASE}/branches/${branchId}/events`);
+    if (!res.ok) return; // service may not be enabled for this branch
+    const data = await res.json();
+    const events = (data.events || []).slice(0, 5);
+    if (!events.length) return;
+    document.getElementById("eventsSection").style.display = "block";
+    document.getElementById("eventsList").innerHTML = events.map((e) => `
+      <div class="event-row">
+        <div class="event-date">${e.startsAt ? new Date(e.startsAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "TBA"}</div>
+        <div class="event-name">${e.name || e.title}</div>
+        <a class="btn btn-ghost" href="events.html?branch=${branchId}">Details</a>
+      </div>
+    `).join("");
+  } catch (err) { /* events not critical to this page */ }
+}
+
+async function loadReviews(branchId) {
+  try {
+    const res = await fetch(`${API_BASE}/branches/${branchId}/reviews`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const reviews = (data.reviews || []).slice(0, 6);
+    if (!reviews.length) return;
+    document.getElementById("reviewsSection").style.display = "block";
+    document.getElementById("reviewsGrid").innerHTML = reviews.map((r) => `
+      <div class="review-card">
+        <div class="review-stars">${"&#9733;".repeat(r.rating || 5)}${"&#9734;".repeat(5 - (r.rating || 5))}</div>
+        <div class="review-body">&ldquo;${r.comment || r.body || ""}&rdquo;</div>
+        <div class="review-name">${r.guestName || r.guest?.name || "Verified guest"}</div>
+      </div>
+    `).join("");
+  } catch (err) { /* reviews not critical to this page */ }
+}
+
+loadBranch();
+</script>
+</body>
+</html>

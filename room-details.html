@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Room — Uyeh Hotel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #12181B;
+    --emerald: #1F3A34;
+    --emerald-deep: #142622;
+    --brass: #C9A227;
+    --brass-soft: #E4C868;
+    --ivory: #F7F4EC;
+    --stone: #A69C8C;
+    --ember: #B5502E;
+    --line: rgba(201, 162, 39, 0.22);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--ivory); color: var(--ink); font-family: 'Inter', sans-serif; line-height: 1.6; }
+  a { color: inherit; text-decoration: none; }
+  h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+  .eyebrow { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--brass); }
+
+  nav {
+    background: var(--ivory);
+    padding: 22px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { font-family: 'Fraunces', serif; font-size: 1.3rem; font-weight: 600; }
+  .brand span { color: var(--brass); }
+  .breadcrumb { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--stone); }
+  .breadcrumb a:hover { color: var(--emerald); }
+
+  .layout {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 48px 40px 100px;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 56px;
+  }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  /* Gallery — real images if present, generated floor-plan panel if not */
+  .gallery { display: grid; grid-template-columns: 1fr; gap: 10px; }
+  .gallery-main { aspect-ratio: 4/3; background: var(--emerald); position: relative; overflow: hidden; border-radius: 2px; }
+  .gallery-main img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .gallery-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .gallery-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 2px; cursor: pointer; opacity: 0.75; transition: opacity 0.2s; }
+  .gallery-thumbs img:hover, .gallery-thumbs img.active { opacity: 1; outline: 1px solid var(--brass); }
+
+  /* Fallback panel when RoomType has no images */
+  .floorplan-panel {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 40px;
+    color: var(--ivory);
+    background:
+      repeating-linear-gradient(0deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 48px),
+      repeating-linear-gradient(90deg, var(--line) 0, var(--line) 1px, transparent 1px, transparent 48px),
+      var(--emerald);
+  }
+  .floorplan-panel .fp-eyebrow { color: var(--brass-soft); font-family: 'Space Mono', monospace; font-size: 0.7rem; letter-spacing: 0.18em; text-transform: uppercase; }
+  .floorplan-panel .fp-name { font-family: 'Fraunces', serif; font-size: 2.2rem; margin-top: 10px; max-width: 12ch; }
+  .floorplan-panel .fp-foot { font-family: 'Space Mono', monospace; font-size: 0.72rem; letter-spacing: 0.08em; color: rgba(247,244,236,0.6); }
+
+  /* Detail column */
+  .detail-col h1 { font-size: clamp(2rem, 3.4vw, 2.7rem); margin: 10px 0 6px; }
+  .price-line { font-family: 'Fraunces', serif; font-size: 1.7rem; margin: 10px 0 26px; }
+  .price-line small { font-family: 'Inter'; font-size: 0.78rem; color: var(--stone); font-weight: 400; }
+
+  .meta-strip { display: flex; gap: 28px; margin-bottom: 26px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); padding: 18px 0; }
+  .meta-item .m-label { font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--stone); margin-bottom: 4px; }
+  .meta-item .m-value { font-size: 0.98rem; }
+
+  .desc { font-size: 0.97rem; color: #333; margin-bottom: 28px; }
+
+  .amenities-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; margin-bottom: 34px; }
+  .amenity { font-size: 0.9rem; display: flex; align-items: center; gap: 8px; }
+  .amenity::before { content: "—"; color: var(--brass); font-family: 'Space Mono', monospace; }
+
+  /* Availability check */
+  .avail-box { background: white; border: 1px solid var(--line); padding: 24px; }
+  .avail-box h3 { font-size: 1.05rem; margin-bottom: 16px; }
+  .avail-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .field label { display: block; font-family: 'Space Mono', monospace; font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--stone); margin-bottom: 6px; }
+  .field input {
+    width: 100%; padding: 11px 12px; border: 1px solid var(--line); background: var(--ivory);
+    font-family: 'Inter'; font-size: 0.9rem; border-radius: 2px;
+  }
+  .field input:focus { outline: none; border-color: var(--brass); }
+  .btn {
+    display: inline-block; width: 100%; text-align: center;
+    font-family: 'Space Mono', monospace; font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 14px 22px; background: var(--emerald); color: var(--ivory); border: 1px solid var(--emerald);
+    cursor: pointer; transition: background 0.2s, color 0.2s; margin-top: 6px;
+  }
+  .btn:hover { background: transparent; color: var(--emerald); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .avail-result { margin-top: 16px; font-size: 0.88rem; padding: 12px 14px; border-radius: 2px; }
+  .avail-result.ok { background: rgba(31,58,52,0.08); color: var(--emerald); border: 1px solid rgba(31,58,52,0.25); }
+  .avail-result.no { background: rgba(181,80,46,0.08); color: var(--ember); border: 1px solid rgba(181,80,46,0.25); }
+
+  .loading { color: var(--stone); font-family: 'Space Mono', monospace; font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 60px 40px; }
+  .error-note { color: var(--ember); padding: 60px 40px; }
+
+  footer { background: var(--ink); color: rgba(247,244,236,0.6); padding: 50px 40px; text-align: center; font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="brand" href="index.html">Uyeh <span>Hotel</span></a>
+  <div class="breadcrumb" id="breadcrumb">&larr; <a href="search.html">Locations</a></div>
+</nav>
+
+<div id="stateArea"><p class="loading">Loading room&hellip;</p></div>
+
+<div class="layout" id="layout" style="display:none;">
+  <div class="gallery">
+    <div class="gallery-main" id="galleryMain"></div>
+    <div class="gallery-thumbs" id="galleryThumbs"></div>
+  </div>
+
+  <div class="detail-col">
+    <div class="eyebrow" id="branchLabel">&mdash;</div>
+    <h1 id="roomName">&nbsp;</h1>
+    <div class="price-line" id="priceLine"></div>
+
+    <div class="meta-strip">
+      <div class="meta-item"><div class="m-label">Sleeps</div><div class="m-value" id="metaOccupancy">&mdash;</div></div>
+      <div class="meta-item"><div class="m-label">Rooms on plan</div><div class="m-value" id="metaCount">&mdash;</div></div>
+      <div class="meta-item"><div class="m-label">Currency</div><div class="m-value" id="metaCurrency">&mdash;</div></div>
+    </div>
+
+    <p class="desc" id="roomDesc"></p>
+
+    <div class="amenities-grid" id="amenitiesGrid"></div>
+
+    <div class="avail-box">
+      <h3>Check availability</h3>
+      <div class="avail-row">
+        <div class="field"><label>Check-in</label><input type="date" id="checkIn"></div>
+        <div class="field"><label>Check-out</label><input type="date" id="checkOut"></div>
+      </div>
+      <button class="btn" id="checkBtn" onclick="checkAvailability()">Check dates</button>
+      <div id="availResult"></div>
+    </div>
+  </div>
+</div>
+
+<footer>&copy; <span id="year"></span> Uyeh Hotel. All rights reserved.</footer>
+
+<script>
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+document.getElementById("year").textContent = new Date().getFullYear();
+
+const params = new URLSearchParams(window.location.search);
+const branchId = params.get("branch");
+const roomTypeId = params.get("roomType");
+
+function money(n, currency) {
+  return `${currency === "NGN" ? "\u20A6" : (currency || "") + " "}${Number(n).toLocaleString()}`;
+}
+
+function showError(msg) {
+  document.getElementById("stateArea").innerHTML = `<p class="error-note">${msg}</p>`;
+}
+
+async function loadRoom() {
+  if (!branchId || !roomTypeId) {
+    showError(`Missing location or room reference. Go back to <a href="search.html" style="text-decoration:underline;">locations</a>.`);
+    return;
+  }
+  try {
+    // No single-room-type endpoint exists on the backend — fetch the
+    // branch's full room-types list and find this one client-side.
+    const res = await fetch(`${API_BASE}/branches/${branchId}/room-types`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't load room types for this location.");
+    const rt = (data.roomTypes || []).find((r) => r.id === roomTypeId);
+    if (!rt) throw new Error("This room could not be found — it may have been removed.");
+
+    renderRoom(rt);
+    document.getElementById("stateArea").style.display = "none";
+    document.getElementById("layout").style.display = "grid";
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function renderRoom(rt) {
+  document.title = `${rt.name} — Uyeh Hotel`;
+  document.getElementById("breadcrumb").innerHTML =
+    `&larr; <a href="hotel-details.html?branch=${branchId}">Back to property</a>`;
+  document.getElementById("branchLabel").textContent = "Room & Suite";
+  document.getElementById("roomName").textContent = rt.name;
+  document.getElementById("priceLine").innerHTML = `${money(rt.basePrice, rt.currency)}<small> / night</small>`;
+  document.getElementById("metaOccupancy").textContent = `${rt.maxOccupancy} guests`;
+  const activeCount = (rt.rooms || []).filter((r) => r.status === "ACTIVE").length;
+  document.getElementById("metaCount").textContent = `${activeCount} active`;
+  document.getElementById("metaCurrency").textContent = rt.currency || "NGN";
+  document.getElementById("roomDesc").textContent = rt.description || "A refined space designed for comfort, with details available on request from the front desk.";
+
+  document.getElementById("amenitiesGrid").innerHTML = (rt.amenities || []).length
+    ? rt.amenities.map((a) => `<div class="amenity">${a}</div>`).join("")
+    : `<div class="amenity" style="opacity:0.6;">Amenity list available on request</div>`;
+
+  const images = rt.images || [];
+  const main = document.getElementById("galleryMain");
+  const thumbs = document.getElementById("galleryThumbs");
+  if (images.length) {
+    main.innerHTML = `<img id="mainImg" src="${images[0]}" alt="${rt.name}">`;
+    thumbs.innerHTML = images.slice(0, 4).map((src, i) => `<img src="${src}" class="${i === 0 ? "active" : ""}" onclick="swapImage('${src}', this)">`).join("");
+  } else {
+    // No images on this room type — generated identity panel instead of a broken/placeholder photo.
+    main.innerHTML = `
+      <div class="floorplan-panel">
+        <div><div class="fp-eyebrow">Uyeh Hotel</div><div class="fp-name">${rt.name}</div></div>
+        <div class="fp-foot">Photography for this room is being prepared &mdash; contact the front desk for a virtual walkthrough.</div>
+      </div>`;
+    thumbs.innerHTML = "";
+  }
+}
+
+function swapImage(src, el) {
+  document.getElementById("mainImg").src = src;
+  document.querySelectorAll(".gallery-thumbs img").forEach((img) => img.classList.remove("active"));
+  el.classList.add("active");
+}
+
+async function checkAvailability() {
+  const checkIn = document.getElementById("checkIn").value;
+  const checkOut = document.getElementById("checkOut").value;
+  const resultBox = document.getElementById("availResult");
+  const btn = document.getElementById("checkBtn");
+
+  if (!checkIn || !checkOut) {
+    resultBox.innerHTML = `<div class="avail-result no">Pick both a check-in and check-out date.</div>`;
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Checking…";
+  try {
+    const qs = new URLSearchParams({ checkIn, checkOut, roomTypeId }).toString();
+    const res = await fetch(`${API_BASE}/branches/${branchId}/availability?${qs}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Couldn't check availability.");
+    const rooms = data.availableRooms || [];
+    if (rooms.length) {
+      resultBox.innerHTML = `<div class="avail-result ok">${rooms.length} room${rooms.length === 1 ? "" : "s"} available for these dates.</div>
+        <a class="btn" style="margin-top:12px;" href="book.html?branch=${branchId}&roomType=${roomTypeId}&checkIn=${checkIn}&checkOut=${checkOut}">Book now</a>`;
+    } else {
+      resultBox.innerHTML = `<div class="avail-result no">No rooms of this type are free for those dates — try a different range.</div>`;
+    }
+  } catch (err) {
+    resultBox.innerHTML = `<div class="avail-result no">${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Check dates";
+  }
+}
+
+loadRoom();
+</script>
+</body>
+</html>
