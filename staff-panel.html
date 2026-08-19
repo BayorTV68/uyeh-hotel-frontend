@@ -178,6 +178,13 @@ tr:last-child td { border-bottom: none; }
       <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
       <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
     </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus></div>
+      <button type="submit" class="btn btn-primary" id="twoFactorBtn" style="width:100%; margin-top:6px;">Verify</button>
+      <button type="button" id="twoFactorBackBtn" style="width:100%; margin-top:10px; background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer;">&larr; Back to login</button>
+    </form>
   </div>
 </div>
 
@@ -187,7 +194,7 @@ tr:last-child td { border-bottom: none; }
       <div class="logo-icon">O</div>
       <div class="logo-text">Oxygen <span>Hotel</span></div>
     </div>
-    <div class="admin-info">
+    <div class="admin-info" id="adminInfoBlock" onclick="openSecurityModal()" style="cursor:pointer;" title="Account & security">
       <div class="admin-avatar" id="adminAvatar">S</div>
       <div class="admin-details">
         <div class="admin-name" id="adminName"></div>
@@ -245,9 +252,22 @@ async function adminRequest(path, options = {}) {
 }
 
 const staffApi = {
+  setupTwoFactor: () => adminRequest("/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => adminRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => adminRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
   login: (email, password) =>
     fetch(`${API_BASE}/auth/staff/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
       .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Login failed"); return data; }),
+
+  verifyTwoFactor: async (tempToken, code) => {
+    const res = await fetch(`${API_BASE}/auth/login/2fa`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempToken, code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Verification failed");
+    if (!data.staff) throw new Error("Unexpected response — no account data returned");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.staff };
+  },
 
   listRoomTypes: () => adminRequest("/manager/room-types"),
   listRooms: () => adminRequest("/manager/rooms"),
@@ -606,6 +626,109 @@ async function loadReportsPage() {
     `;
   } catch (err) { showNotice("reportsNotice", err.message); }
 }
+/* ============================================================
+   SECURITY — 2FA enrollment, opened by clicking your own name
+   ============================================================ */
+function renderSecurityModalShell() {
+  if (document.getElementById("securityModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="securityModal" style="display:none;">
+      <div class="modal">
+        <h3>Account & Security</h3>
+        <div id="securityNotice"></div>
+        <div id="securityBody"></div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeSecurityModal()">Close</button></div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this with your authenticator app, then enter the code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); renderSecurityBody();">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function openSecurityModal() {
+  renderSecurityModalShell();
+  renderSecurityBody();
+  document.getElementById("securityModal").style.display = "flex";
+}
+function closeSecurityModal() { document.getElementById("securityModal").style.display = "none"; }
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+function renderSecurityBody() {
+  const staff = getStaff();
+  const enabled = !!staff.twoFactorEnabled;
+  document.getElementById("securityBody").innerHTML = enabled ? `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-active">Enabled</span> Your account requires a code from your authenticator app at every login.
+    </p>
+    <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+  ` : `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-inactive">Disabled</span> Add a second step at login using an authenticator app.
+    </p>
+    <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+  `;
+}
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await staffApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("securityNotice", err.message); }
+}
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await staffApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const staff = getStaff(); staff.twoFactorEnabled = true; setSession(getToken(), staff);
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await staffApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const staff = getStaff(); staff.twoFactorEnabled = false; setSession(getToken(), staff);
+    renderSecurityBody();
+    showNotice("securityNotice", "2FA turned off.", "success");
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
 
 /* ============================================================
    SHARED / LOGIN / BOOT
@@ -630,17 +753,50 @@ async function refreshTicketsBadgeSilently() {
   } catch { /* silent — background badge refresh */ }
 }
 
+let _pendingTempToken = null;
+
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("loginBtn");
   const notice = document.getElementById("loginNotice");
   notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Logging in…";
   try {
-    const { token, staff } = await staffApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
-    setSession(token, staff); showApp();
+    const result = await staffApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (result.requires2FA) {
+      _pendingTempToken = result.tempToken;
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("twoFactorForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
+    }
+    setSession(result.token, result.staff);
+    showApp();
   } catch (err) {
     notice.innerHTML = `<div class="notice error">${err.message}</div>`;
   } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+
+document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const result = await staffApi.verifyTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    _pendingTempToken = null;
+    setSession(result.token, result.staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Verify"; }
+});
+
+document.getElementById("twoFactorBackBtn").addEventListener("click", () => {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorForm").style.display = "none";
+  document.getElementById("twoFactorForm").reset();
+  document.getElementById("loginForm").style.display = "block";
+  document.getElementById("loginNotice").innerHTML = "";
 });
 document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showLogin(); });
 document.getElementById("hamburgerBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));

@@ -131,6 +131,47 @@ section { padding: 96px 0; }
 
 .loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
 
+/* ---- Subtle grain texture — used on dark/tonal sections for warmth
+   instead of relying on photography we don't have yet ---- */
+.grain { position: relative; }
+.grain::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* ---- Hero: slow drift instead of a static crop — reads as attended-to,
+   not a stock background. No-ops harmlessly when no hero image is set. ---- */
+@keyframes heroDrift { 0% { background-position: 50% 38%; } 100% { background-position: 50% 58%; } }
+.hero { animation: heroDrift 26s ease-in-out infinite alternate; }
+
+/* ---- Scroll reveal ---- */
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.7s ease, transform 0.7s ease; }
+.reveal.is-visible { opacity: 1; transform: translateY(0); }
+
+/* ---- Signature Experiences ---- */
+.experience-grid { display: grid; grid-template-columns: 1.3fr 1fr; grid-template-rows: auto auto; gap: 24px; }
+.experience-card { position: relative; border-radius: 4px; overflow: hidden; color: var(--ivory); min-height: 280px; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px; isolation: isolate; }
+.experience-card::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: transform 0.6s ease; }
+.experience-card:hover::before { transform: scale(1.06); }
+.experience-card::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(20,24,31,0) 0%, rgba(20,24,31,0.75) 100%); }
+.experience-card.card-dining { grid-column: 1; grid-row: 1 / 3; min-height: 100%; }
+.experience-card.card-dining::before { background: linear-gradient(155deg, var(--teal) 0%, var(--teal-light) 55%, var(--brass) 145%); }
+.experience-card.card-spa::before { background: linear-gradient(155deg, #3a4a4a 0%, var(--teal) 100%); }
+.experience-card.card-events::before { background: linear-gradient(155deg, var(--ink-soft) 0%, #3a2f22 60%, var(--brass) 160%); }
+.experience-eyebrow { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 10px; }
+.experience-card h3 { font-size: 1.5rem; margin-bottom: 10px; }
+.experience-card.card-dining h3 { font-size: 1.9rem; }
+.experience-card p { color: rgba(237, 230, 214, 0.82); font-size: 0.94rem; max-width: 40ch; }
+.experience-note { font-size: 0.76rem; color: rgba(237, 230, 214, 0.5); margin-top: 14px; }
+@media (max-width: 860px) {
+  .experience-grid { grid-template-columns: 1fr; }
+  .experience-card.card-dining { grid-row: auto; }
+}
+
 /* ---- Footer ---- */
 footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 64px 0 32px; }
 .footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1.2fr; gap: 40px; margin-bottom: 48px; }
@@ -161,11 +202,11 @@ footer a:hover { color: var(--brass-light); }
   </div>
 </nav>
 
-<header class="hero">
+<header class="hero grain">
   <div class="wrap">
-    <p class="eyebrow" data-content="heroEyebrow">Multiple locations, one company</p>
-    <h1 data-content="heroTitle" id="heroTitle">One booking system, every location.</h1>
-    <p class="lead" data-content="heroSubtitle">Book a room, order restaurant or spa service, or reserve a space for your next event — directly with us, at any of our branches, with real-time availability and no double-bookings.</p>
+    <p class="eyebrow" data-content="heroEyebrow">Every location, held to the same standard</p>
+    <h1 data-content="heroTitle" id="heroTitle">A stay arranged the way it should be.</h1>
+    <p class="lead" data-content="heroSubtitle">Rooms, dining, spa and events — reserved directly with us, at any branch, with real-time availability and nothing left to guesswork.</p>
     <div class="hero-actions">
       <a href="#locations" class="btn btn-primary">Check availability</a>
       <a href="about.html" class="btn btn-ghost">About us</a>
@@ -177,7 +218,7 @@ footer a:hover { color: var(--brass-light); }
 </div>
 
 <!-- ===== LOCATIONS — live from GET /api/branches ===== -->
-<section id="locations">
+<section id="locations" class="reveal">
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">Our locations</p>
@@ -190,8 +231,43 @@ footer a:hover { color: var(--brass-light); }
   </div>
 </section>
 
+<!-- ===== SIGNATURE EXPERIENCES ===== -->
+<!-- Art-directed with gradient/texture panels rather than stock photography —
+     swap the ::before backgrounds for real branch photography (dining room,
+     spa treatment room, event space) as it becomes available; the layout
+     and hover treatment don't need to change when that happens. -->
+<section class="reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Signature experiences</p>
+      <h2>Beyond the room.</h2>
+      <p>What sets each stay apart isn't the booking — it's what's waiting once you arrive. Availability varies by location.</p>
+    </div>
+    <div class="experience-grid">
+      <div class="experience-card card-dining">
+        <p class="experience-eyebrow">Dining</p>
+        <h3>A table, held for you.</h3>
+        <p>From in-room service to the branch restaurant, order or reserve ahead — the kitchen knows you're coming before you arrive.</p>
+        <p class="experience-note">Available at select locations</p>
+      </div>
+      <div class="experience-card card-spa">
+        <p class="experience-eyebrow">Spa &amp; wellness</p>
+        <h3>Time set aside, properly.</h3>
+        <p>Treatments booked the same way as a room — real availability, no back-and-forth.</p>
+        <p class="experience-note">Available at select locations</p>
+      </div>
+      <div class="experience-card card-events">
+        <p class="experience-eyebrow">Events &amp; celebrations</p>
+        <h3>A space, kept ready.</h3>
+        <p>Browse upcoming events or reserve a space for your own — handled directly with the branch team.</p>
+        <p class="experience-note">Available at select locations</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ===== WHAT WE OFFER ===== -->
-<section class="amenities-band">
+<section class="amenities-band grain reveal">
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">What we offer</p>
@@ -207,12 +283,12 @@ footer a:hover { color: var(--brass-light); }
   </div>
 </section>
 
-<!-- ===== WHY BOOK DIRECT ===== -->
-<section>
+<!-- ===== THE STANDARD ===== -->
+<section class="reveal">
   <div class="wrap">
     <div class="section-head">
-      <p class="eyebrow">Why book direct</p>
-      <h2 data-content="trustTitle">No middleman, no markup, no guesswork.</h2>
+      <p class="eyebrow">The standard</p>
+      <h2 data-content="trustTitle">Every detail, handled the same way, every time.</h2>
     </div>
     <div class="trust-grid">
       <div class="trust-item"><div class="key-tag">1</div><h4>Real-time availability</h4><p>What you see is actually open — our system rejects any attempt at a double-booking at the database level, not just on the screen.</p></div>
@@ -224,10 +300,10 @@ footer a:hover { color: var(--brass-light); }
 </section>
 
 <!-- ===== CTA BANNER ===== -->
-<section class="cta-banner">
+<section class="cta-banner grain reveal">
   <div class="wrap">
     <h2 data-content="ctaTitle">Ready to book your stay?</h2>
-    <p data-content="ctaSubtitle">Pick a location above, check what's available, and book directly — no account required to get started.</p>
+    <p data-content="ctaSubtitle">Choose a location, see what's actually available, and book directly with us — no account required to get started.</p>
     <a href="#locations" class="btn btn-primary">See our locations</a>
   </div>
 </section>
@@ -267,7 +343,7 @@ footer a:hover { color: var(--brass-light); }
     </div>
     <div class="footer-bottom">
       <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Our Hotel</span>. All rights reserved.</span>
-      <span>Built and run directly — no third-party booking fees.</span>
+      <span>A stay arranged directly with us, start to finish.</span>
     </div>
   </div>
 </footer>
@@ -391,6 +467,34 @@ footer a:hover { color: var(--brass-light); }
     if (toggle && links) toggle.addEventListener("click", () => links.classList.toggle("open"));
   }
 
+  /** Scroll-triggered reveal for .reveal sections. Skips straight to
+   * visible (no observer needed) if the visitor has reduced motion set —
+   * the global CSS already collapses transition durations for them, this
+   * just avoids leaving content invisible if a browser doesn't honor that. */
+  function initReveal() {
+    const targets = document.querySelectorAll(".reveal");
+    if (!targets.length) return;
+
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReduced || !("IntersectionObserver" in window)) {
+      targets.forEach((el) => el.classList.add("is-visible"));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -60px 0px" }
+    );
+    targets.forEach((el) => observer.observe(el));
+  }
+
   
 
   /** Live "Our Locations" section, fed by the real GET /api/branches. */
@@ -441,6 +545,7 @@ footer a:hover { color: var(--brass-light); }
 
   document.addEventListener("DOMContentLoaded", () => {
     initNav();
+    initReveal();
     hydrateSiteSettings();
     loadBranches();
     document.getElementById("newsletterForm").addEventListener("submit", submitNewsletterSignup);

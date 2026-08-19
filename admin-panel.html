@@ -223,6 +223,10 @@ tr:last-child td { border-bottom: none; }
 
 /* ========== BADGES ========== */
 .badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.02em; }
+.offering-photo { width: 44px; height: 44px; border-radius: 6px; overflow: hidden; cursor: pointer; background: #f0eee9; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; transition: border-color 0.2s; }
+.offering-photo:hover { border-color: var(--accent, #1F3A34); }
+.offering-photo img { width: 100%; height: 100%; object-fit: cover; }
+.offering-photo-placeholder { color: #999; font-size: 0.9rem; }
 .badge-pending { background: rgba(185,141,69,0.15); color: var(--brass-dark); }
 .badge-confirmed, .badge-active, .badge-resolved, .badge-successful { background: rgba(47,93,90,0.12); color: var(--teal); }
 .badge-cancelled, .badge-inactive, .badge-failed, .badge-rejected { background: rgba(163,57,42,0.1); color: var(--danger); }
@@ -407,48 +411,82 @@ async function adminRequest(path, options = {}) {
   return data;
 }
 
+async function adminUpload(path, file) {
+  const form = new FormData();
+  form.append("image", file);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  });
+  if (res.status === 401) {
+    clearSession();
+    showLogin();
+    throw new Error("Session expired");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data;
+}
+
+async function adminUpload(path, file) {
+  const form = new FormData();
+  form.append("image", file);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  });
+  if (res.status === 401) {
+    clearSession();
+    showLogin();
+    throw new Error("Session expired");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data;
+}
+
+async function adminUpload(path, file) {
+  const form = new FormData();
+  form.append("image", file);
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}` },
+    body: form,
+  });
+  if (res.status === 401) {
+    clearSession();
+    showLogin();
+    throw new Error("Session expired");
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+  return data;
+}
+
 const adminApi = {
-  // Tries Director, then Manager, then Staff — there's one login form for
-  // all three account types, and the backend has a separate endpoint per
-  // type rather than one shared one.
+  setupTwoFactor: () => adminRequest("/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => adminRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => adminRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  // Director only — Manager and Staff have their own dedicated panels now
+  // (manager-panel.html, staff-panel.html). This panel intentionally never
+  // attempts those login endpoints.
   login: async (email, password) => {
-    const attempts = [
-      { type: "director", url: "/auth/director/login" },
-      { type: "manager", url: "/auth/manager/login" },
-      { type: "staff", url: "/auth/staff/login" },
-    ];
-    let lastError = "Login failed";
-    for (const { type, url } of attempts) {
-      try {
-        const res = await fetch(`${API_BASE}${url}`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await res.json();
-        if (res.ok) {
-          // Backend returns the account under a type-specific key
-          // (director/manager/staff), and only the Staff object actually
-          // has a `role` field. Normalize all three into one shape so the
-          // rest of the app can just use `staff.role` / `staff.permissions`
-          // without caring which endpoint answered.
-          const account = data[type];
-          return {
-            token: data.token,
-            refreshToken: data.refreshToken,
-            staff: { ...account, role: account.role || type.toUpperCase() },
-          };
-        }
-        // 401 = wrong account type or wrong password for THIS type — try
-        // the next type. Anything else (423 locked, 500, etc.) is a real
-        // error worth surfacing immediately.
-        if (res.status !== 401) throw new Error(data.error || "Login failed");
-        lastError = data.error || lastError;
-      } catch (err) {
-        if (err.message && err.message !== "Login failed") throw err;
-      }
-    }
-    throw new Error(lastError);
+    const res = await fetch(`${API_BASE}/auth/director/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Login failed");
+    // The Director object has no `role` field on the backend — inject one
+    // so isDirector() and permission checks below work correctly.
+    return {
+      token: data.token,
+      refreshToken: data.refreshToken,
+      staff: { ...data.director, role: "DIRECTOR" },
+    };
   },
 
   // Branch-level settings (a branch's own operational settings)
@@ -482,16 +520,22 @@ const adminApi = {
   createMenuItem: (payload) => adminRequest(branchPath("/menu"), { method: "POST", body: JSON.stringify(payload) }),
   updateMenuItem: (id, payload) => adminRequest(branchPath(`/menu/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
   deleteMenuItem: (id) => adminRequest(branchPath(`/menu/${id}`), { method: "DELETE" }),
+  uploadMenuItemImage: (id, file) => adminUpload(branchPath(`/menu/${id}/images`), file),
+  deleteMenuItemImage: (id) => adminRequest(branchPath(`/menu/${id}/images`), { method: "DELETE" }),
 
   listLaundryItems: () => adminRequest(branchPath("/laundry-items")),
   createLaundryItem: (payload) => adminRequest(branchPath("/laundry-items"), { method: "POST", body: JSON.stringify(payload) }),
   updateLaundryItem: (id, payload) => adminRequest(branchPath(`/laundry-items/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
   deleteLaundryItem: (id) => adminRequest(branchPath(`/laundry-items/${id}`), { method: "DELETE" }),
+  uploadLaundryItemImage: (id, file) => adminUpload(branchPath(`/laundry-items/${id}/images`), file),
+  deleteLaundryItemImage: (id) => adminRequest(branchPath(`/laundry-items/${id}/images`), { method: "DELETE" }),
 
   listSpaTreatments: () => adminRequest(branchPath("/spa-treatments")),
   createSpaTreatment: (payload) => adminRequest(branchPath("/spa-treatments"), { method: "POST", body: JSON.stringify(payload) }),
   updateSpaTreatment: (id, payload) => adminRequest(branchPath(`/spa-treatments/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSpaTreatment: (id) => adminRequest(branchPath(`/spa-treatments/${id}`), { method: "DELETE" }),
+  uploadSpaTreatmentImage: (id, file) => adminUpload(branchPath(`/spa-treatments/${id}/images`), file),
+  deleteSpaTreatmentImage: (id) => adminRequest(branchPath(`/spa-treatments/${id}/images`), { method: "DELETE" }),
 
   listBookings: (status) => adminRequest(branchPath(`/bookings${status ? `?status=${status}` : ""}`)),
   updateBookingStatus: (id, status) => adminRequest(branchPath(`/bookings/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
@@ -552,6 +596,35 @@ const adminApi = {
   listCampaigns: () => adminRequest("/director/newsletter/campaigns"),
   createCampaign: (payload) => adminRequest("/director/newsletter/campaigns", { method: "POST", body: JSON.stringify(payload) }),
 
+  // Reviews — moderation
+  listReviews: (status) => adminRequest(branchPath(`/reviews${status ? `?status=${status}` : ""}`)),
+  moderateReview: (id, status) => adminRequest(branchPath(`/reviews/${id}/moderate`), { method: "PATCH", body: JSON.stringify({ status }) }),
+  replyToReview: (id, reply) => adminRequest(branchPath(`/reviews/${id}/reply`), { method: "POST", body: JSON.stringify({ reply }) }),
+
+  // Orders — food/drink/spa/laundry orders placed by guests
+  listOrders: (filters = {}) => {
+    const qs = new URLSearchParams(filters).toString();
+    return adminRequest(branchPath(`/orders${qs ? `?${qs}` : ""}`));
+  },
+  getOrder: (id) => adminRequest(branchPath(`/orders/${id}`)),
+  updateOrderStatus: (id, status) => adminRequest(branchPath(`/orders/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Promo Codes
+  listPromoCodes: () => adminRequest(branchPath("/promo-codes")),
+  createPromoCode: (payload) => adminRequest(branchPath("/promo-codes"), { method: "POST", body: JSON.stringify(payload) }),
+  updatePromoCode: (id, payload) => adminRequest(branchPath(`/promo-codes/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
+
+  // Group Bookings
+  listGroupBookings: () => adminRequest(branchPath("/group-bookings")),
+  getGroupBooking: (id) => adminRequest(branchPath(`/group-bookings/${id}`)),
+  createGroupBooking: (payload) => adminRequest(branchPath("/group-bookings"), { method: "POST", body: JSON.stringify(payload) }),
+  updateGroupBookingStatus: (id, status) => adminRequest(branchPath(`/group-bookings/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Corporate Accounts — Director only
+  listCorporateAccounts: () => adminRequest("/director/corporate-accounts"),
+  createCorporateAccount: (payload) => adminRequest("/director/corporate-accounts", { method: "POST", body: JSON.stringify(payload) }),
+  updateCorporateAccount: (id, payload) => adminRequest(`/director/corporate-accounts/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
   listAuditLogs: (filters = {}) => {
     const qs = new URLSearchParams(filters).toString();
     return adminRequest(`/director/audit-log${qs ? `?${qs}` : ""}`);
@@ -588,27 +661,11 @@ const NAV_GROUPS = [
     id: "company", label: "Company", icon: "fa-building", directorOnly: true,
     items: [
       { page: "branches", label: "Branches", icon: "fa-hotel" },
+      { page: "managers", label: "Managers", icon: "fa-user-tie" },
+      { page: "corporate", label: "Corporate Accounts", icon: "fa-briefcase" },
       { page: "auditlog", label: "Audit Log", icon: "fa-clipboard-list" },
       { page: "analytics", label: "Analytics", icon: "fa-chart-line" },
     ],
-  },
-  {
-    id: "operations", label: "Operations", icon: "fa-th-large",
-    items: [
-      { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
-      { page: "offerings", label: "Food, Drinks & Services", icon: "fa-utensils", permission: "manage_rooms" },
-      { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
-      { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
-      { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
-    ],
-  },
-  {
-    id: "people", label: "People", icon: "fa-users",
-    items: [{ page: "staff", label: "Staff", icon: "fa-user-tie", permission: "manage_staff" }],
-  },
-  {
-    id: "support", label: "Guest Support", icon: "fa-headset",
-    items: [{ page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" }],
   },
   {
     id: "finance", label: "Finance", icon: "fa-sack-dollar",
@@ -622,6 +679,7 @@ const NAV_GROUPS = [
     ],
   },
 ];
+
 const SETTINGS_ITEM = { page: "settings", label: "Branch Settings", icon: "fa-gear", permission: "manage_settings" };
 const SITE_SETTINGS_ITEM = { page: "sitesettings", label: "Site Settings", icon: "fa-globe" };
 
@@ -681,6 +739,9 @@ function renderSidebar() {
         <i class="fas ${SITE_SETTINGS_ITEM.icon}"></i><span>${SITE_SETTINGS_ITEM.label}</span>
       </div>
     ` : ""}
+    <div class="nav-item-standalone" data-page="myaccount" onclick="switchPage('myaccount')">
+      <i class="fas fa-shield-halved"></i><span>My Account</span>
+    </div>
   `;
 }
 
@@ -700,18 +761,24 @@ function setActiveNav(page) {
 const PAGE_LOADERS = {
   dashboard: () => isDirector() ? loadDirectorDashboard() : loadBranchDashboard(),
   branches: loadBranchesPage,
+  corporate: loadCorporateAccountsPage,
   rooms: loadRoomsPage,
   offerings: loadOfferingsPage,
   bookings: loadBookingsPage,
+  groupbookings: loadGroupBookingsPage,
+  orders: loadOrdersPage,
   stock: loadStockPage,
   events: loadEventsPage,
   staff: loadStaffPage,
   tickets: loadTicketsPage,
+  reviews: loadReviewsPage,
   transactions: loadTransactionsPage,
+  promocodes: loadPromoCodesPage,
   auditlog: loadAuditLogPage,
   analytics: loadAnalyticsPage,
   settings: loadSettingsPage,
   sitesettings: loadSiteSettingsPage,
+  myaccount: loadMyAccountPage,
   blog: loadBlogPage,
   newsletter: loadNewsletterPage,
 };
@@ -1431,8 +1498,8 @@ async function loadOfferingsPage() {
     <div id="offeringsNotice"></div>
     <div class="panel">
       <table>
-        <thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
-        <tbody id="offeringsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Photo</th><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="offeringsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="offeringModal" style="display:none;">
@@ -1498,6 +1565,12 @@ async function refreshOfferingsTable() {
     const offerings = results.flat();
     document.getElementById("offeringsBody").innerHTML = offerings.length ? offerings.map((o) => `
       <tr>
+        <td>
+          <div class="offering-photo" onclick="document.getElementById('photoInput-${o.id}').click()" title="Click to change photo">
+            ${o.image ? `<img src="${o.image}" alt="${o.name}">` : `<span class="offering-photo-placeholder"><i class="fa-solid fa-camera"></i></span>`}
+          </div>
+          <input type="file" id="photoInput-${o.id}" accept="image/*" style="display:none;" onchange="uploadOfferingPhoto('${o._category}', '${o.id}', this)">
+        </td>
         <td>${o.name}</td>
         <td>${OFFERING_TYPES[o._category].label}</td>
         <td>&#8358;${Number(o.price).toLocaleString()}</td>
@@ -1507,9 +1580,24 @@ async function refreshOfferingsTable() {
           <button class="btn btn-sm btn-outline" onclick="toggleOfferingActive('${o._category}', '${o.id}', ${o.isAvailable})">${o.isAvailable ? "Deactivate" : "Activate"}</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No items yet — add food, drinks, laundry, or spa items above.</td></tr>`;
+    `).join("") : `<tr><td colspan="6" class="empty-state">No items yet — add food, drinks, laundry, or spa items above.</td></tr>`;
   } catch (err) {
-    document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
+    document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+async function uploadOfferingPhoto(category, id, inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const uploaders = {
+    food: adminApi.uploadMenuItemImage, drink: adminApi.uploadMenuItemImage,
+    laundry: adminApi.uploadLaundryItemImage, spa: adminApi.uploadSpaTreatmentImage,
+  };
+  try {
+    await uploaders[category](id, file);
+    refreshOfferingsTable();
+  } catch (err) {
+    showNotice("offeringsNotice", "Couldn't upload photo: " + err.message);
   }
 }
 
@@ -2580,6 +2668,482 @@ async function submitSiteSettingsForm(e) {
   } finally {
     btn.disabled = false;
   }
+}
+
+/* ============================================================
+   REVIEWS — moderation
+   ============================================================ */
+async function loadReviewsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Reviews", "Moderate guest reviews and reply publicly.")}
+    <div id="reviewsNotice"></div>
+    <div class="filter-row" style="margin-bottom:16px;">
+      <select id="reviewStatusFilter" onchange="refreshReviewsList()">
+        <option value="">All statuses</option>
+        <option value="PENDING">Pending</option>
+        <option value="PUBLISHED">Published</option>
+        <option value="REJECTED">Rejected</option>
+      </select>
+    </div>
+    <div id="reviewsList"><p class="loading-state">Loading…</p></div>
+  `;
+  refreshReviewsList();
+}
+
+async function refreshReviewsList() {
+  const status = document.getElementById("reviewStatusFilter").value;
+  const list = document.getElementById("reviewsList");
+  try {
+    const { reviews } = await adminApi.listReviews(status);
+    list.innerHTML = reviews.length ? reviews.map((r) => `
+      <div class="panel" style="margin-bottom:14px;padding:20px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div>
+            <div style="color:var(--brass,#C9A227);letter-spacing:2px;">${"&#9733;".repeat(r.ratingValue)}${"&#9734;".repeat(5 - r.ratingValue)}</div>
+            <strong>${r.title || "(no title)"}</strong>
+            <div class="muted" style="font-size:0.85rem;">${r.guest?.name || "Guest"} &middot; ${new Date(r.createdAt).toLocaleDateString()}</div>
+          </div>
+          <span class="badge badge-${r.status.toLowerCase()}">${r.status}</span>
+        </div>
+        <p style="margin:12px 0;">${r.body || ""}</p>
+        ${r.staffReplyBody ? `<div style="background:#f6f4ef;padding:10px 14px;border-radius:6px;font-size:0.9rem;"><strong>Our reply:</strong> ${r.staffReplyBody}</div>` : ""}
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">
+          ${r.status === "PENDING" ? `
+            <button class="btn btn-sm btn-primary" onclick="moderateReviewRow('${r.id}','PUBLISHED')">Publish</button>
+            <button class="btn btn-sm btn-outline" onclick="moderateReviewRow('${r.id}','REJECTED')">Reject</button>
+          ` : ""}
+          ${!r.staffReplyBody ? `<button class="btn btn-sm btn-outline" onclick="replyToReviewRow('${r.id}')">Reply</button>` : ""}
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">No reviews${status ? ` with status ${status}` : ""} yet.</div>`;
+  } catch (err) {
+    list.innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+async function moderateReviewRow(id, status) {
+  try { await adminApi.moderateReview(id, status); refreshReviewsList(); }
+  catch (err) { showNotice("reviewsNotice", err.message); }
+}
+async function replyToReviewRow(id) {
+  const reply = prompt("Reply to this review:");
+  if (!reply) return;
+  try { await adminApi.replyToReview(id, reply); refreshReviewsList(); }
+  catch (err) { showNotice("reviewsNotice", err.message); }
+}
+
+/* ============================================================
+   ORDERS — food / drink / spa / laundry orders placed by guests
+   ============================================================ */
+const ORDER_STATUS_FLOW = ["PENDING", "CONFIRMED", "PREPARING", "READY", "DELIVERED", "CANCELLED"];
+
+async function loadOrdersPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Orders", "Food, drink, spa, and laundry orders placed by guests.")}
+    <div id="ordersNotice"></div>
+    <div class="filter-row" style="margin-bottom:16px;display:flex;gap:10px;">
+      <select id="orderStatusFilter" onchange="refreshOrdersTable()">
+        <option value="">All statuses</option>
+        ${ORDER_STATUS_FLOW.map((s) => `<option value="${s}">${s}</option>`).join("")}
+      </select>
+      <select id="orderTypeFilter" onchange="refreshOrdersTable()">
+        <option value="">All types</option>
+        <option value="ROOM_SERVICE">Room service</option>
+        <option value="RESTAURANT">Restaurant</option>
+        <option value="BAR">Bar</option>
+        <option value="SPA">Spa</option>
+        <option value="LAUNDRY">Laundry</option>
+        <option value="EVENT_TICKET">Event ticket</option>
+        <option value="OTHER">Other</option>
+      </select>
+    </div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Guest</th><th>Type</th><th>Total</th><th>Status</th><th>Placed</th><th></th></tr></thead>
+        <tbody id="ordersBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  refreshOrdersTable();
+}
+
+async function refreshOrdersTable() {
+  const status = document.getElementById("orderStatusFilter").value;
+  const type = document.getElementById("orderTypeFilter").value;
+  const body = document.getElementById("ordersBody");
+  try {
+    const { orders } = await adminApi.listOrders({ ...(status ? { status } : {}), ...(type ? { type } : {}) });
+    body.innerHTML = orders.length ? orders.map((o) => `
+      <tr>
+        <td>${o.guest?.name || "Guest"}</td>
+        <td>${o.type.replace("_", " ")}</td>
+        <td>${o.totalAmount != null ? "&#8358;" + Number(o.totalAmount).toLocaleString() : "&mdash;"}</td>
+        <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
+        <td>${new Date(o.createdAt).toLocaleString()}</td>
+        <td>
+          <select onchange="updateOrderStatusRow('${o.id}', this.value)">
+            <option value="">Update status&hellip;</option>
+            ${ORDER_STATUS_FLOW.map((s) => `<option value="${s}" ${s === o.status ? "disabled" : ""}>${s}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No orders match this filter.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+async function updateOrderStatusRow(id, status) {
+  if (!status) return;
+  try { await adminApi.updateOrderStatus(id, status); refreshOrdersTable(); }
+  catch (err) { showNotice("ordersNotice", err.message); }
+}
+
+/* ============================================================
+   PROMO CODES
+   ============================================================ */
+async function loadPromoCodesPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Promo Codes", "Discount codes guests can apply at checkout.",
+      `<button class="btn btn-primary" onclick="openPromoModal()">New code</button>`)}
+    <div id="promoNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Status</th><th></th></tr></thead>
+        <tbody id="promoBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="promoModal" style="display:none;">
+      <div class="modal">
+        <h3>New promo code</h3>
+        <form id="promoForm">
+          <div class="form-field"><label>Code</label><input type="text" id="pcCode" required style="text-transform:uppercase;"></div>
+          <div class="form-row">
+            <div class="form-field">
+              <label>Discount type</label>
+              <select id="pcType"><option value="PERCENT">Percent off</option><option value="FIXED">Fixed amount off</option></select>
+            </div>
+            <div class="form-field"><label>Discount value</label><input type="number" id="pcValue" min="0" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Max uses (blank = unlimited)</label><input type="number" id="pcMaxUses" min="1"></div>
+            <div class="form-field"><label>Per-guest limit</label><input type="number" id="pcPerGuest" min="1" value="1"></div>
+          </div>
+          <div class="form-field"><label>Description (optional)</label><input type="text" id="pcDescription"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closePromoModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pcSubmitBtn">Create code</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("promoForm").addEventListener("submit", submitPromoForm);
+  refreshPromoTable();
+}
+
+async function refreshPromoTable() {
+  const body = document.getElementById("promoBody");
+  try {
+    const { promoCodes } = await adminApi.listPromoCodes();
+    body.innerHTML = promoCodes.length ? promoCodes.map((p) => `
+      <tr>
+        <td><code>${p.code}</code>${p.description ? `<div class="muted" style="font-size:0.8rem;">${p.description}</div>` : ""}</td>
+        <td>${p.discountType === "PERCENT" ? `${p.discountValue}%` : "&#8358;" + Number(p.discountValue).toLocaleString()}</td>
+        <td>${p.usedCount}${p.maxUses ? ` / ${p.maxUses}` : ""}</td>
+        <td><span class="badge badge-${p.isActive ? "active" : "inactive"}">${p.isActive ? "Active" : "Inactive"}</span></td>
+        <td><button class="btn btn-sm btn-outline" onclick="togglePromoActive('${p.id}', ${p.isActive})">${p.isActive ? "Deactivate" : "Activate"}</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No promo codes yet.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openPromoModal() { document.getElementById("promoForm").reset(); document.getElementById("promoModal").style.display = "flex"; }
+function closePromoModal() { document.getElementById("promoModal").style.display = "none"; }
+
+async function submitPromoForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("pcSubmitBtn");
+  btn.disabled = true;
+  try {
+    await adminApi.createPromoCode({
+      code: document.getElementById("pcCode").value.toUpperCase(),
+      discountType: document.getElementById("pcType").value,
+      discountValue: Number(document.getElementById("pcValue").value),
+      maxUses: document.getElementById("pcMaxUses").value ? Number(document.getElementById("pcMaxUses").value) : undefined,
+      perGuestLimit: document.getElementById("pcPerGuest").value ? Number(document.getElementById("pcPerGuest").value) : undefined,
+      description: document.getElementById("pcDescription").value || undefined,
+    });
+    showNotice("promoNotice", "Promo code created.", "success");
+    closePromoModal();
+    refreshPromoTable();
+  } catch (err) {
+    showNotice("promoNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function togglePromoActive(id, currentlyActive) {
+  try { await adminApi.updatePromoCode(id, { isActive: !currentlyActive }); refreshPromoTable(); }
+  catch (err) { showNotice("promoNotice", err.message); }
+}
+
+
+/* ============================================================
+   GROUP BOOKINGS
+   ============================================================ */
+async function loadGroupBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Group Bookings", "Room blocks for weddings, conferences, and corporate retreats.")}
+    <div id="groupBookingsNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Group</th><th>Dates</th><th>Rooms</th><th>Status</th><th></th></tr></thead>
+        <tbody id="groupBookingsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  refreshGroupBookingsTable();
+}
+
+async function refreshGroupBookingsTable() {
+  const body = document.getElementById("groupBookingsBody");
+  try {
+    const { groupBookings } = await adminApi.listGroupBookings();
+    body.innerHTML = groupBookings.length ? groupBookings.map((g) => `
+      <tr>
+        <td>${g.groupName}${g.corporateAccount ? `<div class="muted" style="font-size:0.8rem;">${g.corporateAccount.companyName}</div>` : ""}</td>
+        <td>${new Date(g.checkIn).toLocaleDateString()} &rarr; ${new Date(g.checkOut).toLocaleDateString()}</td>
+        <td>${(g.bookings || []).length} room${(g.bookings || []).length === 1 ? "" : "s"}</td>
+        <td><span class="badge badge-${g.status.toLowerCase()}">${g.status}</span></td>
+        <td>
+          <select onchange="updateGroupBookingStatusRow('${g.id}', this.value)">
+            <option value="">Update status&hellip;</option>
+            <option value="CONFIRMED">Confirm</option>
+            <option value="CHECKED_IN">Check in</option>
+            <option value="CHECKED_OUT">Check out</option>
+            <option value="CANCELLED">Cancel</option>
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No group bookings yet.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+async function updateGroupBookingStatusRow(id, status) {
+  if (!status) return;
+  try { await adminApi.updateGroupBookingStatus(id, status); refreshGroupBookingsTable(); }
+  catch (err) { showNotice("groupBookingsNotice", err.message); }
+}
+
+/* ============================================================
+   CORPORATE ACCOUNTS — Director only
+   ============================================================ */
+async function loadCorporateAccountsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Corporate Accounts", "Companies with a negotiated rate, linked to group bookings.",
+      `<button class="btn btn-primary" onclick="openCorporateModal()">New account</button>`)}
+    <div id="corporateNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Company</th><th>Contact</th><th>Discount</th><th>Status</th><th></th></tr></thead>
+        <tbody id="corporateBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="corporateModal" style="display:none;">
+      <div class="modal">
+        <h3>New corporate account</h3>
+        <form id="corporateForm">
+          <div class="form-field"><label>Company name</label><input type="text" id="caCompany" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Contact name</label><input type="text" id="caContactName" required></div>
+            <div class="form-field"><label>Contact email</label><input type="email" id="caContactEmail" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Contact phone</label><input type="tel" id="caContactPhone"></div>
+            <div class="form-field"><label>Negotiated discount %</label><input type="number" id="caDiscount" min="0" max="100" step="0.5"></div>
+          </div>
+          <div class="form-field"><label>Billing notes</label><textarea id="caNotes" rows="2"></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeCorporateModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="caSubmitBtn">Create account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("corporateForm").addEventListener("submit", submitCorporateForm);
+  refreshCorporateTable();
+}
+
+async function refreshCorporateTable() {
+  const body = document.getElementById("corporateBody");
+  try {
+    const { corporateAccounts } = await adminApi.listCorporateAccounts();
+    body.innerHTML = corporateAccounts.length ? corporateAccounts.map((c) => `
+      <tr>
+        <td>${c.companyName}</td>
+        <td>${c.contactName}<div class="muted" style="font-size:0.8rem;">${c.contactEmail}</div></td>
+        <td>${c.negotiatedDiscountPercent ? `${c.negotiatedDiscountPercent}%` : "&mdash;"}</td>
+        <td><span class="badge badge-${c.isActive ? "active" : "inactive"}">${c.isActive ? "Active" : "Inactive"}</span></td>
+        <td><button class="btn btn-sm btn-outline" onclick="toggleCorporateActive('${c.id}', ${c.isActive})">${c.isActive ? "Deactivate" : "Activate"}</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No corporate accounts yet.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openCorporateModal() { document.getElementById("corporateForm").reset(); document.getElementById("corporateModal").style.display = "flex"; }
+function closeCorporateModal() { document.getElementById("corporateModal").style.display = "none"; }
+
+async function submitCorporateForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("caSubmitBtn");
+  btn.disabled = true;
+  try {
+    await adminApi.createCorporateAccount({
+      companyName: document.getElementById("caCompany").value,
+      contactName: document.getElementById("caContactName").value,
+      contactEmail: document.getElementById("caContactEmail").value,
+      contactPhone: document.getElementById("caContactPhone").value || undefined,
+      negotiatedDiscountPercent: document.getElementById("caDiscount").value ? Number(document.getElementById("caDiscount").value) : undefined,
+      billingNotes: document.getElementById("caNotes").value || undefined,
+    });
+    showNotice("corporateNotice", "Corporate account created.", "success");
+    closeCorporateModal();
+    refreshCorporateTable();
+  } catch (err) {
+    showNotice("corporateNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleCorporateActive(id, currentlyActive) {
+  try { await adminApi.updateCorporateAccount(id, { isActive: !currentlyActive }); refreshCorporateTable(); }
+  catch (err) { showNotice("corporateNotice", err.message); }
+}
+
+/* ============================================================
+   MY ACCOUNT — 2FA enrollment for the logged-in Director/Manager
+   ============================================================ */
+async function loadMyAccountPage() {
+  const staff = getStaff();
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("My Account", "Security settings for your own login — not visible to anyone else.")}
+    <div id="myAccountNotice"></div>
+    <div class="panel" style="max-width:560px;">
+      <h3 style="padding:16px 20px 0;">Two-factor authentication</h3>
+      <div id="twoFactorStatus" style="padding:16px 20px;"><div class="loading-state">Loading…</div></div>
+    </div>
+  `;
+  renderTwoFactorStatus(!!staff.twoFactorEnabled);
+}
+
+function renderTwoFactorStatus(enabled) {
+  const el = document.getElementById("twoFactorStatus");
+  if (enabled) {
+    el.innerHTML = `
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:14px;">
+        <span class="badge badge-success">Enabled</span> Your account requires a code from your authenticator app at every login.
+      </p>
+      <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+    `;
+  } else {
+    el.innerHTML = `
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:14px;">
+        <span class="badge badge-muted">Disabled</span> Add a second step at login using an authenticator app (Google Authenticator, Authy, 1Password, etc.).
+      </p>
+      <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+    `;
+  }
+  renderTwoFactorModals();
+}
+
+function renderTwoFactorModals() {
+  if (document.getElementById("enable2FAModal")) return; // only inject once
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this QR code with your authenticator app, then enter the 6-digit code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once, if you ever lose access to your authenticator app. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); loadMyAccountPage();">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA for your account.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await adminApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("myAccountNotice", err.message); }
+}
+
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await adminApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const staff = getStaff(); staff.twoFactorEnabled = true; setSession(getToken(), staff);
+  } catch (err) { showNotice("myAccountNotice", err.message); } finally { btn.disabled = false; }
+}
+
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await adminApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const staff = getStaff(); staff.twoFactorEnabled = false; setSession(getToken(), staff);
+    showNotice("myAccountNotice", "2FA turned off.", "success");
+    loadMyAccountPage();
+  } catch (err) { showNotice("myAccountNotice", err.message); } finally { btn.disabled = false; }
 }
 
 /* ============================================================

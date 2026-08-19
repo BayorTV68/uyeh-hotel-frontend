@@ -156,7 +156,7 @@ tr:last-child td { border-bottom: none; }
   <div class="auth-card">
     <div class="brand" id="authBrand">Our Hotel</div>
     <p class="sub">Book your stay, manage reservations, and get support — all in one place.</p>
-    <div class="auth-tabs">
+    <div class="auth-tabs" id="authTabs">
       <button class="auth-tab-btn active" data-tab="login" onclick="switchAuthTab('login')">Log in</button>
       <button class="auth-tab-btn" data-tab="register" onclick="switchAuthTab('register')">Create account</button>
     </div>
@@ -174,6 +174,13 @@ tr:last-child td { border-bottom: none; }
       <div class="form-field"><label>Phone</label><input type="text" id="regPhone"></div>
       <div class="form-field"><label>Password</label><input type="password" id="regPassword" required minlength="8"></div>
       <button type="submit" class="btn btn-primary btn-block" id="registerBtn">Create account</button>
+    </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus></div>
+      <button type="submit" class="btn btn-primary btn-block" id="twoFactorBtn">Verify</button>
+      <button type="button" id="twoFactorBackBtn" style="width:100%; margin-top:10px; background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer;">&larr; Back to login</button>
     </form>
   </div>
 </div>
@@ -244,6 +251,10 @@ async function guestRequest(path, options = {}) {
 const guestApi = {
   register: (payload) => guestRequest("/auth/guest/register", { method: "POST", body: JSON.stringify(payload) }),
   login: (email, password) => guestRequest("/auth/guest/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  setupTwoFactor: () => guestRequest("/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => guestRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => guestRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  verifyTwoFactor: (tempToken, code) => guestRequest("/auth/login/2fa", { method: "POST", body: JSON.stringify({ tempToken, code }) }),
 
   // Platform name — set only by the Director (see hotel-server settings backbone)
   getSettings: () => guestRequest("/settings"),
@@ -313,17 +324,45 @@ function switchAuthTab(tab) {
 }
 function showAuthNotice(message, type = "error") { document.getElementById("authNotice").innerHTML = `<div class="notice ${type}">${message}</div>`; }
 
+let _pendingTempToken = null;
+
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Logging in…";
   try {
     const result = await guestApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
     if (result.requires2FA) {
-      throw new Error("This account has two-factor authentication enabled. 2FA login isn't wired into this panel yet.");
+      _pendingTempToken = result.tempToken;
+      document.getElementById("authTabs").style.display = "none";
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("registerForm").style.display = "none";
+      document.getElementById("twoFactorForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
     }
     setSession(result.token, result.refreshToken, result.guest);
     showApp();
   } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+
+document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorBtn"); btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const result = await guestApi.verifyTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    _pendingTempToken = null;
+    setSession(result.token, result.refreshToken, result.guest);
+    showApp();
+  } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Verify"; }
+});
+
+document.getElementById("twoFactorBackBtn").addEventListener("click", () => {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorForm").style.display = "none";
+  document.getElementById("twoFactorForm").reset();
+  document.getElementById("authTabs").style.display = "flex";
+  document.getElementById("loginForm").style.display = "block";
+  document.getElementById("authNotice").innerHTML = "";
 });
 document.getElementById("registerForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1080,6 +1119,7 @@ async function loadProfilePage() {
       <button class="tab-btn active" data-tab="details" onclick="switchProfileTab('details')">Details</button>
       <button class="tab-btn" data-tab="preferences" onclick="switchProfileTab('preferences')">Preferences</button>
       <button class="tab-btn" data-tab="password" onclick="switchProfileTab('password')">Password</button>
+      <button class="tab-btn" data-tab="security" onclick="switchProfileTab('security')">Security</button>
     </div>
     <div id="profileNotice"></div>
     <div class="panel" id="profilePanel"><div class="loading-state">Loading…</div></div>
@@ -1097,6 +1137,10 @@ function switchProfileTab(tab) {
 function renderProfileTab(tab) {
   const p = window._guestProfile || {};
   const panel = document.getElementById("profilePanel");
+  if (tab === "security") {
+    renderSecurityTab(panel);
+    return;
+  }
   if (tab === "details") {
     panel.innerHTML = `
       <form id="profileForm">
@@ -1154,6 +1198,96 @@ function renderProfileTab(tab) {
       } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
     });
   }
+}
+
+function renderSecurityTab(panel) {
+  const guest = getGuest();
+  const enabled = !!guest.twoFactorEnabled;
+  panel.innerHTML = `
+    <h3 style="margin-bottom:14px;">Two-factor authentication</h3>
+    ${enabled ? `
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:14px;">
+        <span class="badge badge-confirmed">Enabled</span> Your account requires a code from your authenticator app at every login.
+      </p>
+      <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+    ` : `
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:14px;">
+        <span class="badge badge-pending">Disabled</span> Add a second step at login using an authenticator app (Google Authenticator, Authy, 1Password, etc.) — recommended if you save payment details to your account.
+      </p>
+      <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+    `}
+  `;
+  renderTwoFactorModals();
+}
+
+function renderTwoFactorModals() {
+  if (document.getElementById("enable2FAModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this with your authenticator app, then enter the code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); renderProfileTab('security');">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await guestApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("profileNotice", err.message); }
+}
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await guestApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const guest = getGuest(); guest.twoFactorEnabled = true; setSession(getToken(), getRefreshToken(), guest);
+  } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+}
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await guestApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const guest = getGuest(); guest.twoFactorEnabled = false; setSession(getToken(), getRefreshToken(), guest);
+    renderProfileTab("security");
+    showNotice("profileNotice", "2FA turned off.", "success");
+  } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
 }
 
 /* ============================================================

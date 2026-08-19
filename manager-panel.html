@@ -183,6 +183,13 @@ tr:last-child td { border-bottom: none; }
       <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
       <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
     </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus></div>
+      <button type="submit" class="btn btn-primary" id="twoFactorBtn" style="width:100%; margin-top:6px;">Verify</button>
+      <button type="button" id="twoFactorBackBtn" style="width:100%; margin-top:10px; background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer;">&larr; Back to login</button>
+    </form>
   </div>
 </div>
 
@@ -202,6 +209,7 @@ tr:last-child td { border-bottom: none; }
     </div>
     <div class="nav-menu" id="navMenu"></div>
     <div class="sidebar-footer">
+      <div class="logout-link" id="securityBtn" onclick="openSecurityModal()" style="margin-bottom:10px;"><i class="fas fa-shield-halved"></i> Security</div>
       <div class="logout-link" id="logoutBtn"><i class="fas fa-arrow-right-from-bracket"></i> Log out</div>
     </div>
   </div>
@@ -222,17 +230,13 @@ tr:last-child td { border-bottom: none; }
 /* ============================================================
    CONFIG / SESSION
    ============================================================ */
-const API_BASE = "/api"; // adjust to your deployed backend base URL
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
 function getToken() { return localStorage.getItem("mgr_token"); }
 function getStaff() { try { return JSON.parse(localStorage.getItem("mgr_staff")); } catch { return null; } }
 function setSession(token, staff) { localStorage.setItem("mgr_token", token); localStorage.setItem("mgr_staff", JSON.stringify(staff)); }
 function clearSession() { localStorage.removeItem("mgr_token"); localStorage.removeItem("mgr_staff"); }
 function hasPermission(perm) { const s = getStaff(); return s && (s.permissions || []).includes(perm); }
-// This panel is for Manager + Staff roles only. If a Director account logs in here,
-// still let them in (their permissions array is typically empty/irrelevant since the
-// backend already grants directors everything) but there is no company-wide UI to show —
-// point them to the Director dashboard instead.
-function isManager() { const s = getStaff(); return s && s.role === "MANAGER"; }
+// This panel is for Manager only
 
 /* ============================================================
    API
@@ -252,10 +256,35 @@ async function adminRequest(path, options = {}) {
 // branchId — this panel never sends a branchId, and the backend must ignore one
 // if it's ever present in a payload from this client.
 const managerApi = {
-  login: (email, password) =>
-    fetch(`${API_BASE}/auth/manager/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
-      .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Login failed"); return data; }),
+  setupTwoFactor: () => adminRequest("/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => adminRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => adminRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  login: async (email, password) => {
+    const res = await fetch(`${API_BASE}/auth/manager/login`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Login failed");
+    if (data.requires2FA) return data; // { requires2FA: true, tempToken } — caller shows the code-entry screen
 
+    // The bug this was fixing: the backend returns the account under a
+    // `manager` key — never `staff`. Reading the wrong key silently
+    // produced `undefined`, which then got JSON.stringify'd into
+    // localStorage as the literal string "undefined" and broke every
+    // session read after login.
+    if (!data.manager) throw new Error("Unexpected login response — no account data returned");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.manager };
+  },
+
+  verifyTwoFactor: async (tempToken, code) => {
+    const res = await fetch(`${API_BASE}/auth/login/2fa`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempToken, code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Verification failed");
+    if (!data.manager) throw new Error("Unexpected response — no account data returned");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.manager };
+  },
   getDepartments: () => adminRequest("/manager/departments"),
 
   getSettings: () => adminRequest("/manager/branch-settings"),
@@ -283,8 +312,81 @@ const managerApi = {
   updateStaff: (id, payload) => adminRequest(`/manager/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   listTickets: (status) => adminRequest(`/manager/tickets${status ? `?status=${status}` : ""}`),
+  getTicket: (id) => adminRequest(`/manager/tickets/${id}`),
   assignTicket: (id) => adminRequest(`/manager/tickets/${id}/assign`, { method: "PATCH" }),
+  replyToTicket: (id, message) => adminRequest(`/manager/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
   resolveTicket: (id) => adminRequest(`/manager/tickets/${id}/resolve`, { method: "PATCH" }),
+
+  // Stock
+  listStockItems: () => adminRequest("/manager/stock"),
+  createStockItem: (payload) => adminRequest("/manager/stock", { method: "POST", body: JSON.stringify(payload) }),
+  updateStockItem: (id, payload) => adminRequest(`/manager/stock/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteStockItem: (id) => adminRequest(`/manager/stock/${id}`, { method: "DELETE" }),
+
+  // Events
+  listEvents: () => adminRequest("/manager/events"),
+  createEvent: (payload) => adminRequest("/manager/events", { method: "POST", body: JSON.stringify(payload) }),
+  updateEvent: (id, payload) => adminRequest(`/manager/events/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteEvent: (id) => adminRequest(`/manager/events/${id}`, { method: "DELETE" }),
+  uploadEventImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/events/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+  deleteEventImage: (id, imageUrl) => adminRequest(`/manager/events/${id}/images`, { method: "DELETE", body: JSON.stringify({ imageUrl }) }),
+
+  // Laundry & Spa
+  listLaundryItems: () => adminRequest("/manager/laundry-items"),
+  createLaundryItem: (payload) => adminRequest("/manager/laundry-items", { method: "POST", body: JSON.stringify(payload) }),
+  updateLaundryItem: (id, payload) => adminRequest(`/manager/laundry-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteLaundryItem: (id) => adminRequest(`/manager/laundry-items/${id}`, { method: "DELETE" }),
+  listSpaTreatments: () => adminRequest("/manager/spa-treatments"),
+  createSpaTreatment: (payload) => adminRequest("/manager/spa-treatments", { method: "POST", body: JSON.stringify(payload) }),
+  updateSpaTreatment: (id, payload) => adminRequest(`/manager/spa-treatments/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteSpaTreatment: (id) => adminRequest(`/manager/spa-treatments/${id}`, { method: "DELETE" }),
+
+  // Reviews
+  listReviews: (status) => adminRequest(`/manager/reviews${status ? `?status=${status}` : ""}`),
+  moderateReview: (id, status) => adminRequest(`/manager/reviews/${id}/moderate`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  replyToReview: (id, reply) => adminRequest(`/manager/reviews/${id}/reply`, { method: "POST", body: JSON.stringify({ reply }) }),
+
+  // Promo codes
+  listPromoCodes: () => adminRequest("/manager/promo-codes"),
+  createPromoCode: (payload) => adminRequest("/manager/promo-codes", { method: "POST", body: JSON.stringify(payload) }),
+  updatePromoCode: (id, payload) => adminRequest(`/manager/promo-codes/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  // Guest lookup
+  guestLookup: (query) => adminRequest(`/manager/guest-lookup?query=${encodeURIComponent(query)}`),
+
+  // Orders
+  listOrders: (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return adminRequest(`/manager/orders${params.toString() ? `?${params}` : ""}`);
+  },
+  updateOrderStatus: (id, status) => adminRequest(`/manager/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Group bookings
+  listGroupBookings: () => adminRequest("/manager/group-bookings"),
+  createGroupBooking: (payload) => adminRequest("/manager/group-bookings", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Transactions
+  listTransactions: (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return adminRequest(`/manager/transactions${params.toString() ? `?${params}` : ""}`);
+  },
+  getTransaction: (id) => adminRequest(`/manager/transactions/${id}`),
+  recordPayment: (payload) => adminRequest("/manager/transactions", { method: "POST", body: JSON.stringify(payload) }),
+  refundTransaction: (id, reason) => adminRequest(`/manager/transactions/${id}/refund`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  getInvoiceUrl: (id) => `${API_BASE}/manager/transactions/${id}/invoice?token=${getToken()}`,
+
+  // Blog
+  listBlogPosts: () => adminRequest("/manager/blog"),
+  createBlogPost: (payload) => adminRequest("/manager/blog", { method: "POST", body: JSON.stringify(payload) }),
+  updateBlogPost: (id, payload) => adminRequest(`/manager/blog/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBlogPost: (id) => adminRequest(`/manager/blog/${id}`, { method: "DELETE" }),
+  uploadBlogImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/blog/${id}/image`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
 };
 
 /* ============================================================
@@ -296,14 +398,33 @@ const NAV_GROUPS = [
     items: [
       { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
       { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
+      { page: "laundry", label: "Laundry", icon: "fa-shirt", permission: "manage_laundry" },
+      { page: "spa", label: "Spa", icon: "fa-spa", permission: "manage_spa" },
       { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
+      { page: "groupbookings", label: "Group Bookings", icon: "fa-people-group", permission: "manage_bookings" },
+      { page: "orders", label: "Orders", icon: "fa-bell-concierge", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
       { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
     ],
   },
   {
+    id: "finance", label: "Finance", icon: "fa-sack-dollar",
+    items: [{ page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" }],
+  },
+  {
+    id: "marketing", label: "Marketing", icon: "fa-bullhorn",
+    items: [
+      { page: "blog", label: "Blog", icon: "fa-newspaper", permission: "manage_blog" },
+      { page: "reviews", label: "Reviews", icon: "fa-star", permission: "manage_reviews" },
+      { page: "promocodes", label: "Promo Codes", icon: "fa-tags", permission: "manage_promos" },
+    ],
+  },
+  {
     id: "people", label: "People", icon: "fa-users",
-    items: [{ page: "staff", label: "Staff", icon: "fa-user-tie", permission: "manage_staff" }],
+    items: [
+      { page: "staff", label: "Staff", icon: "fa-user-tie", permission: "manage_staff" },
+      { page: "guestlookup", label: "Guest Lookup", icon: "fa-magnifying-glass-location", permission: "manage_security" },
+    ],
   },
   {
     id: "support", label: "Guest Support", icon: "fa-headset",
@@ -373,10 +494,19 @@ const PAGE_LOADERS = {
   dashboard: loadDashboardPage,
   rooms: loadRoomsPage,
   menu: loadMenuPage,
+  laundry: loadLaundryPage,
+  spa: loadSpaPage,
   bookings: loadBookingsPage,
-  stock: () => loadComingSoon("Stock", "Track inventory for your branch with low-stock flags."),
-  events: () => loadComingSoon("Events", "Publish upcoming events guests can book into."),
+  groupbookings: loadGroupBookingsPage,
+  orders: loadOrdersPage,
+  stock: loadStockPage,
+  events: loadEventsPage,
+  transactions: loadTransactionsPage,
+  blog: loadBlogPage,
+  reviews: loadReviewsPage,
+  promocodes: loadPromoCodesPage,
   staff: loadStaffPage,
+  guestlookup: loadGuestLookupPage,
   tickets: loadTicketsPage,
   reports: loadReportsPage,
   settings: loadSettingsPage,
@@ -737,6 +867,7 @@ const ALL_PERMISSIONS = [
   ["manage_spa", "Manage spa"], ["handle_tickets", "Handle tickets"], ["manage_reviews", "Manage reviews"],
   ["manage_promos", "Manage promo codes"], ["manage_security", "Guest verification (security)"],
   ["manage_settings", "Branch settings"], ["view_reports", "View reports"], ["manage_staff", "Manage staff"],
+  ["manage_payments", "Record payments & refunds"], ["manage_blog", "Manage blog"],
 ];
 
 async function loadStaffPage() {
@@ -878,11 +1009,40 @@ async function loadReportsPage() {
 }
 
 /* ============================================================
-   (Old Transactions page removed — no backend ever supported it.
-   See panel.md Part C7 for details. Below this point in the
-   original file is now dead code that this patch removes.)
+   TRANSACTIONS — record payments, issue refunds, print invoices
+   (manage_payments)
    ============================================================ */
+const TXN_SOURCE_LABELS = { booking: "Room booking", food: "Food", drink: "Drink", service: "Service", event: "Event" };
+const TXN_METHOD_LABELS = { CASH: "Cash", CARD: "Card", TRANSFER: "Transfer", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
+
+async function loadTransactionsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Transactions", "Every payment, receipt, and refund at your branch.",
+      `<button class="btn btn-primary" onclick="openPaymentModal()">Record payment</button>`)}
+    <div id="transactionsNotice"></div>
+    <div class="stats-grid" id="txnStatCards"></div>
+    <div class="panel" style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-field" style="margin:0; min-width:160px;"><label>Source</label>
+        <select id="txnSourceFilter" onchange="refreshTransactionsTable()">
+          <option value="">All sources</option>
+          <option value="booking">Room booking</option><option value="food">Food</option>
+          <option value="drink">Drink</option><option value="service">Service</option><option value="event">Event</option>
+        </select>
+      </div>
+      <div class="form-field" style="margin:0; min-width:160px;"><label>Status</label>
+        <select id="txnStatusFilter" onchange="refreshTransactionsTable()">
+          <option value="">All statuses</option><option value="PENDING">Pending</option>
+          <option value="PAID">Paid</option><option value="REFUNDED">Refunded</option>
+        </select>
+      </div>
     </div>
+    <div class="panel">
+      <table><thead><tr><th>Date</th><th>Guest</th><th>Source</th><th>Method</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+        <tbody id="transactionsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
     <div class="modal-overlay" id="paymentModal" style="display:none;">
       <div class="modal">
         <h3>Record payment</h3>
@@ -905,8 +1065,23 @@ async function loadReportsPage() {
         </form>
       </div>
     </div>
+
+    <div class="modal-overlay" id="refundModal" style="display:none;">
+      <div class="modal">
+        <h3>Refund transaction</h3>
+        <form id="refundForm">
+          <input type="hidden" id="rfTxnId">
+          <div class="form-field"><label>Reason <span style="color:var(--text-muted); font-weight:400;">(optional, shown to the guest)</span></label><textarea id="rfReason" rows="2"></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeRefundModal()">Cancel</button>
+            <button type="submit" class="btn btn-danger" id="rfSubmitBtn">Confirm refund</button>
+          </div>
+        </form>
+      </div>
+    </div>
   `;
   document.getElementById("paymentForm").addEventListener("submit", submitPaymentForm);
+  document.getElementById("refundForm").addEventListener("submit", submitRefundForm);
   refreshTransactionsTable();
 }
 async function refreshTransactionsTable() {
@@ -929,12 +1104,12 @@ async function refreshTransactionsTable() {
       <td>${TXN_METHOD_LABELS[t.method] || t.method}</td><td>&#8358;${Number(t.amount).toLocaleString()}</td>
       <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
       <td><a class="btn btn-sm btn-outline" href="${managerApi.getInvoiceUrl(t.id)}" target="_blank" rel="noopener">Invoice</a>
-      ${t.status === "PAID" ? `<button class="btn btn-sm btn-danger" onclick="refundTransactionRow('${t.id}')">Refund</button>` : ""}</td></tr>
+      ${t.status === "PAID" ? `<button class="btn btn-sm btn-danger" onclick="openRefundModal('${t.id}')">Refund</button>` : ""}</td></tr>
     `).join("") : `<tr><td colspan="7" class="empty-state">No transactions yet.</td></tr>`;
   } catch (err) { document.getElementById("transactionsBody").innerHTML = `<tr><td colspan="7" class="empty-state">${err.message}</td></tr>`; }
 }
 function openPaymentModal() { document.getElementById("paymentModal").style.display = "flex"; }
-function closePaymentModal() { document.getElementById("paymentModal").style.display = "none"; }
+function closePaymentModal() { document.getElementById("paymentModal").style.display = "none"; document.getElementById("paymentForm").reset(); }
 async function submitPaymentForm(e) {
   e.preventDefault();
   const btn = document.getElementById("pySubmitBtn"); btn.disabled = true;
@@ -949,9 +1124,905 @@ async function submitPaymentForm(e) {
     closePaymentModal(); showNotice("transactionsNotice", "Payment recorded.", "success"); refreshTransactionsTable();
   } catch (err) { showNotice("transactionsNotice", err.message); } finally { btn.disabled = false; }
 }
-async function refundTransactionRow(id) {
-  if (!confirm("Refund this transaction?")) return;
-  try { await managerApi.refundTransaction(id); refreshTransactionsTable(); } catch (err) { showNotice("transactionsNotice", err.message); }
+function openRefundModal(id) { document.getElementById("rfTxnId").value = id; document.getElementById("refundModal").style.display = "flex"; }
+function closeRefundModal() { document.getElementById("refundModal").style.display = "none"; document.getElementById("refundForm").reset(); }
+async function submitRefundForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("rfSubmitBtn"); btn.disabled = true;
+  try {
+    await managerApi.refundTransaction(document.getElementById("rfTxnId").value, document.getElementById("rfReason").value || undefined);
+    closeRefundModal(); showNotice("transactionsNotice", "Refund issued.", "success"); refreshTransactionsTable();
+  } catch (err) { showNotice("transactionsNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   STOCK — inventory with low-stock flags (manage_stock)
+   ============================================================ */
+async function loadStockPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Stock", "Inventory for your branch, with low-stock flags.",
+      `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
+    <div id="stockNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Quantity</th><th>Unit</th><th>Low-stock threshold</th><th></th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="stockModal" style="display:none;">
+      <div class="modal">
+        <h3 id="stockModalTitle">Add item</h3>
+        <form id="stockForm">
+          <input type="hidden" id="stId">
+          <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
+          <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
+            <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stThreshold" min="0" step="1" value="5" required></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("stockForm").addEventListener("submit", submitStockForm);
+  refreshStockTable();
+}
+async function refreshStockTable() {
+  try {
+    const { stockItems } = await managerApi.listStockItems();
+    document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
+      <tr>
+        <td>${s.name}</td>
+        <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-pending">${s.quantity}</span>` : s.quantity}</td>
+        <td>${s.unit}</td>
+        <td>${s.lowStockThreshold}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteStockRow('${s.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No stock items yet.</td></tr>`;
+  } catch (err) { document.getElementById("stockBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openStockModal(item) {
+  document.getElementById("stockModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("stockForm").reset();
+  document.getElementById("stId").value = item ? item.id : "";
+  if (item) {
+    document.getElementById("stName").value = item.name;
+    document.getElementById("stUnit").value = item.unit;
+    document.getElementById("stQuantity").value = item.quantity;
+    document.getElementById("stThreshold").value = item.lowStockThreshold;
+  }
+  document.getElementById("stockModal").style.display = "flex";
+}
+function closeStockModal() { document.getElementById("stockModal").style.display = "none"; }
+async function submitStockForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("stSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("stId").value;
+    const payload = {
+      name: document.getElementById("stName").value,
+      unit: document.getElementById("stUnit").value || "unit",
+      quantity: Number(document.getElementById("stQuantity").value),
+      lowStockThreshold: Number(document.getElementById("stThreshold").value),
+    };
+    if (id) await managerApi.updateStockItem(id, payload); else await managerApi.createStockItem(payload);
+    closeStockModal(); showNotice("stockNotice", "Saved.", "success"); refreshStockTable();
+  } catch (err) { showNotice("stockNotice", err.message); } finally { btn.disabled = false; }
+}
+async function deleteStockRow(id) {
+  if (!confirm("Delete this stock item?")) return;
+  try { await managerApi.deleteStockItem(id); refreshStockTable(); } catch (err) { showNotice("stockNotice", err.message); }
+}
+
+/* ============================================================
+   EVENTS (manage_events)
+   ============================================================ */
+async function loadEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Events", "Publish upcoming events guests can book into.",
+      `<button class="btn btn-primary" onclick="openEventModal()">Add event</button>`)}
+    <div id="eventsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Starts</th><th>Ends</th><th>Capacity</th><th>Price</th><th></th></tr></thead>
+        <tbody id="eventsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="eventModal" style="display:none;">
+      <div class="modal">
+        <h3 id="eventModalTitle">Add event</h3>
+        <form id="eventForm">
+          <input type="hidden" id="evId">
+          <div class="form-field"><label>Name</label><input type="text" id="evName" required></div>
+          <div class="form-field"><label>Description</label><textarea id="evDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Starts at</label><input type="datetime-local" id="evStartsAt" required></div>
+            <div class="form-field"><label>Ends at</label><input type="datetime-local" id="evEndsAt"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Capacity</label><input type="number" id="evCapacity" min="0" step="1"></div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="evPrice" min="0" step="1"></div>
+          </div>
+          <div class="form-field" id="evImageField" style="display:none;">
+            <label>Cover image</label>
+            <input type="file" id="evImageFile" accept="image/*">
+            <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="uploadEventImageNow()">Upload</button>
+            <div id="evImagePreview" style="margin-top:10px;"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="evSubmitBtn">Save event</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("eventForm").addEventListener("submit", submitEventForm);
+  await refreshEventsTable();
+}
+async function refreshEventsTable() {
+  try {
+    const { events } = await managerApi.listEvents();
+    document.getElementById("eventsBody").innerHTML = events.length ? events.map((ev) => `
+      <tr>
+        <td>${ev.name}</td>
+        <td>${new Date(ev.startsAt).toLocaleString()}</td>
+        <td>${ev.endsAt ? new Date(ev.endsAt).toLocaleString() : "—"}</td>
+        <td>${ev.capacity ?? "—"}</td>
+        <td>${ev.price ? `&#8358;${Number(ev.price).toLocaleString()}` : "Free"}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openEventModal(${JSON.stringify(ev).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteEventRow('${ev.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No events yet.</td></tr>`;
+  } catch (err) { document.getElementById("eventsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+function toLocalDatetimeInput(iso) { if (!iso) return ""; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); }
+function openEventModal(ev) {
+  document.getElementById("eventModalTitle").textContent = ev ? "Edit event" : "Add event";
+  document.getElementById("eventForm").reset();
+  document.getElementById("evId").value = ev ? ev.id : "";
+  document.getElementById("evImageField").style.display = ev ? "" : "none";
+  document.getElementById("evImagePreview").innerHTML = "";
+  if (ev) {
+    document.getElementById("evName").value = ev.name;
+    document.getElementById("evDescription").value = ev.description || "";
+    document.getElementById("evStartsAt").value = toLocalDatetimeInput(ev.startsAt);
+    document.getElementById("evEndsAt").value = toLocalDatetimeInput(ev.endsAt);
+    document.getElementById("evCapacity").value = ev.capacity ?? "";
+    document.getElementById("evPrice").value = ev.price ?? "";
+    if (ev.images && ev.images.length) {
+      document.getElementById("evImagePreview").innerHTML = ev.images.map((url) =>
+        `<div style="display:inline-block; margin-right:8px;"><img src="${url}" style="width:70px; height:70px; object-fit:cover; border-radius:6px;"><br><button type="button" class="btn btn-sm btn-danger" style="margin-top:4px;" onclick="deleteEventImageNow('${url}')">Remove</button></div>`
+      ).join("");
+    }
+  }
+  document.getElementById("eventModal").style.display = "flex";
+}
+function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
+async function submitEventForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("evSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("evId").value;
+    const payload = {
+      name: document.getElementById("evName").value,
+      description: document.getElementById("evDescription").value || undefined,
+      startsAt: document.getElementById("evStartsAt").value,
+      endsAt: document.getElementById("evEndsAt").value || undefined,
+      capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
+      price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : undefined,
+    };
+    let savedId = id;
+    if (id) await managerApi.updateEvent(id, payload);
+    else { const { event } = await managerApi.createEvent(payload); savedId = event.id; }
+    closeEventModal(); showNotice("eventsNotice", "Saved. You can now attach a cover image by editing this event.", "success"); refreshEventsTable();
+  } catch (err) { showNotice("eventsNotice", err.message); } finally { btn.disabled = false; }
+}
+async function uploadEventImageNow() {
+  const id = document.getElementById("evId").value;
+  const file = document.getElementById("evImageFile").files[0];
+  if (!id || !file) return;
+  try {
+    await managerApi.uploadEventImage(id, file);
+    showNotice("eventsNotice", "Image uploaded.", "success");
+    const { events } = await managerApi.listEvents();
+    openEventModal(events.find((ev) => ev.id === id));
+  } catch (err) { showNotice("eventsNotice", err.message); }
+}
+async function deleteEventImageNow(imageUrl) {
+  const id = document.getElementById("evId").value;
+  try {
+    await managerApi.deleteEventImage(id, imageUrl);
+    const { events } = await managerApi.listEvents();
+    openEventModal(events.find((ev) => ev.id === id));
+  } catch (err) { showNotice("eventsNotice", err.message); }
+}
+async function deleteEventRow(id) {
+  if (!confirm("Delete this event?")) return;
+  try { await managerApi.deleteEvent(id); refreshEventsTable(); } catch (err) { showNotice("eventsNotice", err.message); }
+}
+
+/* ============================================================
+   LAUNDRY (manage_laundry)
+   ============================================================ */
+async function loadLaundryPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Laundry", "Services and pricing for your branch.", `<button class="btn btn-primary" onclick="openLaundryModal()">Add item</button>`)}
+    <div id="laundryNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
+        <tbody id="laundryBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="laundryModal" style="display:none;">
+      <div class="modal">
+        <h3 id="laundryModalTitle">Add item</h3>
+        <form id="laundryForm">
+          <input type="hidden" id="lnId">
+          <div class="form-field"><label>Name</label><input type="text" id="lnName" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="lnPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Turnaround (hours)</label><input type="number" id="lnTurnaround" min="1" value="24"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeLaundryModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="lnSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("laundryForm").addEventListener("submit", submitLaundryForm);
+  refreshLaundryTable();
+}
+async function refreshLaundryTable() {
+  try {
+    const { laundryItems } = await managerApi.listLaundryItems();
+    document.getElementById("laundryBody").innerHTML = laundryItems.length ? laundryItems.map((l) => `
+      <tr>
+        <td>${l.name}</td><td>&#8358;${Number(l.price).toLocaleString()}</td><td>${l.turnaroundHours || 24}h</td>
+        <td><span class="badge ${l.isAvailable ? "badge-active" : "badge-inactive"}">${l.isAvailable ? "Active" : "Inactive"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openLaundryModal(${JSON.stringify(l).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleLaundryActive('${l.id}', ${l.isAvailable})">${l.isAvailable ? "Deactivate" : "Activate"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No laundry items yet.</td></tr>`;
+  } catch (err) { document.getElementById("laundryBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openLaundryModal(item) {
+  document.getElementById("laundryModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("laundryForm").reset();
+  document.getElementById("lnId").value = item ? item.id : "";
+  if (item) { document.getElementById("lnName").value = item.name; document.getElementById("lnPrice").value = item.price; document.getElementById("lnTurnaround").value = item.turnaroundHours || 24; }
+  document.getElementById("laundryModal").style.display = "flex";
+}
+function closeLaundryModal() { document.getElementById("laundryModal").style.display = "none"; }
+async function submitLaundryForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("lnSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("lnId").value;
+    const payload = { name: document.getElementById("lnName").value, price: Number(document.getElementById("lnPrice").value), turnaroundHours: Number(document.getElementById("lnTurnaround").value) || 24 };
+    if (id) await managerApi.updateLaundryItem(id, payload); else await managerApi.createLaundryItem(payload);
+    closeLaundryModal(); showNotice("laundryNotice", "Saved.", "success"); refreshLaundryTable();
+  } catch (err) { showNotice("laundryNotice", err.message); } finally { btn.disabled = false; }
+}
+async function toggleLaundryActive(id, currentlyActive) {
+  try { await managerApi.updateLaundryItem(id, { isAvailable: !currentlyActive }); refreshLaundryTable(); } catch (err) { showNotice("laundryNotice", err.message); }
+}
+
+/* ============================================================
+   SPA (manage_spa)
+   ============================================================ */
+async function loadSpaPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Spa", "Treatments and pricing for your branch.", `<button class="btn btn-primary" onclick="openSpaModal()">Add treatment</button>`)}
+    <div id="spaNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Price</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+        <tbody id="spaBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="spaModal" style="display:none;">
+      <div class="modal">
+        <h3 id="spaModalTitle">Add treatment</h3>
+        <form id="spaForm">
+          <input type="hidden" id="spId">
+          <div class="form-field"><label>Name</label><input type="text" id="spName" required></div>
+          <div class="form-field"><label>Description</label><textarea id="spDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="spPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Duration (minutes)</label><input type="number" id="spDuration" min="1" value="60"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeSpaModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="spSubmitBtn">Save treatment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("spaForm").addEventListener("submit", submitSpaForm);
+  refreshSpaTable();
+}
+async function refreshSpaTable() {
+  try {
+    const { spaTreatments } = await managerApi.listSpaTreatments();
+    document.getElementById("spaBody").innerHTML = spaTreatments.length ? spaTreatments.map((s) => `
+      <tr>
+        <td>${s.name}</td><td>&#8358;${Number(s.price).toLocaleString()}</td><td>${s.durationMinutes || 60} min</td>
+        <td><span class="badge ${s.isAvailable ? "badge-active" : "badge-inactive"}">${s.isAvailable ? "Active" : "Inactive"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openSpaModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleSpaActive('${s.id}', ${s.isAvailable})">${s.isAvailable ? "Deactivate" : "Activate"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No treatments yet.</td></tr>`;
+  } catch (err) { document.getElementById("spaBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openSpaModal(item) {
+  document.getElementById("spaModalTitle").textContent = item ? "Edit treatment" : "Add treatment";
+  document.getElementById("spaForm").reset();
+  document.getElementById("spId").value = item ? item.id : "";
+  if (item) { document.getElementById("spName").value = item.name; document.getElementById("spDescription").value = item.description || ""; document.getElementById("spPrice").value = item.price; document.getElementById("spDuration").value = item.durationMinutes || 60; }
+  document.getElementById("spaModal").style.display = "flex";
+}
+function closeSpaModal() { document.getElementById("spaModal").style.display = "none"; }
+async function submitSpaForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("spSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("spId").value;
+    const payload = { name: document.getElementById("spName").value, description: document.getElementById("spDescription").value || undefined, price: Number(document.getElementById("spPrice").value), durationMinutes: Number(document.getElementById("spDuration").value) || 60 };
+    if (id) await managerApi.updateSpaTreatment(id, payload); else await managerApi.createSpaTreatment(payload);
+    closeSpaModal(); showNotice("spaNotice", "Saved.", "success"); refreshSpaTable();
+  } catch (err) { showNotice("spaNotice", err.message); } finally { btn.disabled = false; }
+}
+async function toggleSpaActive(id, currentlyActive) {
+  try { await managerApi.updateSpaTreatment(id, { isAvailable: !currentlyActive }); refreshSpaTable(); } catch (err) { showNotice("spaNotice", err.message); }
+}
+
+/* ============================================================
+   REVIEWS (manage_reviews)
+   ============================================================ */
+async function loadReviewsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Reviews", "Guest reviews awaiting moderation and reply.")}
+    <div id="reviewsNotice"></div>
+    <div class="tabs">
+      <button class="tab-btn active" data-status="PENDING" onclick="switchReviewsTab('PENDING', this)">Pending</button>
+      <button class="tab-btn" data-status="PUBLISHED" onclick="switchReviewsTab('PUBLISHED', this)">Published</button>
+      <button class="tab-btn" data-status="REJECTED" onclick="switchReviewsTab('REJECTED', this)">Rejected</button>
+    </div>
+    <div class="panel" id="reviewsList"><div class="loading-state">Loading…</div></div>
+  `;
+  refreshReviewsList("PENDING");
+}
+function switchReviewsTab(status, btn) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+  refreshReviewsList(status);
+}
+async function refreshReviewsList(status) {
+  const container = document.getElementById("reviewsList");
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { reviews } = await managerApi.listReviews(status);
+    container.innerHTML = reviews.length ? reviews.map((r) => `
+      <div style="padding:16px 0; border-bottom:1px solid var(--border-soft);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div>
+            <b>${"&#9733;".repeat(r.ratingValue)}${"&#9734;".repeat(5 - r.ratingValue)}</b>
+            ${r.title ? `<span style="margin-left:8px; font-weight:600;">${r.title}</span>` : ""}
+            <div style="color:var(--text-muted); font-size:0.8rem; margin-top:2px;">${r.guest.name} &middot; ${new Date(r.createdAt).toLocaleDateString()}</div>
+          </div>
+          ${status === "PENDING" ? `
+            <div>
+              <button class="btn btn-sm btn-outline" onclick="moderateReviewRow('${r.id}', 'PUBLISHED')">Approve</button>
+              <button class="btn btn-sm btn-danger" onclick="moderateReviewRow('${r.id}', 'REJECTED')">Reject</button>
+            </div>` : ""}
+        </div>
+        ${r.body ? `<p style="margin-top:10px; font-size:0.88rem;">${r.body}</p>` : ""}
+        ${r.staffReplyBody ? `<div style="margin-top:10px; padding:10px 14px; background:var(--ivory); border-radius:6px; font-size:0.85rem;"><b>Your reply:</b> ${r.staffReplyBody}</div>` :
+          status === "PUBLISHED" ? `
+            <div style="margin-top:10px; display:flex; gap:8px;">
+              <input type="text" id="replyInput-${r.id}" placeholder="Write a reply…" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+              <button class="btn btn-sm btn-primary" onclick="replyToReviewRow('${r.id}')">Reply</button>
+            </div>` : ""}
+      </div>
+    `).join("") : `<div class="empty-state">No ${status.toLowerCase()} reviews.</div>`;
+  } catch (err) { container.innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+async function moderateReviewRow(id, status) {
+  try { await managerApi.moderateReview(id, status); showNotice("reviewsNotice", "Updated.", "success"); refreshReviewsList(document.querySelector(".tab-btn.active").dataset.status); }
+  catch (err) { showNotice("reviewsNotice", err.message); }
+}
+async function replyToReviewRow(id) {
+  const input = document.getElementById(`replyInput-${id}`);
+  if (!input.value.trim()) return;
+  try { await managerApi.replyToReview(id, input.value.trim()); refreshReviewsList("PUBLISHED"); }
+  catch (err) { showNotice("reviewsNotice", err.message); }
+}
+
+/* ============================================================
+   PROMO CODES (manage_promos)
+   ============================================================ */
+async function loadPromoCodesPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Promo Codes", "Discount codes guests can apply at checkout.", `<button class="btn btn-primary" onclick="openPromoModal()">New code</button>`)}
+    <div id="promoNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+        <tbody id="promoBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="promoModal" style="display:none;">
+      <div class="modal">
+        <h3>New promo code</h3>
+        <form id="promoForm">
+          <div class="form-field"><label>Code</label><input type="text" id="pcCode" required style="text-transform:uppercase;" placeholder="SUMMER25"></div>
+          <div class="form-field"><label>Description</label><input type="text" id="pcDescription"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Discount type</label>
+              <select id="pcDiscountType"><option value="PERCENT">Percent off</option><option value="FIXED">Fixed amount off</option></select>
+            </div>
+            <div class="form-field"><label>Value</label><input type="number" id="pcDiscountValue" min="0" step="0.01" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Max uses <span style="color:var(--text-muted); font-weight:400;">(blank = unlimited)</span></label><input type="number" id="pcMaxUses" min="1"></div>
+            <div class="form-field"><label>Per-guest limit</label><input type="number" id="pcPerGuestLimit" min="1" value="1"></div>
+          </div>
+          <div class="form-field"><label>Expires <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="date" id="pcExpiresAt"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closePromoModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pcSubmitBtn">Create code</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("promoForm").addEventListener("submit", submitPromoForm);
+  refreshPromoTable();
+}
+async function refreshPromoTable() {
+  try {
+    const { promoCodes } = await managerApi.listPromoCodes();
+    document.getElementById("promoBody").innerHTML = promoCodes.length ? promoCodes.map((p) => `
+      <tr>
+        <td><b>${p.code}</b>${p.branchId ? "" : ` <span class="badge badge-active" style="margin-left:6px;">Company-wide</span>`}</td>
+        <td>${p.discountType === "PERCENT" ? `${p.discountValue}%` : `&#8358;${Number(p.discountValue).toLocaleString()}`}</td>
+        <td>${p.usedCount}${p.maxUses ? ` / ${p.maxUses}` : ""}</td>
+        <td>${p.expiresAt ? new Date(p.expiresAt).toLocaleDateString() : "—"}</td>
+        <td><span class="badge ${p.isActive ? "badge-active" : "badge-inactive"}">${p.isActive ? "Active" : "Inactive"}</span></td>
+        <td><button class="btn btn-sm btn-outline" onclick="togglePromoActive('${p.id}', ${p.isActive})">${p.isActive ? "Deactivate" : "Activate"}</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No promo codes yet.</td></tr>`;
+  } catch (err) { document.getElementById("promoBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+function openPromoModal() { document.getElementById("promoForm").reset(); document.getElementById("promoModal").style.display = "flex"; }
+function closePromoModal() { document.getElementById("promoModal").style.display = "none"; }
+async function submitPromoForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("pcSubmitBtn"); btn.disabled = true;
+  try {
+    await managerApi.createPromoCode({
+      code: document.getElementById("pcCode").value,
+      description: document.getElementById("pcDescription").value || undefined,
+      discountType: document.getElementById("pcDiscountType").value,
+      discountValue: Number(document.getElementById("pcDiscountValue").value),
+      maxUses: document.getElementById("pcMaxUses").value ? Number(document.getElementById("pcMaxUses").value) : undefined,
+      perGuestLimit: Number(document.getElementById("pcPerGuestLimit").value) || 1,
+      expiresAt: document.getElementById("pcExpiresAt").value || undefined,
+    });
+    closePromoModal(); showNotice("promoNotice", "Code created.", "success"); refreshPromoTable();
+  } catch (err) { showNotice("promoNotice", err.message); } finally { btn.disabled = false; }
+}
+async function togglePromoActive(id, currentlyActive) {
+  try { await managerApi.updatePromoCode(id, { isActive: !currentlyActive }); refreshPromoTable(); } catch (err) { showNotice("promoNotice", err.message); }
+}
+
+/* ============================================================
+   GUEST LOOKUP (manage_security)
+   Front-desk / security tool: find a guest's active stay by name,
+   phone, or room number — e.g. to verify identity before handing
+   over a room key or discussing a reservation.
+   ============================================================ */
+async function loadGuestLookupPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Guest Lookup", "Verify an active or upcoming stay by name, phone, or room number.")}
+    <div id="guestLookupNotice"></div>
+    <div class="panel">
+      <div class="form-field" style="margin:0; max-width:420px;">
+        <input type="text" id="glQuery" placeholder="Search name, phone, or room…" oninput="debouncedGuestLookup()">
+      </div>
+    </div>
+    <div class="panel" id="guestLookupResults"><div class="empty-state">Start typing to search.</div></div>
+  `;
+}
+let _glTimer = null;
+function debouncedGuestLookup() {
+  clearTimeout(_glTimer);
+  _glTimer = setTimeout(runGuestLookup, 350);
+}
+async function runGuestLookup() {
+  const query = document.getElementById("glQuery").value.trim();
+  const results = document.getElementById("guestLookupResults");
+  if (query.length < 2) { results.innerHTML = `<div class="empty-state">Start typing to search.</div>`; return; }
+  results.innerHTML = `<div class="loading-state">Searching…</div>`;
+  try {
+    const { results: matches } = await managerApi.guestLookup(query);
+    results.innerHTML = matches.length ? `
+      <table><thead><tr><th>Guest</th><th>Phone</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
+        <tbody>${matches.map((m) => `
+          <tr><td>${m.guestName}</td><td>${m.guestPhone || "—"}</td><td>${m.roomNumber}</td>
+          <td>${(m.checkIn || "").slice(0,10)} &rarr; ${(m.checkOut || "").slice(0,10)}</td>
+          <td><span class="badge badge-${(m.status || "").toLowerCase()}">${m.status}</span></td></tr>
+        `).join("")}</tbody>
+      </table>
+    ` : `<div class="empty-state">No matching active or upcoming stays.</div>`;
+  } catch (err) { results.innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+
+/* ============================================================
+   ORDERS — room service / restaurant / bar / spa / laundry / event
+   tickets a guest has ordered (manage_bookings)
+   ============================================================ */
+const ORDER_TYPE_LABELS = { ROOM_SERVICE: "Room service", RESTAURANT: "Restaurant", BAR: "Bar", LAUNDRY: "Laundry", SPA: "Spa", EVENT_TICKET: "Event ticket", OTHER: "Other" };
+const ORDER_STATUS_OPTIONS = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+
+async function loadOrdersPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Orders", "Room service, restaurant, bar, spa, laundry, and event-ticket orders.")}
+    <div id="ordersNotice"></div>
+    <div class="panel" style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-field" style="margin:0; min-width:180px;"><label>Status</label>
+        <select id="orderStatusFilter" onchange="refreshOrdersTable()">
+          <option value="">All statuses</option>
+          ${ORDER_STATUS_OPTIONS.map((s) => `<option value="${s}">${s.replace("_", " ")}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-field" style="margin:0; min-width:180px;"><label>Type</label>
+        <select id="orderTypeFilter" onchange="refreshOrdersTable()">
+          <option value="">All types</option>
+          ${Object.entries(ORDER_TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Type</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ordersBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  refreshOrdersTable();
+}
+async function refreshOrdersTable() {
+  try {
+    const filters = {};
+    const statusEl = document.getElementById("orderStatusFilter");
+    const typeEl = document.getElementById("orderTypeFilter");
+    if (statusEl.value) filters.status = statusEl.value;
+    if (typeEl.value) filters.type = typeEl.value;
+    const { orders } = await managerApi.listOrders(filters);
+    document.getElementById("ordersBody").innerHTML = orders.length ? orders.map((o) => `
+      <tr>
+        <td>${o.guest?.name || "—"}${o.room ? ` <span style="color:var(--text-muted); font-size:0.78rem;">(Room ${o.room.roomNumber})</span>` : ""}</td>
+        <td>${ORDER_TYPE_LABELS[o.type] || o.type}</td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${(o.lines || []).map((l) => `${l.quantity}x ${l.itemName}`).join(", ") || (o.items ? JSON.stringify(o.items) : "—")}</td>
+        <td>${o.totalAmount ? `&#8358;${Number(o.totalAmount).toLocaleString()}` : "Free"}</td>
+        <td><span class="badge badge-${o.status.toLowerCase()}">${o.status.replace("_", " ")}</span></td>
+        <td>
+          <select onchange="updateOrderStatusRow('${o.id}', this.value)" style="padding:6px 8px; font-size:0.8rem;">
+            ${ORDER_STATUS_OPTIONS.map((s) => `<option value="${s}" ${s === o.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No orders yet.</td></tr>`;
+  } catch (err) { document.getElementById("ordersBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+async function updateOrderStatusRow(id, status) {
+  try { await managerApi.updateOrderStatus(id, status); showNotice("ordersNotice", "Order updated.", "success"); }
+  catch (err) { showNotice("ordersNotice", err.message); refreshOrdersTable(); }
+}
+
+/* ============================================================
+   GROUP BOOKINGS (manage_bookings)
+   ============================================================ */
+async function loadGroupBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Group Bookings", "Multi-room bookings for one contact — events, corporate stays, family blocks.",
+      `<button class="btn btn-primary" onclick="openGroupBookingModal()">New group booking</button>`)}
+    <div id="groupBookingsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Group</th><th>Contact</th><th>Rooms</th><th>Dates</th><th>Status</th></tr></thead>
+        <tbody id="groupBookingsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="groupBookingModal" style="display:none;">
+      <div class="modal">
+        <h3>New group booking</h3>
+        <p style="color:var(--text-muted); font-size:0.82rem; margin-bottom:14px;">Enter room IDs from the Rooms page (comma-separated) — a proper room picker is a quick follow-up if you'd like one.</p>
+        <form id="groupBookingForm">
+          <div class="form-field"><label>Group name</label><input type="text" id="gbGroupName" required placeholder="Smith family reunion"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Check-in</label><input type="date" id="gbCheckIn" required></div>
+            <div class="form-field"><label>Check-out</label><input type="date" id="gbCheckOut" required></div>
+          </div>
+          <div class="form-field"><label>Room IDs <span style="color:var(--text-muted); font-weight:400;">(comma-separated)</span></label><input type="text" id="gbRoomIds" required placeholder="room-id-1, room-id-2"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Contact name</label><input type="text" id="gbGuestName" required></div>
+            <div class="form-field"><label>Contact email</label><input type="email" id="gbGuestEmail" required></div>
+          </div>
+          <div class="form-field"><label>Contact phone</label><input type="text" id="gbGuestPhone"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeGroupBookingModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="gbSubmitBtn">Create booking</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("groupBookingForm").addEventListener("submit", submitGroupBookingForm);
+  refreshGroupBookingsTable();
+}
+async function refreshGroupBookingsTable() {
+  try {
+    const { groupBookings } = await managerApi.listGroupBookings();
+    document.getElementById("groupBookingsBody").innerHTML = groupBookings.length ? groupBookings.map((g) => `
+      <tr>
+        <td>${g.groupName}</td>
+        <td>${g.contactGuest?.name || "—"}</td>
+        <td>${g.bookings.length} room${g.bookings.length === 1 ? "" : "s"}</td>
+        <td>${(g.checkIn || "").slice(0,10)} &rarr; ${(g.checkOut || "").slice(0,10)}</td>
+        <td><span class="badge badge-${g.status.toLowerCase()}">${g.status}</span></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No group bookings yet.</td></tr>`;
+  } catch (err) { document.getElementById("groupBookingsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openGroupBookingModal() { document.getElementById("groupBookingForm").reset(); document.getElementById("groupBookingModal").style.display = "flex"; }
+function closeGroupBookingModal() { document.getElementById("groupBookingModal").style.display = "none"; }
+async function submitGroupBookingForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("gbSubmitBtn"); btn.disabled = true;
+  try {
+    const roomIds = document.getElementById("gbRoomIds").value.split(",").map((s) => s.trim()).filter(Boolean);
+    await managerApi.createGroupBooking({
+      groupName: document.getElementById("gbGroupName").value,
+      checkIn: document.getElementById("gbCheckIn").value,
+      checkOut: document.getElementById("gbCheckOut").value,
+      rooms: roomIds.map((roomId) => ({ roomId })),
+      guest: {
+        name: document.getElementById("gbGuestName").value,
+        email: document.getElementById("gbGuestEmail").value,
+        phone: document.getElementById("gbGuestPhone").value || undefined,
+      },
+    });
+    closeGroupBookingModal(); showNotice("groupBookingsNotice", "Group booking created.", "success"); refreshGroupBookingsTable();
+  } catch (err) { showNotice("groupBookingsNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   SECURITY — 2FA enrollment, opened from the sidebar footer
+   ============================================================ */
+function renderSecurityModalShell() {
+  if (document.getElementById("securityModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="securityModal" style="display:none;">
+      <div class="modal">
+        <h3>Security</h3>
+        <div id="securityNotice"></div>
+        <div id="securityBody"></div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeSecurityModal()">Close</button></div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this with your authenticator app, then enter the code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); renderSecurityBody();">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function openSecurityModal() {
+  renderSecurityModalShell();
+  renderSecurityBody();
+  document.getElementById("securityModal").style.display = "flex";
+}
+function closeSecurityModal() { document.getElementById("securityModal").style.display = "none"; }
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+function renderSecurityBody() {
+  const staff = getStaff();
+  const enabled = !!staff.twoFactorEnabled;
+  document.getElementById("securityBody").innerHTML = enabled ? `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-active">Enabled</span> Your account requires a code from your authenticator app at every login.
+    </p>
+    <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+  ` : `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-inactive">Disabled</span> Add a second step at login using an authenticator app.
+    </p>
+    <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+  `;
+}
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await managerApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("securityNotice", err.message); }
+}
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await managerApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const staff = getStaff(); staff.twoFactorEnabled = true; setSession(getToken(), staff);
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await managerApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const staff = getStaff(); staff.twoFactorEnabled = false; setSession(getToken(), staff);
+    renderSecurityBody();
+    showNotice("securityNotice", "2FA turned off.", "success");
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   BLOG (manage_blog) — always this branch, no company-wide option
+   here (that's the Director's call, from the Director dashboard)
+   ============================================================ */
+async function loadBlogPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Blog", "Posts publish to the public site instantly and auto-email your newsletter list.",
+      `<button class="btn btn-primary" onclick="openBlogModal()">Write a post</button>`)}
+    <div id="blogNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Title</th><th>Status</th><th>Published</th><th>Newsletter</th><th></th></tr></thead>
+        <tbody id="blogBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="blogModal" style="display:none;">
+      <div class="modal">
+        <h3 id="blogModalTitle">Write a post</h3>
+        <form id="blogForm">
+          <input type="hidden" id="bpId">
+          <div class="form-field"><label>Title</label><input type="text" id="bpTitle" required></div>
+          <div class="form-field"><label>Excerpt</label><textarea id="bpExcerpt" rows="2"></textarea></div>
+          <div class="form-field"><label>Content</label><textarea id="bpContent" rows="8" required></textarea></div>
+          <div class="form-field"><label>Cover image URL</label><input type="text" id="bpCoverImageUrl"></div>
+          <div class="form-field"><label>Tags <span style="color:var(--text-muted); font-weight:400;">(comma-separated)</span></label><input type="text" id="bpTags"></div>
+          <div class="form-field"><label class="checkbox-item"><input type="checkbox" id="bpAutoNewsletter" checked> Email this to newsletter subscribers when published</label></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeBlogModal()">Cancel</button>
+            <button type="button" class="btn btn-outline" id="bpDraftBtn" onclick="submitBlogForm(false)">Save draft</button>
+            <button type="button" class="btn btn-primary" id="bpPublishBtn" onclick="submitBlogForm(true)">Publish</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  refreshBlogTable();
+}
+async function refreshBlogTable() {
+  try {
+    const { posts } = await managerApi.listBlogPosts();
+    document.getElementById("blogBody").innerHTML = posts.length ? posts.map((p) => `
+      <tr>
+        <td>${p.title}</td>
+        <td><span class="badge ${p.status === "PUBLISHED" ? "badge-active" : "badge-pending"}">${p.status === "PUBLISHED" ? "Published" : "Draft"}</span></td>
+        <td>${p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "—"}</td>
+        <td>${p.campaign ? (p.campaign.status === "SENT" ? `Sent to ${p.campaign.sentCount}` : p.campaign.status) : (p.autoNewsletter ? "Pending" : "Off")}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openBlogModal(${JSON.stringify(p).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteBlogPostRow('${p.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No posts yet.</td></tr>`;
+  } catch (err) { document.getElementById("blogBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openBlogModal(post) {
+  document.getElementById("blogModalTitle").textContent = post ? "Edit post" : "Write a post";
+  document.getElementById("blogForm").reset();
+  document.getElementById("bpId").value = post ? post.id : "";
+  if (post) {
+    document.getElementById("bpTitle").value = post.title;
+    document.getElementById("bpExcerpt").value = post.excerpt || "";
+    document.getElementById("bpContent").value = post.content;
+    document.getElementById("bpCoverImageUrl").value = post.coverImageUrl || "";
+    document.getElementById("bpTags").value = (post.tags || []).join(", ");
+    document.getElementById("bpAutoNewsletter").checked = post.autoNewsletter;
+    const publishBtn = document.getElementById("bpPublishBtn");
+    if (post.status === "PUBLISHED") { publishBtn.textContent = "Save changes"; document.getElementById("bpDraftBtn").style.display = "none"; }
+    else { publishBtn.textContent = "Publish"; document.getElementById("bpDraftBtn").style.display = ""; }
+  } else {
+    document.getElementById("bpPublishBtn").textContent = "Publish";
+    document.getElementById("bpDraftBtn").style.display = "";
+  }
+  document.getElementById("blogModal").style.display = "flex";
+}
+function closeBlogModal() { document.getElementById("blogModal").style.display = "none"; }
+async function submitBlogForm(publish) {
+  const id = document.getElementById("bpId").value;
+  const tags = document.getElementById("bpTags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  const payload = {
+    title: document.getElementById("bpTitle").value,
+    excerpt: document.getElementById("bpExcerpt").value || undefined,
+    content: document.getElementById("bpContent").value,
+    coverImageUrl: document.getElementById("bpCoverImageUrl").value || undefined,
+    tags,
+    autoNewsletter: document.getElementById("bpAutoNewsletter").checked,
+  };
+  const isEditingPublished = id && document.getElementById("bpPublishBtn").textContent === "Save changes";
+  if (publish || isEditingPublished) payload.status = "PUBLISHED";
+
+  const btn = publish ? document.getElementById("bpPublishBtn") : document.getElementById("bpDraftBtn");
+  btn.disabled = true;
+  try {
+    if (id) await managerApi.updateBlogPost(id, payload); else await managerApi.createBlogPost(payload);
+    closeBlogModal(); showNotice("blogNotice", publish ? "Published." : "Draft saved.", "success"); refreshBlogTable();
+  } catch (err) { showNotice("blogNotice", err.message); } finally { btn.disabled = false; }
+}
+async function deleteBlogPostRow(id) {
+  if (!confirm("Delete this post?")) return;
+  try { await managerApi.deleteBlogPost(id); refreshBlogTable(); } catch (err) { showNotice("blogNotice", err.message); }
 }
 
 /* ============================================================
@@ -1013,6 +2084,7 @@ async function refreshTicketsBadgeSilently() {
     if (badge) { badge.textContent = tickets.length; badge.style.display = tickets.length ? "flex" : "none"; }
   } catch { /* silent — background badge refresh */ }
 }
+let _pendingTempToken = null;
 
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1020,12 +2092,44 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   const notice = document.getElementById("loginNotice");
   notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Logging in…";
   try {
-    const { token, staff } = await managerApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
-    setSession(token, staff); showApp();
+    const result = await managerApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (result.requires2FA) {
+      _pendingTempToken = result.tempToken;
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("twoFactorForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
+    }
+    setSession(result.token, result.staff);
+    showApp();
   } catch (err) {
     notice.innerHTML = `<div class="notice error">${err.message}</div>`;
   } finally { btn.disabled = false; btn.textContent = "Log in"; }
 });
+
+document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const result = await managerApi.verifyTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    _pendingTempToken = null;
+    setSession(result.token, result.staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Verify"; }
+});
+
+document.getElementById("twoFactorBackBtn").addEventListener("click", () => {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorForm").style.display = "none";
+  document.getElementById("twoFactorForm").reset();
+  document.getElementById("loginForm").style.display = "block";
+  document.getElementById("loginNotice").innerHTML = "";
+});
+
 document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showLogin(); });
 document.getElementById("hamburgerBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));
 document.getElementById("ticketsBellBtn").addEventListener("click", () => switchPage("tickets"));
