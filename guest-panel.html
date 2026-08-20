@@ -202,7 +202,7 @@ tr:last-child td { border-bottom: none; }
 /* ============================================================
    CONFIG / SESSION
    ============================================================ */
-const API_BASE = "/api"; // adjust to your deployed backend base URL
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
 function getToken() { return localStorage.getItem("guest_token"); }
 function getRefreshToken() { return localStorage.getItem("guest_refresh_token"); }
 function getGuest() { try { return JSON.parse(localStorage.getItem("guest_user")); } catch { return null; } }
