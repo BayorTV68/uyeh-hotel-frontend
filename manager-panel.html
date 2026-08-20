@@ -235,7 +235,10 @@ function getToken() { return localStorage.getItem("mgr_token"); }
 function getStaff() { try { return JSON.parse(localStorage.getItem("mgr_staff")); } catch { return null; } }
 function setSession(token, staff) { localStorage.setItem("mgr_token", token); localStorage.setItem("mgr_staff", JSON.stringify(staff)); }
 function clearSession() { localStorage.removeItem("mgr_token"); localStorage.removeItem("mgr_staff"); }
-function hasPermission(perm) { const s = getStaff(); return s && (s.permissions || []).includes(perm); }
+function hasPermission(perm) {
+  const s = getStaff();
+  return !!s;
+}
 // This panel is for Manager only
 
 /* ============================================================
@@ -367,6 +370,17 @@ const managerApi = {
   // Group bookings
   listGroupBookings: () => adminRequest("/manager/group-bookings"),
   createGroupBooking: (payload) => adminRequest("/manager/group-bookings", { method: "POST", body: JSON.stringify(payload) }),
+  listBlogPosts: () => adminRequest("/manager/blog"),
+  createBlogPost: (payload) => adminRequest("/manager/blog", { method: "POST", body: JSON.stringify(payload) }),
+  updateBlogPost: (id, payload) => adminRequest(`/manager/blog/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBlogPost: (id) => adminRequest(`/manager/blog/${id}`, { method: "DELETE" }),
+
+  // Newsletter — draft/edit/submit only. Sending itself is a Director
+  // action from the main admin dashboard once submitted.
+  listNewsletterCampaigns: () => adminRequest("/manager/newsletter/campaigns"),
+  createNewsletterCampaign: (payload) => adminRequest("/manager/newsletter/campaigns", { method: "POST", body: JSON.stringify(payload) }),
+  updateNewsletterCampaign: (id, payload) => adminRequest(`/manager/newsletter/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  submitNewsletterCampaign: (id) => adminRequest(`/manager/newsletter/campaigns/${id}/submit`, { method: "POST" }),
 
   // Transactions
   listTransactions: (filters = {}) => {
@@ -375,7 +389,8 @@ const managerApi = {
   },
   getTransaction: (id) => adminRequest(`/manager/transactions/${id}`),
   recordPayment: (payload) => adminRequest("/manager/transactions", { method: "POST", body: JSON.stringify(payload) }),
-  refundTransaction: (id, reason) => adminRequest(`/manager/transactions/${id}/refund`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  // No refundTransaction here — refunds are Director-only now (server-enforced),
+  // this panel doesn't offer the action at all rather than show one that'd 403.
   getInvoiceUrl: (id) => `${API_BASE}/manager/transactions/${id}/invoice?token=${getToken()}`,
 
   // Blog
@@ -415,6 +430,7 @@ const NAV_GROUPS = [
     id: "marketing", label: "Marketing", icon: "fa-bullhorn",
     items: [
       { page: "blog", label: "Blog", icon: "fa-newspaper", permission: "manage_blog" },
+      { page: "newsletter", label: "Newsletter", icon: "fa-envelope-open-text", permission: "manage_newsletter" },
       { page: "reviews", label: "Reviews", icon: "fa-star", permission: "manage_reviews" },
       { page: "promocodes", label: "Promo Codes", icon: "fa-tags", permission: "manage_promos" },
     ],
@@ -447,7 +463,7 @@ function renderSidebar() {
   document.getElementById("adminBranch").textContent = staff.branchName || "";
 
   const groupsHtml = NAV_GROUPS.map((group) => {
-    const visibleItems = group.items.filter((item) => !item.permission || (staff.permissions || []).includes(item.permission));
+    const visibleItems = group.items; // Manager sees every item — no permission filtering for this panel.
     if (!visibleItems.length) return "";
     return `
       <div class="nav-group open" data-group="${group.id}">
@@ -468,7 +484,7 @@ function renderSidebar() {
     `;
   }).join("");
 
-  const settingsVisible = (staff.permissions || []).includes(SETTINGS_ITEM.permission);
+  const settingsVisible = true; // Manager always has access to their own branch settings.
 
   document.getElementById("navMenu").innerHTML = `
     <div class="nav-item-standalone active" data-page="dashboard" onclick="switchPage('dashboard')">
@@ -503,6 +519,7 @@ const PAGE_LOADERS = {
   events: loadEventsPage,
   transactions: loadTransactionsPage,
   blog: loadBlogPage,
+  newsletter: loadNewsletterPage,
   reviews: loadReviewsPage,
   promocodes: loadPromoCodesPage,
   staff: loadStaffPage,
@@ -861,13 +878,16 @@ async function advanceBooking(id, status) {
    STAFF — this branch only. Manager cannot appoint a Manager
    or set/see a branch selector; server must reject either if sent.
    ============================================================ */
+// manage_staff and manage_newsletter are deliberately absent — neither can
+// ever be delegated to a Staff account (server-enforced, not just hidden
+// here). A Manager holds both automatically; Staff never can.
 const ALL_PERMISSIONS = [
   ["manage_rooms", "Manage rooms"], ["manage_bookings", "Manage bookings"], ["manage_stock", "Manage stock"],
   ["manage_events", "Manage events"], ["manage_menu", "Manage menu"], ["manage_laundry", "Manage laundry"],
   ["manage_spa", "Manage spa"], ["handle_tickets", "Handle tickets"], ["manage_reviews", "Manage reviews"],
   ["manage_promos", "Manage promo codes"], ["manage_security", "Guest verification (security)"],
-  ["manage_settings", "Branch settings"], ["view_reports", "View reports"], ["manage_staff", "Manage staff"],
-  ["manage_payments", "Record payments & refunds"], ["manage_blog", "Manage blog"],
+  ["manage_settings", "Branch settings"], ["view_reports", "View reports"],
+  ["manage_payments", "Record payments"], ["manage_blog", "Manage blog"],
 ];
 
 async function loadStaffPage() {
@@ -880,6 +900,28 @@ async function loadStaffPage() {
         <thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
         <tbody id="staffBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
+    </div>
+    <div class="modal-overlay" id="editStaffModal" style="display:none;">
+      <div class="modal">
+        <h3>Edit permissions</h3>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;" id="esStaffLabel"></p>
+        <form id="editStaffForm">
+          <input type="hidden" id="esId">
+          <div class="form-row">
+            <div class="form-field"><label>Job title</label><input type="text" id="esTitle"></div>
+            <div class="form-field"><label>Department</label><select id="esDepartment"><option value="">— None —</option></select></div>
+          </div>
+          <div class="form-field">
+            <label>Permissions</label>
+            <div class="checkbox-grid" id="esPermissionsGrid"></div>
+            <p style="color:var(--text-muted); font-size:0.78rem; margin-top:8px;">Activating/deactivating this account requires a Director — ask them from the main admin dashboard.</p>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeEditStaffModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="esSubmitBtn">Save changes</button>
+          </div>
+        </form>
+      </div>
     </div>
     <div class="modal-overlay" id="staffModal" style="display:none;">
       <div class="modal">
@@ -899,6 +941,7 @@ async function loadStaffPage() {
           <div class="form-field">
             <label>Permissions</label>
             <div class="checkbox-grid" id="sPermissionsGrid"></div>
+            <p style="color:var(--text-muted); font-size:0.78rem; margin-top:8px;">Staff management and newsletter authorship stay Manager-only — refunds also always require Director approval, even for staff with "Record payments."</p>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeStaffModal()">Cancel</button>
@@ -916,22 +959,54 @@ async function loadStaffPage() {
     select.innerHTML += Object.keys(departments).map((d) => `<option value="${d}">${d}</option>`).join("");
   } catch { /* department list is optional — form still works without it */ }
   document.getElementById("staffForm").addEventListener("submit", submitStaffForm);
+  document.getElementById("editStaffForm").addEventListener("submit", submitEditStaffForm);
   refreshStaffTable();
 }
 async function refreshStaffTable() {
   try {
     const { staff } = await managerApi.listStaff();
+    window._staffCache = staff;
     document.getElementById("staffBody").innerHTML = staff.map((s) => `
       <tr><td>${s.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${s.email}</span></td>
       <td>${s.roleTitle || "—"}</td><td>${s.department || "—"}</td><td>${(s.permissions || []).length ? s.permissions.join(", ") : "—"}</td>
       <td><span class="badge badge-${s.isActive ? "active" : "inactive"}">${s.isActive ? "Active" : "Inactive"}</span></td>
-      <td><button class="btn btn-sm btn-outline" onclick="toggleStaffActive('${s.id}', ${s.isActive})">${s.isActive ? "Deactivate" : "Activate"}</button></td></tr>
+      <td><button class="btn btn-sm btn-outline" onclick="openEditPermissionsModal('${s.id}')">Edit permissions</button></td></tr>
     `).join("");
   } catch (err) { document.getElementById("staffBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
 }
-async function toggleStaffActive(id, currentlyActive) {
-  try { await managerApi.updateStaff(id, { isActive: !currentlyActive }); refreshStaffTable(); }
-  catch (err) { showNotice("staffNotice", err.message); }
+// Activating/deactivating a staff account requires Director approval — not
+// something this panel can do. Removed the toggle rather than leave a
+// button that always 403s; a Director does this from the admin dashboard.
+async function openEditPermissionsModal(id) {
+  const s = (window._staffCache || []).find((x) => x.id === id);
+  if (!s) return;
+  document.getElementById("esId").value = s.id;
+  document.getElementById("esStaffLabel").textContent = `${s.name} — ${s.email}`;
+  document.getElementById("esTitle").value = s.roleTitle || "";
+  document.getElementById("esPermissionsGrid").innerHTML = ALL_PERMISSIONS.map(([value, label]) =>
+    `<label class="checkbox-item"><input type="checkbox" value="${value}" ${(s.permissions || []).includes(value) ? "checked" : ""}> ${label}</label>`).join("");
+  const deptSelect = document.getElementById("esDepartment");
+  deptSelect.innerHTML = `<option value="">— None —</option>`;
+  try {
+    const { departments } = await managerApi.getDepartments();
+    deptSelect.innerHTML += Object.keys(departments).map((d) => `<option value="${d}" ${d === s.department ? "selected" : ""}>${d}</option>`).join("");
+  } catch { /* optional */ }
+  document.getElementById("editStaffModal").style.display = "flex";
+}
+function closeEditStaffModal() { document.getElementById("editStaffModal").style.display = "none"; }
+async function submitEditStaffForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("esSubmitBtn"); btn.disabled = true;
+  try {
+    const permissions = Array.from(document.querySelectorAll("#esPermissionsGrid input:checked")).map((el) => el.value);
+    const id = document.getElementById("esId").value;
+    await managerApi.updateStaff(id, {
+      roleTitle: document.getElementById("esTitle").value || undefined,
+      department: document.getElementById("esDepartment").value || undefined,
+      permissions,
+    });
+    closeEditStaffModal(); showNotice("staffNotice", "Permissions updated.", "success"); refreshStaffTable();
+  } catch (err) { showNotice("staffNotice", err.message); } finally { btn.disabled = false; }
 }
 function openStaffModal() { document.getElementById("staffModal").style.display = "flex"; }
 function closeStaffModal() { document.getElementById("staffModal").style.display = "none"; }
@@ -1014,6 +1089,10 @@ async function loadReportsPage() {
    ============================================================ */
 const TXN_SOURCE_LABELS = { booking: "Room booking", food: "Food", drink: "Drink", service: "Service", event: "Event" };
 const TXN_METHOD_LABELS = { CASH: "Cash", CARD: "Card", TRANSFER: "Transfer", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
+const NEWSLETTER_STATUS_LABELS = {
+  DRAFT: "Draft", PENDING_APPROVAL: "Awaiting Director approval",
+  SENDING: "Sending…", SENT: "Sent", FAILED: "Failed to send",
+};
 
 async function loadTransactionsPage() {
   const container = document.getElementById("pageContent");
@@ -1066,22 +1145,8 @@ async function loadTransactionsPage() {
       </div>
     </div>
 
-    <div class="modal-overlay" id="refundModal" style="display:none;">
-      <div class="modal">
-        <h3>Refund transaction</h3>
-        <form id="refundForm">
-          <input type="hidden" id="rfTxnId">
-          <div class="form-field"><label>Reason <span style="color:var(--text-muted); font-weight:400;">(optional, shown to the guest)</span></label><textarea id="rfReason" rows="2"></textarea></div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeRefundModal()">Cancel</button>
-            <button type="submit" class="btn btn-danger" id="rfSubmitBtn">Confirm refund</button>
-          </div>
-        </form>
-      </div>
-    </div>
   `;
   document.getElementById("paymentForm").addEventListener("submit", submitPaymentForm);
-  document.getElementById("refundForm").addEventListener("submit", submitRefundForm);
   refreshTransactionsTable();
 }
 async function refreshTransactionsTable() {
@@ -1104,7 +1169,7 @@ async function refreshTransactionsTable() {
       <td>${TXN_METHOD_LABELS[t.method] || t.method}</td><td>&#8358;${Number(t.amount).toLocaleString()}</td>
       <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
       <td><a class="btn btn-sm btn-outline" href="${managerApi.getInvoiceUrl(t.id)}" target="_blank" rel="noopener">Invoice</a>
-      ${t.status === "PAID" ? `<button class="btn btn-sm btn-danger" onclick="openRefundModal('${t.id}')">Refund</button>` : ""}</td></tr>
+      ${t.status === "PAID" ? `<span style="color:var(--text-muted); font-size:0.76rem; margin-left:6px;">Refund via Director</span>` : ""}</td></tr>
     `).join("") : `<tr><td colspan="7" class="empty-state">No transactions yet.</td></tr>`;
   } catch (err) { document.getElementById("transactionsBody").innerHTML = `<tr><td colspan="7" class="empty-state">${err.message}</td></tr>`; }
 }
@@ -1122,16 +1187,6 @@ async function submitPaymentForm(e) {
       method: document.getElementById("pyMethod").value,
     });
     closePaymentModal(); showNotice("transactionsNotice", "Payment recorded.", "success"); refreshTransactionsTable();
-  } catch (err) { showNotice("transactionsNotice", err.message); } finally { btn.disabled = false; }
-}
-function openRefundModal(id) { document.getElementById("rfTxnId").value = id; document.getElementById("refundModal").style.display = "flex"; }
-function closeRefundModal() { document.getElementById("refundModal").style.display = "none"; document.getElementById("refundForm").reset(); }
-async function submitRefundForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("rfSubmitBtn"); btn.disabled = true;
-  try {
-    await managerApi.refundTransaction(document.getElementById("rfTxnId").value, document.getElementById("rfReason").value || undefined);
-    closeRefundModal(); showNotice("transactionsNotice", "Refund issued.", "success"); refreshTransactionsTable();
   } catch (err) { showNotice("transactionsNotice", err.message); } finally { btn.disabled = false; }
 }
 
@@ -1930,7 +1985,7 @@ async function submitDisableTwoFactor() {
 async function loadBlogPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Blog", "Posts publish to the public site instantly and auto-email your newsletter list.",
+    ${pageHeader("Blog", "Posts publish to the public site instantly. Newsletter emails for your posts need Director approval first.",
       `<button class="btn btn-primary" onclick="openBlogModal()">Write a post</button>`)}
     <div id="blogNotice"></div>
     <div class="panel">
@@ -1969,7 +2024,7 @@ async function refreshBlogTable() {
         <td>${p.title}</td>
         <td><span class="badge ${p.status === "PUBLISHED" ? "badge-active" : "badge-pending"}">${p.status === "PUBLISHED" ? "Published" : "Draft"}</span></td>
         <td>${p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "—"}</td>
-        <td>${p.campaign ? (p.campaign.status === "SENT" ? `Sent to ${p.campaign.sentCount}` : p.campaign.status) : (p.autoNewsletter ? "Pending" : "Off")}</td>
+        <td>${p.campaign ? NEWSLETTER_STATUS_LABELS[p.campaign.status] || p.campaign.status : (p.autoNewsletter ? "Will queue on publish" : "Off")}</td>
         <td>
           <button class="btn btn-sm btn-outline" onclick='openBlogModal(${JSON.stringify(p).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-danger" onclick="deleteBlogPostRow('${p.id}')">Delete</button>
@@ -2023,6 +2078,89 @@ async function submitBlogForm(publish) {
 async function deleteBlogPostRow(id) {
   if (!confirm("Delete this post?")) return;
   try { await managerApi.deleteBlogPost(id); refreshBlogTable(); } catch (err) { showNotice("blogNotice", err.message); }
+}
+
+/* ============================================================
+   NEWSLETTER — draft & submit only. Recipients are always the full
+   company subscriber list (not just this branch) — sending itself is a
+   Director action from the main admin dashboard once submitted.
+   ============================================================ */
+async function loadNewsletterPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Newsletter", "Draft a campaign for Director approval. It goes to every subscriber company-wide once sent, not just your branch.",
+      `<button class="btn btn-primary" onclick="openNewsletterModal()">New draft</button>`)}
+    <div id="newsletterNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Subject</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+        <tbody id="newsletterBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="newsletterModal" style="display:none;">
+      <div class="modal">
+        <h3 id="newsletterModalTitle">New draft</h3>
+        <div id="newsletterRejectedNotice"></div>
+        <form id="newsletterForm">
+          <input type="hidden" id="nlId">
+          <div class="form-field"><label>Subject</label><input type="text" id="nlSubject" required></div>
+          <div class="form-field"><label>Content (HTML)</label><textarea id="nlHtml" rows="10" required></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeNewsletterModal()">Cancel</button>
+            <button type="button" class="btn btn-outline" id="nlSaveBtn" onclick="submitNewsletterForm(false)">Save draft</button>
+            <button type="button" class="btn btn-primary" id="nlSubmitBtn" onclick="submitNewsletterForm(true)">Submit for approval</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  refreshNewsletterTable();
+}
+async function refreshNewsletterTable() {
+  try {
+    const { campaigns } = await managerApi.listNewsletterCampaigns();
+    window._newsletterCache = campaigns;
+    document.getElementById("newsletterBody").innerHTML = campaigns.length ? campaigns.map((c) => `
+      <tr>
+        <td>${c.subject}${c.rejectedReason ? `<br><span style="color:var(--danger); font-size:0.78rem;">Rejected: ${c.rejectedReason}</span>` : ""}</td>
+        <td><span class="badge ${c.status === "SENT" ? "badge-active" : c.status === "FAILED" ? "badge-inactive" : "badge-pending"}">${NEWSLETTER_STATUS_LABELS[c.status] || c.status}</span></td>
+        <td>${c.submittedForApprovalAt ? new Date(c.submittedForApprovalAt).toLocaleDateString() : "—"}</td>
+        <td>${c.status === "DRAFT" ? `
+          <button class="btn btn-sm btn-outline" onclick='openNewsletterModal(${JSON.stringify(c).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-primary" onclick="submitExistingCampaign('${c.id}')">Submit</button>
+        ` : `<span style="color:var(--text-muted); font-size:0.78rem;">—</span>`}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No campaigns yet. Blog posts you publish with "email to newsletter" checked also show up here once queued.</td></tr>`;
+  } catch (err) { document.getElementById("newsletterBody").innerHTML = `<tr><td colspan="4" class="empty-state">${err.message}</td></tr>`; }
+}
+function openNewsletterModal(campaign) {
+  document.getElementById("newsletterModalTitle").textContent = campaign ? "Edit draft" : "New draft";
+  document.getElementById("newsletterForm").reset();
+  document.getElementById("newsletterRejectedNotice").innerHTML = campaign?.rejectedReason
+    ? `<div class="notice error">Director feedback: ${campaign.rejectedReason}</div>` : "";
+  document.getElementById("nlId").value = campaign ? campaign.id : "";
+  document.getElementById("nlSubject").value = campaign ? campaign.subject : "";
+  document.getElementById("nlHtml").value = campaign ? campaign.html : "";
+  document.getElementById("newsletterModal").style.display = "flex";
+}
+function closeNewsletterModal() { document.getElementById("newsletterModal").style.display = "none"; }
+async function submitNewsletterForm(submit) {
+  const id = document.getElementById("nlId").value;
+  const payload = { subject: document.getElementById("nlSubject").value, html: document.getElementById("nlHtml").value };
+  const btn = submit ? document.getElementById("nlSubmitBtn") : document.getElementById("nlSaveBtn");
+  btn.disabled = true;
+  try {
+    const saved = id ? await managerApi.updateNewsletterCampaign(id, payload) : await managerApi.createNewsletterCampaign(payload);
+    const campaignId = id || saved.campaign.id;
+    if (submit) await managerApi.submitNewsletterCampaign(campaignId);
+    closeNewsletterModal();
+    showNotice("newsletterNotice", submit ? "Submitted for Director approval." : "Draft saved.", "success");
+    refreshNewsletterTable();
+  } catch (err) { showNotice("newsletterNotice", err.message); } finally { btn.disabled = false; }
+}
+async function submitExistingCampaign(id) {
+  try { await managerApi.submitNewsletterCampaign(id); showNotice("newsletterNotice", "Submitted for Director approval.", "success"); refreshNewsletterTable(); }
+  catch (err) { showNotice("newsletterNotice", err.message); }
 }
 
 /* ============================================================

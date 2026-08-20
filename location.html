@@ -3,30 +3,166 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="pageTitle">Location — Oxygen Hotel</title>
-<meta name="description" id="pageDescription" content="Book directly at this Oxygen Hotel location.">
-<link rel="stylesheet" href="css/style.css">
+<title id="pageTitle">Location — Our Hotel</title>
+<meta name="description" id="pageDescription" content="Book directly at this location.">
+<style>
+/* ============================================================
+   This page is fully self-contained — all CSS and JS live in
+   this one file. No external .css or .js files. The only
+   external resource is the Google Fonts stylesheet below (a
+   font, not application logic, so it stays linked).
+
+   This file duplicates some of the same base styles found in
+   index.html by design — they are two independent pages, not
+   two views sharing one stylesheet. Editing this file's CSS
+   never affects index.html, and vice versa.
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #14181f;
+  --ink-soft: #1c222b;
+  --ivory: #f6f1e7;
+  --ivory-dim: #ede5d4;
+  --brass: #b98d45;
+  --brass-light: #d9b876;
+  --teal: #2f5d5a;
+  --teal-light: #3f7a76;
+  --text-muted: #6b6355;
+  --text-on-ink: #ede6d6;
+  --radius: 3px;
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+/* ---- Nav ---- */
+.site-nav { position: sticky; top: 0; z-index: 50; background: rgba(20, 24, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(217, 184, 118, 0.15); }
+.site-nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+.brand { font-family: var(--font-display); font-size: 1.3rem; color: var(--ivory); letter-spacing: 0.01em; }
+.brand span { color: var(--brass-light); }
+.nav-links { display: flex; gap: 36px; align-items: center; }
+.nav-links a { color: var(--text-on-ink); font-size: 0.92rem; letter-spacing: 0.02em; transition: color 0.2s; }
+.nav-links a:hover { color: var(--brass-light); }
+.nav-cta { border: 1px solid var(--brass); color: var(--brass-light) !important; padding: 9px 20px; border-radius: var(--radius); font-size: 0.85rem !important; }
+.nav-cta:hover { background: var(--brass); color: var(--ink) !important; }
+.nav-toggle { display: none; background: none; border: none; color: var(--ivory); font-size: 1.5rem; cursor: pointer; }
+@media (max-width: 860px) {
+  .nav-links { position: fixed; top: 76px; left: 0; right: 0; background: var(--ink); flex-direction: column; padding: 24px 32px; gap: 20px; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: all 0.25s; }
+  .nav-links.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+  .nav-toggle { display: block; }
+}
+
+/* ---- Hero ---- */
+.hero { background: var(--ink); color: var(--text-on-ink); position: relative; overflow: hidden; padding: 120px 0 100px; }
+.hero::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.14) 0, transparent 45%), radial-gradient(circle at 85% 75%, rgba(47, 93, 90, 0.35) 0, transparent 50%); pointer-events: none; }
+.hero .wrap { position: relative; }
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 24px; }
+.eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--brass); }
+.hero h1 { font-size: clamp(2.6rem, 5.5vw, 4.4rem); max-width: 18ch; margin-bottom: 26px; }
+.hero p.lead { font-size: 1.15rem; color: rgba(237, 230, 214, 0.75); max-width: 46ch; margin-bottom: 40px; }
+.hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.tide-divider { display: block; width: 100%; height: 48px; background: var(--ink); }
+.tide-divider svg { display: block; width: 100%; height: 48px; }
+
+/* ---- Buttons ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: var(--radius); font-size: 0.9rem; letter-spacing: 0.02em; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover { background: var(--brass-light); }
+.btn-ghost { border-color: rgba(237, 230, 214, 0.3); color: var(--text-on-ink); }
+.btn-ghost:hover { border-color: var(--brass-light); color: var(--brass-light); }
+.btn-dark { background: var(--ink); color: var(--ivory); }
+.btn-dark:hover { background: var(--teal); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- Section scaffolding ---- */
+section { padding: 96px 0; }
+.section-head { max-width: 640px; margin-bottom: 56px; }
+.section-head .eyebrow { color: var(--teal); }
+.section-head .eyebrow::before { background: var(--teal); }
+.section-head h2 { font-size: clamp(1.9rem, 3.5vw, 2.6rem); color: var(--ink); }
+.section-head p { color: var(--text-muted); margin-top: 14px; font-size: 1.02rem; }
+
+/* ---- Key-tag signature element ---- */
+.key-tag { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; background: var(--brass); border-radius: 6px; color: var(--ink); font-family: var(--font-display); font-weight: 600; font-size: 1rem; transform: rotate(-4deg); }
+.key-tag::after { content: ""; position: absolute; top: 8px; left: -7px; width: 8px; height: 8px; border-radius: 50%; background: var(--ivory); border: 2px solid var(--ink); }
+
+/* ---- Branch services chips ---- */
+.branch-services { display: flex; flex-wrap: wrap; gap: 8px; }
+.branch-services span { font-size: 0.72rem; letter-spacing: 0.02em; text-transform: capitalize; color: var(--teal); background: rgba(47, 93, 90, 0.08); padding: 4px 10px; border-radius: 20px; }
+
+/* ---- Room / event cards ---- */
+.room-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 32px; }
+.room-card { background: #fff; border: 1px solid rgba(107, 99, 85, 0.12); border-radius: 4px; overflow: hidden; transition: transform 0.25s, box-shadow 0.25s; }
+.room-card:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -20px rgba(20, 24, 31, 0.25); }
+.room-card-image { height: 220px; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-light) 60%, var(--brass) 140%); position: relative; }
+.room-card-image .key-tag { position: absolute; bottom: -22px; left: 24px; }
+.room-card-body { padding: 36px 24px 24px; }
+.room-card-body h3 { font-size: 1.3rem; margin-bottom: 8px; }
+.room-card-body p.desc { color: var(--text-muted); font-size: 0.94rem; margin-bottom: 18px; }
+.room-meta { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.price { font-family: var(--font-display); font-size: 1.4rem; color: var(--ink); }
+.price small { font-family: var(--font-body); font-size: 0.78rem; color: var(--text-muted); font-weight: 400; }
+.amenity-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+.amenity-tags span { font-size: 0.74rem; letter-spacing: 0.03em; text-transform: uppercase; color: var(--teal); background: rgba(47, 93, 90, 0.08); padding: 5px 10px; border-radius: 20px; }
+
+/* ---- Availability form ---- */
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.form-field { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+.form-field.full { grid-column: 1 / -1; }
+.form-field label { font-size: 0.82rem; letter-spacing: 0.02em; color: var(--text-muted); }
+.form-field input { font-family: var(--font-body); font-size: 0.95rem; padding: 13px 16px; border: 1px solid rgba(107, 99, 85, 0.25); border-radius: var(--radius); background: #fff; color: var(--ink); }
+.form-field input:focus { outline: 2px solid var(--brass); outline-offset: 1px; border-color: var(--brass); }
+@media (max-width: 640px) { .form-grid { grid-template-columns: 1fr; } }
+
+.notice { padding: 14px 18px; border-radius: var(--radius); font-size: 0.9rem; margin-bottom: 20px; }
+.notice.error { background: rgba(185, 60, 45, 0.08); color: #a3392a; border: 1px solid rgba(185, 60, 45, 0.2); }
+
+.loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
+
+/* ---- Footer ---- */
+footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 64px 0 32px; }
+.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 48px; margin-bottom: 48px; }
+footer .brand { display: block; margin-bottom: 14px; }
+footer h5 { color: var(--ivory); font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px; font-family: var(--font-body); font-weight: 600; }
+footer ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+footer a { font-size: 0.9rem; transition: color 0.2s; }
+footer a:hover { color: var(--brass-light); }
+.footer-bottom { border-top: 1px solid rgba(237, 230, 214, 0.1); padding-top: 24px; font-size: 0.8rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 720px) { .footer-grid { grid-template-columns: 1fr; } }
+</style>
 </head>
 <body>
 
 <nav class="site-nav">
   <div class="wrap">
-    <a href="index.html" class="brand">Oxygen <span>Hotel</span></a>
-    <div class="nav-links">
+    <a href="index.html" class="brand" id="navBrand">Our Hotel</a>
+    <div class="nav-links" id="navLinks">
       <a href="index.html">Home</a>
       <a href="index.html#locations">Locations</a>
       <a href="about.html">About</a>
       <a href="contact.html">Contact</a>
       <a href="#rooms" class="nav-cta">Book a room</a>
     </div>
-    <button class="nav-toggle" aria-label="Toggle menu">&#9776;</button>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">&#9776;</button>
   </div>
 </nav>
 
-<!-- Everything below is populated by location.js from ?branch= in the URL.
-     One file serves every branch — nothing here is hardcoded to a specific
-     location. If the slug/id in the URL doesn't resolve, #notFoundState
-     shows instead of the branch content. -->
+<!-- Everything below is populated by the script at the bottom, driven
+     entirely by ?branch= in the URL. One file serves every branch —
+     nothing here is hardcoded to a specific location. -->
 
 <div id="notFoundState" style="display:none;">
   <div class="wrap" style="padding:120px 0; text-align:center;">
@@ -61,7 +197,7 @@
         <p class="eyebrow">Available here</p>
         <h2>What this location offers.</h2>
       </div>
-      <div class="branch-services" id="branchServices" style="gap:12px;"></div>
+      <div class="branch-services" id="branchServices"></div>
     </div>
   </section>
 
@@ -114,7 +250,7 @@
   <div class="wrap">
     <div class="footer-grid">
       <div>
-        <a href="index.html" class="brand">Oxygen <span>Hotel</span></a>
+        <a href="index.html" class="brand" id="footerBrand">Our Hotel</a>
         <p style="max-width:34ch; margin-top:10px; font-size:0.9rem;">Multiple locations, one company, one booking system.</p>
       </div>
       <div>
@@ -133,14 +269,194 @@
       </div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; <span id="year"></span> Oxygen Hotel. All rights reserved.</span>
+      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Our Hotel</span>. All rights reserved.</span>
       <span>Built and run directly — no third-party booking fees.</span>
     </div>
   </div>
 </footer>
 
-<script src="js/api.js"></script>
-<script src="js/location.js"></script>
-<script>document.getElementById("year").textContent = new Date().getFullYear();</script>
+<script>
+/* ============================================================
+   All page logic lives here, inline. Nothing shared with
+   index.html or any other page — this page has its own
+   independent copy of whatever it needs. That's deliberate:
+   a shared main.js meant editing one page could silently
+   change another.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+
+  async function apiRequest(path, options = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const branchParam = params.get("branch");
+  let currentBranch = null; // set once loadBranch() resolves
+  let platformName = "Our Hotel"; // updated by hydratePlatformName() before loadBranch() runs
+
+  function initNav() {
+    const toggle = document.getElementById("navToggle");
+    const links = document.getElementById("navLinks");
+    if (toggle && links) toggle.addEventListener("click", () => links.classList.toggle("open"));
+  }
+
+  /**
+   * The platform name is set ONLY by the Director, via
+   * PATCH /api/director/settings — never hardcoded here. GET /api/settings
+   * is public and auto-creates a default row server-side ("Our Hotel") if
+   * the Director hasn't set one yet, so this never 404s.
+   */
+  async function hydratePlatformName() {
+    try {
+      const { settings } = await apiRequest("/settings");
+      platformName = settings.platformName || "Our Hotel";
+      document.getElementById("navBrand").textContent = platformName;
+      document.getElementById("footerBrand").textContent = platformName;
+      document.getElementById("footerCopyrightName").textContent = platformName;
+    } catch (err) {
+      console.warn("Could not load platform name, using fallback:", err.message);
+    }
+  }
+
+  function showNotFound() {
+    document.getElementById("notFoundState").style.display = "block";
+    document.getElementById("branchContent").style.display = "none";
+  }
+
+  /** Accepts either the branch's slug or its raw ID — the backend's
+   * publicRoutes.param("branchId", ...) resolver (see
+   * server-patch-01-branch-slug.md) handles either transparently. */
+  async function loadBranch() {
+    if (!branchParam) { showNotFound(); return; }
+
+    try {
+      const { branch } = await apiRequest(`/branches/${branchParam}`);
+      currentBranch = branch;
+
+      document.getElementById("notFoundState").style.display = "none";
+      document.getElementById("branchContent").style.display = "block";
+
+      document.getElementById("pageTitle").textContent = `${branch.name} — ${platformName}`;
+      document.getElementById("pageDescription").setAttribute(
+        "content",
+        `Book directly at ${platformName} — ${branch.name}, ${branch.city}. Real-time availability, no OTA fees.`
+      );
+
+      document.getElementById("branchCity").textContent = `${branch.city}${branch.state ? `, ${branch.state}` : ""}`;
+      document.getElementById("branchName").textContent = branch.name;
+      document.getElementById("branchAddress").textContent = branch.address || "";
+
+      document.getElementById("branchServices").innerHTML = (branch.services || [])
+        .map((s) => `<span>${s}</span>`)
+        .join("");
+
+      document.getElementById("footerBranchContact").innerHTML = `
+        ${branch.phone ? `<li><a href="tel:${branch.phone.replace(/\s+/g, "")}">${branch.phone}</a></li>` : ""}
+        <li>${branch.address || ""}</li>
+      `;
+
+      loadEvents();
+    } catch (err) {
+      showNotFound();
+    }
+  }
+
+  async function loadEvents() {
+    const grid = document.getElementById("eventsGrid");
+    try {
+      const { events } = await apiRequest(`/branches/${currentBranch.id}/events`);
+      if (!events || !events.length) {
+        grid.innerHTML = `<div class="empty-state">No upcoming events at this location right now.</div>`;
+        return;
+      }
+      grid.innerHTML = events.map((e) => `
+        <div class="room-card">
+          <div class="room-card-image"><div class="key-tag">E</div></div>
+          <div class="room-card-body">
+            <h3>${e.title}</h3>
+            <p class="desc">${e.description || ""}</p>
+            <div class="room-meta">
+              <span style="color:var(--text-muted); font-size:0.88rem;">${e.date ? new Date(e.date).toLocaleDateString() : ""}</span>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty-state">Couldn't load events right now.</div>`;
+    }
+  }
+
+  async function checkAvailability(e) {
+    e.preventDefault();
+    const btn = document.getElementById("checkAvailabilityBtn");
+    const notice = document.getElementById("availabilityNotice");
+    const grid = document.getElementById("roomGrid");
+    notice.innerHTML = "";
+    btn.disabled = true;
+    btn.textContent = "Checking…";
+
+    try {
+      const checkIn = document.getElementById("checkIn").value;
+      const checkOut = document.getElementById("checkOut").value;
+      const { availableRooms } = await apiRequest(
+        `/branches/${currentBranch.id}/availability?checkIn=${checkIn}&checkOut=${checkOut}`
+      );
+
+      if (!availableRooms || !availableRooms.length) {
+        grid.innerHTML = `<div class="empty-state">No rooms available for those dates at this location — try different dates.</div>`;
+        return;
+      }
+
+      // Group by room type so we show one card per type with a live
+      // count, not one card per physical room.
+      const byType = {};
+      availableRooms.forEach((r) => {
+        const key = r.roomType.id;
+        if (!byType[key]) byType[key] = { roomType: r.roomType, count: 0 };
+        byType[key].count += 1;
+      });
+
+      grid.innerHTML = Object.values(byType).map(({ roomType, count }) => `
+        <div class="room-card">
+          <div class="room-card-image"><div class="key-tag">R</div></div>
+          <div class="room-card-body">
+            <h3>${roomType.name}</h3>
+            <p class="desc">${roomType.description || ""}</p>
+            <div class="amenity-tags">${(roomType.amenities || []).map((a) => `<span>${a}</span>`).join("")}</div>
+            <div class="room-meta">
+              <div class="price">&#8358;${Number(roomType.basePrice).toLocaleString()}<small> / night</small></div>
+              <span style="color:var(--text-muted); font-size:0.85rem;">${count} available</span>
+            </div>
+            <a href="booking.html?branch=${currentBranch.slug || currentBranch.id}&roomType=${roomType.id}&checkIn=${checkIn}&checkOut=${checkOut}" class="btn btn-dark" style="width:100%;">Book this room</a>
+          </div>
+        </div>
+      `).join("");
+    } catch (err) {
+      notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Check availability";
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    initNav();
+    await hydratePlatformName(); // must resolve first — loadBranch() uses platformName for the title
+    loadBranch();
+    document.getElementById("availabilityForm").addEventListener("submit", checkAvailability);
+    document.getElementById("year").textContent = new Date().getFullYear();
+  });
+})();
+</script>
+ <script src="/chat-widget.js"></script>
 </body>
 </html>

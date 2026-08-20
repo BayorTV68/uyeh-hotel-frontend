@@ -358,7 +358,7 @@ footer a:hover { color: var(--brass-light); }
 (function () {
   "use strict";
 
-  const API_BASE = window.__API_BASE__ || "/api";
+  const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
 
   async function apiRequest(path, options = {}) {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -553,5 +553,6 @@ footer a:hover { color: var(--brass-light); }
   });
 })();
 </script>
+ <script src="/chat-widget.js"></script>
 </body>
 </html>

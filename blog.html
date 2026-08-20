@@ -136,7 +136,7 @@ footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 48px
 <script>
 (function () {
   "use strict";
-  const API_BASE = window.__API_BASE__ || "/api";
+  const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
 
   async function apiRequest(path, options = {}) {
     const res = await fetch(`${API_BASE}${path}`, {

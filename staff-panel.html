@@ -224,7 +224,7 @@ tr:last-child td { border-bottom: none; }
 /* ============================================================
    CONFIG / SESSION
    ============================================================ */
-const API_BASE = "/api"; // adjust to your deployed backend base URL
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
 function getToken() { return localStorage.getItem("stf_token"); }
 function getStaff() { try { return JSON.parse(localStorage.getItem("stf_staff")); } catch { return null; } }
 function setSession(token, staff) { localStorage.setItem("stf_token", token); localStorage.setItem("stf_staff", JSON.stringify(staff)); }

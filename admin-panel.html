@@ -253,6 +253,48 @@ tr:last-child td { border-bottom: none; }
 .checkbox-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
 .checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
 
+/* ── Site Settings page ─────────────────────────────────────────── */
+.ss-maint-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+  padding: 18px 24px; margin-bottom: 20px; border-radius: 10px;
+  background: rgba(163,57,42,0.05); border: 1px solid rgba(163,57,42,0.2);
+}
+.ss-maint-card.is-off { background: rgba(20,24,31,0.03); border-color: var(--border); }
+.ss-maint-card-title { font-weight: 700; font-size: 0.92rem; color: var(--danger); margin-bottom: 4px; }
+.ss-maint-card.is-off .ss-maint-card-title { color: var(--text-muted); }
+.ss-maint-card-status { font-size: 0.8rem; color: var(--text-muted); }
+
+.ss-toggle-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px 16px; border-radius: 8px; margin-bottom: 8px;
+  background: rgba(20,24,31,0.02); border: 1px solid var(--border-soft);
+}
+.ss-toggle-label { font-weight: 600; font-size: 0.86rem; }
+.ss-toggle-desc { font-size: 0.76rem; color: var(--text-muted); margin-top: 2px; }
+
+.ss-banner-preview {
+  border-radius: 8px; padding: 12px 16px; margin-top: 14px; font-size: 0.85rem; font-weight: 500;
+  display: none; align-items: center; justify-content: space-between; gap: 10px;
+}
+.ss-banner-preview.show { display: flex; }
+.ss-banner-preview.info { background: #eaf3f8; border: 1px solid #0096ff; color: #0c4a6e; }
+.ss-banner-preview.success { background: #eaf7ef; border: 1px solid #2f5d5a; color: #1a3d3a; }
+.ss-banner-preview.warning { background: #fbf3e4; border: 1px solid #b98d45; color: #6b4e1a; }
+.ss-banner-preview.urgent { background: #fbeae7; border: 1px solid #a3392a; color: #7a2419; }
+
+.ss-danger-zone { border: 1px solid rgba(163,57,42,0.25); border-radius: 10px; padding: 18px 20px; margin-top: 22px; background: rgba(163,57,42,0.02); }
+.ss-danger-zone-hd { font-size: 0.72rem; font-weight: 700; color: var(--danger); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 12px; }
+
+#siteSettingsSaveBar {
+  position: sticky; bottom: 0; z-index: 20; display: none; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; padding: 14px 20px; margin-top: 20px;
+  background: var(--ink); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,0.15);
+}
+#siteSettingsSaveBar.show { display: flex; }
+.ss-unsaved-badge { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; color: var(--text-on-dark); font-weight: 600; }
+.ss-unsaved-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brass); animation: ssPulse 1.5s ease infinite; }
+@keyframes ssPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
 .notice { padding: 12px 16px; border-radius: var(--radius); font-size: 0.85rem; margin-bottom: 18px; }
 .notice.success { background: rgba(47,93,90,0.1); color: var(--teal); }
 .notice.error { background: rgba(163,57,42,0.08); color: var(--danger); }
@@ -296,6 +338,17 @@ tr:last-child td { border-bottom: none; }
         <input type="password" id="loginPassword" required autocomplete="current-password">
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%; margin-top:6px;" id="loginBtn">Log in</button>
+    </form>
+
+    <form id="twoFactorLoginForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div id="twoFactorLoginNotice"></div>
+      <div class="form-field">
+        <label for="twoFactorCode">Code</label>
+        <input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" required>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:6px;" id="twoFactorLoginBtn">Verify</button>
+      <button type="button" class="btn btn-outline" style="width:100%; margin-top:8px;" onclick="cancelTwoFactorLogin()">Back to login</button>
     </form>
   </div>
 </div>
@@ -376,12 +429,12 @@ function clearSession() {
 }
 function isDirector() {
   const staff = getStaff();
-  return !!staff && staff.role === "DIRECTOR";
+  return !!staff && staff.type === "director";
 }
 function hasPermission(key) {
   const staff = getStaff();
   if (!staff) return false;
-  if (staff.role === "DIRECTOR") return true;
+  if (staff.type === "director") return true;
   return (staff.permissions || []).includes(key);
 }
 function branchPath(path) {
@@ -466,9 +519,9 @@ async function adminUpload(path, file) {
 }
 
 const adminApi = {
-  setupTwoFactor: () => adminRequest("/2fa/setup", { method: "POST" }),
-  enableTwoFactor: (code) => adminRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
-  disableTwoFactor: (password) => adminRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  setupTwoFactor: () => adminRequest("/auth/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => adminRequest("/auth/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => adminRequest("/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
   // Director only — Manager and Staff have their own dedicated panels now
   // (manager-panel.html, staff-panel.html). This panel intentionally never
   // attempts those login endpoints.
@@ -480,13 +533,29 @@ const adminApi = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Login failed");
-    // The Director object has no `role` field on the backend — inject one
-    // so isDirector() and permission checks below work correctly.
+    // 2FA-enabled accounts get a tempToken instead of real tokens here —
+    // the caller must finish the challenge via loginTwoFactor() below
+    // before a session exists. Returning this instead of assuming every
+    // 200 is a finished login is the fix — the old code silently stored
+    // `undefined` as the session in this case.
+    if (data.requires2FA) return { requires2FA: true, tempToken: data.tempToken };
+    // data.director.type is now set by the backend itself (serializeAccount) —
+    // no client-side guessing needed.
     return {
       token: data.token,
       refreshToken: data.refreshToken,
-      staff: { ...data.director, role: "DIRECTOR" },
+      staff: data.director,
     };
+  },
+  loginTwoFactor: async (tempToken, code) => {
+    const res = await fetch(`${API_BASE}/auth/login/2fa`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tempToken, code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Invalid code");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.director };
   },
 
   // Branch-level settings (a branch's own operational settings)
@@ -668,8 +737,34 @@ const NAV_GROUPS = [
     ],
   },
   {
+    id: "operations", label: "Operations", icon: "fa-th-large",
+    items: [
+      { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
+      { page: "offerings", label: "Food, Drinks & Services", icon: "fa-utensils", permission: "manage_rooms" },
+      { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
+      { page: "groupbookings", label: "Group Bookings", icon: "fa-people-group", permission: "manage_bookings" },
+      { page: "orders", label: "Orders", icon: "fa-bell-concierge", permission: "manage_bookings" },
+      { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
+      { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
+    ],
+  },
+  {
+    id: "people", label: "People", icon: "fa-users",
+    items: [{ page: "staff", label: "Staff", icon: "fa-user-tie", permission: "manage_staff" }],
+  },
+  {
+    id: "support", label: "Guest Support", icon: "fa-headset",
+    items: [
+      { page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" },
+      { page: "reviews", label: "Reviews", icon: "fa-star", permission: "manage_reviews" },
+    ],
+  },
+  {
     id: "finance", label: "Finance", icon: "fa-sack-dollar",
-    items: [{ page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" }],
+    items: [
+      { page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" },
+      { page: "promocodes", label: "Promo Codes", icon: "fa-tags", permission: "manage_promos" },
+    ],
   },
   {
     id: "marketing", label: "Marketing", icon: "fa-bullhorn",
@@ -686,11 +781,11 @@ const SITE_SETTINGS_ITEM = { page: "sitesettings", label: "Site Settings", icon:
 function renderSidebar() {
   const staff = getStaff();
   if (!staff) return;
-  const director = staff.role === "DIRECTOR";
+  const director = staff.type === "director";
 
   document.getElementById("adminAvatar").textContent = staff.name.charAt(0).toUpperCase();
   document.getElementById("adminName").textContent = staff.name;
-  document.getElementById("adminRole").textContent = director ? "Director" : (staff.title || staff.role);
+  document.getElementById("adminRole").textContent = director ? "Director" : (staff.roleTitle || staff.type);
   document.getElementById("adminBranch").textContent = director ? "All branches" : (staff.branchName || "");
 
   const groupsHtml = NAV_GROUPS.map((group) => {
@@ -761,6 +856,7 @@ function setActiveNav(page) {
 const PAGE_LOADERS = {
   dashboard: () => isDirector() ? loadDirectorDashboard() : loadBranchDashboard(),
   branches: loadBranchesPage,
+  managers: loadManagersPage,
   corporate: loadCorporateAccountsPage,
   rooms: loadRoomsPage,
   offerings: loadOfferingsPage,
@@ -2535,138 +2631,358 @@ async function loadSettingsPage() {
 /* ============================================================
    SITE SETTINGS — Director only, controls the public website
    ============================================================ */
+const SITE_SETTINGS_TABS = [
+  ["general", "General"],
+  ["identity", "Identity & Brand"],
+  ["policies", "Policies"],
+  ["features", "Features"],
+  ["maintenance", "Maintenance"],
+  ["banner", "Announcement"],
+  ["homepage", "Homepage & SEO"],
+  ["advanced", "Advanced"],
+];
+let _siteSettingsTab = "general";
+let _siteSettingsDirty = false;
+
 async function loadSiteSettingsPage() {
   const container = document.getElementById("pageContent");
   if (!isDirector()) { container.innerHTML = `<div class="empty-state">Director access required.</div>`; return; }
 
+  _siteSettingsDirty = false;
+  _siteSettingsTab = "general";
+
   container.innerHTML = `
-    ${pageHeader("Site Settings", "Controls what guests see on the public website.")}
+    ${pageHeader("Site Settings", "Controls what guests see on the public website.",
+      `<div style="display:flex;gap:10px;">
+        <button class="btn btn-outline" onclick="exportSiteSettings()"><i class="fas fa-file-export"></i> Export</button>
+        <label class="btn btn-outline" style="cursor:pointer;">
+          <i class="fas fa-file-import"></i> Import
+          <input type="file" id="siteSettingsImportInput" accept=".json" style="display:none;" onchange="importSiteSettings(this)">
+        </label>
+      </div>`)}
     <div id="siteSettingsNotice"></div>
+
+    <div class="ss-maint-card" id="ssMaintCard">
+      <div>
+        <div class="ss-maint-card-title" id="ssMaintCardTitle">Maintenance Mode</div>
+        <div class="ss-maint-card-status" id="ssMaintCardStatus">Loading…</div>
+      </div>
+      <button class="btn" id="ssMaintToggleBtn" onclick="toggleMaintenanceQuick()">Loading…</button>
+    </div>
+
     <div class="tabs" id="siteSettingsTabs">
-      <button class="tab-btn active" data-tab="branding" onclick="switchSiteSettingsTab('branding')">Branding</button>
-      <button class="tab-btn" data-tab="policies" onclick="switchSiteSettingsTab('policies')">Policies</button>
-      <button class="tab-btn" data-tab="seo" onclick="switchSiteSettingsTab('seo')">SEO</button>
-      <button class="tab-btn" data-tab="maintenance" onclick="switchSiteSettingsTab('maintenance')">Maintenance</button>
+      ${SITE_SETTINGS_TABS.map(([key, label], i) => `<button class="tab-btn ${i === 0 ? "active" : ""}" data-tab="${key}" onclick="switchSiteSettingsTab('${key}')">${label}</button>`).join("")}
     </div>
     <div class="panel" id="siteSettingsPanel"><div class="loading-state">Loading…</div></div>
+
+    <div id="siteSettingsSaveBar">
+      <div class="ss-unsaved-badge"><span class="ss-unsaved-dot"></span> You have unsaved changes</div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-outline" onclick="discardSiteSettingsChanges()">Discard</button>
+        <button class="btn btn-primary" onclick="saveSiteSettingsCurrentTab()">Save changes</button>
+      </div>
+    </div>
   `;
 
   try {
     const { settings } = await adminApi.getSiteSettings();
     window._siteSettings = settings || {};
-    renderSiteSettingsTab("branding");
+    updateMaintenanceQuickCard(window._siteSettings);
+    renderSiteSettingsTab("general");
   } catch (err) {
     document.getElementById("siteSettingsPanel").innerHTML = `<div class="empty-state">${err.message}</div>`;
   }
 }
 
 function switchSiteSettingsTab(tab) {
+  if (_siteSettingsDirty && !confirm("You have unsaved changes on this tab. Switch anyway and lose them?")) return;
+  _siteSettingsTab = tab;
   document.querySelectorAll("#siteSettingsTabs .tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  _siteSettingsDirty = false;
+  document.getElementById("siteSettingsSaveBar").classList.remove("show");
   renderSiteSettingsTab(tab);
+}
+
+function discardSiteSettingsChanges() {
+  _siteSettingsDirty = false;
+  document.getElementById("siteSettingsSaveBar").classList.remove("show");
+  renderSiteSettingsTab(_siteSettingsTab);
+}
+
+function _watchSiteSettingsDirty() {
+  const panel = document.getElementById("siteSettingsPanel");
+  panel.querySelectorAll("input, select, textarea").forEach((el) => {
+    el.addEventListener("input", _markSiteSettingsDirty);
+    el.addEventListener("change", _markSiteSettingsDirty);
+  });
+}
+function _markSiteSettingsDirty() {
+  if (_siteSettingsDirty) return;
+  _siteSettingsDirty = true;
+  document.getElementById("siteSettingsSaveBar").classList.add("show");
 }
 
 function renderSiteSettingsTab(tab) {
   const s = window._siteSettings || {};
   const panel = document.getElementById("siteSettingsPanel");
 
-  if (tab === "branding") {
+  if (tab === "general") {
     panel.innerHTML = `
-      <form id="siteSettingsForm" data-tab="branding">
-        <div class="form-row">
-          <div class="form-field"><label>Primary color</label><input type="color" id="ssPrimaryColor" value="${s.primaryColor || "#b98d45"}"></div>
-          <div class="form-field"><label>Logo URL</label><input type="text" id="ssLogoUrl" value="${s.logoUrl || ""}"></div>
-        </div>
-        <div class="form-field"><label>Homepage headline</label><input type="text" id="ssHeadline" value="${s.headline || ""}"></div>
-        <div class="form-field"><label>Homepage subheadline</label><textarea id="ssSubheadline" rows="2">${s.subheadline || ""}</textarea></div>
-        <div class="form-field"><label>Hero image URL</label><input type="text" id="ssHeroImage" value="${s.heroImageUrl || ""}"></div>
-        <button type="submit" class="btn btn-primary" id="ssSubmitBtn">Save branding</button>
-      </form>`;
+      <div class="form-row">
+        <div class="form-field"><label>Hotel name</label><input type="text" name="name" value="${s.name || ""}"></div>
+        <div class="form-field"><label>Tagline</label><input type="text" name="tagline" value="${s.tagline || ""}"></div>
+      </div>
+      <div class="form-field"><label>Description</label><textarea name="description" rows="3">${s.description || ""}</textarea></div>
+      <div class="form-row">
+        <div class="form-field"><label>Contact email</label><input type="email" name="email" value="${s.email || ""}"></div>
+        <div class="form-field"><label>Contact phone</label><input type="tel" name="phone" value="${s.phone || ""}"></div>
+      </div>
+      <div class="form-field"><label>Address</label><input type="text" name="address" value="${s.address || ""}"></div>
+      <div class="form-row">
+        <div class="form-field"><label>City</label><input type="text" name="city" value="${s.city || ""}"></div>
+        <div class="form-field"><label>Country</label><input type="text" name="country" value="${s.country || ""}"></div>
+      </div>`;
+  } else if (tab === "identity") {
+    panel.innerHTML = `
+      <div class="form-row">
+        <div class="form-field"><label>Logo URL</label><input type="text" name="logoUrl" value="${s.logoUrl || ""}"></div>
+        <div class="form-field"><label>Favicon URL</label><input type="text" name="faviconUrl" value="${s.faviconUrl || ""}"></div>
+      </div>
+      <div class="form-field"><label>Hero image URL</label><input type="text" name="heroImageUrl" value="${s.heroImageUrl || ""}"></div>
+      <div class="form-row">
+        <div class="form-field"><label>Instagram URL</label><input type="text" id="ssSocialInstagram" value="${s.socialLinks?.instagram || ""}"></div>
+        <div class="form-field"><label>Facebook URL</label><input type="text" id="ssSocialFacebook" value="${s.socialLinks?.facebook || ""}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Primary color (ink)</label><input type="color" name="primaryColor" value="${s.primaryColor || "#14181f"}"></div>
+        <div class="form-field"><label>Secondary color (brass)</label><input type="color" name="secondaryColor" value="${s.secondaryColor || "#b98d45"}"></div>
+      </div>
+      <div class="form-field" style="max-width:calc(50% - 7px);"><label>Accent color (teal)</label><input type="color" name="accentColor" value="${s.accentColor || "#2f5d5a"}"></div>`;
   } else if (tab === "policies") {
     panel.innerHTML = `
-      <form id="siteSettingsForm" data-tab="policies">
-        <div class="form-row">
-          <div class="form-field"><label>Check-in time</label><input type="time" id="ssCheckIn" value="${s.checkInTime || "14:00"}"></div>
-          <div class="form-field"><label>Check-out time</label><input type="time" id="ssCheckOut" value="${s.checkOutTime || "11:00"}"></div>
+      <div class="form-row">
+        <div class="form-field"><label>Check-in time</label><input type="time" name="checkInTime" value="${s.checkInTime || "14:00"}"></div>
+        <div class="form-field"><label>Check-out time</label><input type="time" name="checkOutTime" value="${s.checkOutTime || "11:00"}"></div>
+      </div>
+      <div class="form-field"><label>Cancellation policy</label><textarea name="cancellationPolicy" rows="3">${s.cancellationPolicy || ""}</textarea></div>
+      <div class="form-row">
+        <div class="form-field"><label>Default currency</label>
+          <select name="baseCurrency">
+            <option value="NGN" ${s.baseCurrency === "NGN" ? "selected" : ""}>NGN (&#8358;)</option>
+            <option value="USD" ${s.baseCurrency === "USD" ? "selected" : ""}>USD ($)</option>
+          </select>
         </div>
-        <div class="form-field"><label>Cancellation policy</label><textarea id="ssCancellation" rows="3">${s.cancellationPolicy || ""}</textarea></div>
-        <div class="form-row">
-          <div class="form-field"><label>Default currency</label>
-            <select id="ssCurrency">
-              <option value="NGN" ${s.baseCurrency === "NGN" ? "selected" : ""}>NGN (&#8358;)</option>
-              <option value="USD" ${s.baseCurrency === "USD" ? "selected" : ""}>USD ($)</option>
-            </select>
-          </div>
-          <div class="form-field"><label>Tax rate (%)</label><input type="number" id="ssTaxRate" min="0" max="100" step="0.1" value="${s.taxRatePercent || 0}"></div>
-        </div>
-        <button type="submit" class="btn btn-primary" id="ssSubmitBtn">Save policies</button>
-      </form>`;
-  } else if (tab === "seo") {
-    panel.innerHTML = `
-      <form id="siteSettingsForm" data-tab="seo">
-        <div class="form-field"><label>Site title (meta title)</label><input type="text" id="ssMetaTitle" value="${s.metaTitle || ""}"></div>
-        <div class="form-field"><label>Meta description</label><textarea id="ssMetaDescription" rows="2">${s.metaDescription || ""}</textarea></div>
-        <div class="form-field"><label>Social share image URL</label><input type="text" id="ssOgImage" value="${s.ogImageUrl || ""}"></div>
-        <button type="submit" class="btn btn-primary" id="ssSubmitBtn">Save SEO</button>
-      </form>`;
+        <div class="form-field"><label>Tax rate (%)</label><input type="number" name="taxRatePercent" min="0" max="100" step="0.1" value="${s.taxRatePercent || 0}"></div>
+      </div>`;
+  } else if (tab === "features") {
+    const flags = [
+      ["bookingsEnabled", "Room bookings", "Turn off to hide the booking flow site-wide, without a redeploy."],
+      ["ordersEnabled", "Room service / restaurant / spa / laundry orders", "Turn off to hide all ordering, keeping bookings live."],
+      ["eventsEnabled", "Events", "Turn off between seasons if a branch has no events running."],
+      ["ticketsEnabled", "Support tickets", "Turn off to hide the contact/support form site-wide."],
+      ["guestAccountsEnabled", "Guest account registration", "Off = guest checkout only, no new account signups."],
+    ];
+    panel.innerHTML = flags.map(([key, label, desc]) => `
+      <div class="ss-toggle-row">
+        <div><div class="ss-toggle-label">${label}</div><div class="ss-toggle-desc">${desc}</div></div>
+        <label class="checkbox-item"><input type="checkbox" name="${key}" ${s[key] !== false ? "checked" : ""}></label>
+      </div>
+    `).join("");
   } else if (tab === "maintenance") {
     panel.innerHTML = `
-      <form id="siteSettingsForm" data-tab="maintenance">
-        <div class="form-field">
-          <label class="checkbox-item" style="font-size:0.95rem;">
-            <input type="checkbox" id="ssMaintenanceMode" ${s.maintenanceMode ? "checked" : ""}>
-            Put the public website in maintenance mode
-          </label>
+      <div class="form-field">
+        <label class="checkbox-item" style="font-size:0.95rem;">
+          <input type="checkbox" name="maintenanceMode" ${s.maintenanceMode ? "checked" : ""}>
+          Put the public website in maintenance mode
+        </label>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Maintenance page title</label><input type="text" name="maintenanceTitle" value="${s.maintenanceTitle || "Under Maintenance"}"></div>
+        <div class="form-field"><label>Estimated time back (optional)</label><input type="text" name="maintenanceETA" value="${s.maintenanceETA || ""}" placeholder="e.g. Back by 6PM WAT"></div>
+      </div>
+      <div class="form-field"><label>Message shown to guests</label><textarea name="maintenanceMessage" rows="2">${s.maintenanceMessage || ""}</textarea></div>
+      <div class="ss-danger-zone">
+        <div class="ss-danger-zone-hd">Bypass token</div>
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:10px;">
+          ${s.hasMaintenanceBypassToken ? "A bypass token is currently set." : "No bypass token is set yet."}
+          Visit any page with <code>?bypass=YOUR_TOKEN</code> to view the live site while maintenance mode is on.
+          This field is write-only — the current token is never shown here again once saved.
+        </p>
+        <div class="form-field" style="max-width:320px;"><label>Set a new bypass token</label><input type="text" name="maintenanceBypassToken" placeholder="Leave blank to keep the existing token"></div>
+      </div>`;
+  } else if (tab === "banner") {
+    panel.innerHTML = `
+      <div class="form-field">
+        <label class="checkbox-item" style="font-size:0.95rem;">
+          <input type="checkbox" name="bannerEnabled" id="ssBannerEnabled" ${s.bannerEnabled ? "checked" : ""} onchange="updateBannerPreview()">
+          Show an announcement banner site-wide
+        </label>
+      </div>
+      <div class="form-field"><label>Banner text</label><input type="text" name="bannerText" id="ssBannerText" value="${s.bannerText || ""}" oninput="updateBannerPreview()"></div>
+      <div class="form-row">
+        <div class="form-field"><label>Type</label>
+          <select name="bannerType" id="ssBannerType" onchange="updateBannerPreview()">
+            ${["info", "success", "warning", "urgent"].map((t) => `<option value="${t}" ${s.bannerType === t ? "selected" : ""}>${t[0].toUpperCase() + t.slice(1)}</option>`).join("")}
+          </select>
         </div>
-        <div class="form-field"><label>Maintenance message to show guests</label><textarea id="ssMaintenanceMessage" rows="2">${s.maintenanceMessage || ""}</textarea></div>
-        <button type="submit" class="btn btn-danger" id="ssSubmitBtn">Save maintenance settings</button>
-      </form>`;
+        <div class="form-field"><label>Dismissible by guest</label>
+          <label class="checkbox-item" style="margin-top:9px;"><input type="checkbox" name="bannerDismissible" ${s.bannerDismissible !== false ? "checked" : ""}> Guests can close it</label>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Link URL (optional)</label><input type="text" name="bannerLink" value="${s.bannerLink || ""}"></div>
+        <div class="form-field"><label>Link text (optional)</label><input type="text" name="bannerLinkText" value="${s.bannerLinkText || ""}"></div>
+      </div>
+      <div class="ss-banner-preview ${s.bannerEnabled && s.bannerText ? "show" : ""} ${s.bannerType || "info"}" id="ssBannerPreview">
+        <span id="ssBannerPreviewText">${s.bannerText || ""}</span>
+      </div>`;
+  } else if (tab === "homepage") {
+    panel.innerHTML = `
+      <div class="form-field"><label>Homepage headline</label><input type="text" name="headline" value="${s.headline || ""}"></div>
+      <div class="form-field"><label>Homepage subheadline</label><textarea name="subheadline" rows="2">${s.subheadline || ""}</textarea></div>
+      <div class="form-row">
+        <div class="form-field"><label>CTA title</label><input type="text" name="ctaTitle" value="${s.ctaTitle || ""}"></div>
+        <div class="form-field"><label>CTA subtitle</label><input type="text" name="ctaSubtitle" value="${s.ctaSubtitle || ""}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Footer about text</label><input type="text" name="footerAbout" value="${s.footerAbout || ""}"></div>
+        <div class="form-field"><label>Footer email</label><input type="email" name="footerEmail" value="${s.footerEmail || ""}"></div>
+      </div>
+      <div class="form-field" style="max-width:calc(50% - 7px);"><label>Footer phone</label><input type="tel" name="footerPhone" value="${s.footerPhone || ""}"></div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:20px 0;">
+      <div class="form-field"><label>Site title (meta title)</label><input type="text" name="metaTitle" value="${s.metaTitle || ""}"></div>
+      <div class="form-field"><label>Meta description</label><textarea name="metaDescription" rows="2">${s.metaDescription || ""}</textarea></div>
+      <div class="form-field"><label>Meta keywords (comma separated)</label><input type="text" name="metaKeywords" value="${s.metaKeywords || ""}"></div>
+      <div class="form-row">
+        <div class="form-field"><label>Social share image URL</label><input type="text" name="ogImageUrl" value="${s.ogImageUrl || ""}"></div>
+        <div class="form-field"><label>Google Analytics ID</label><input type="text" name="googleAnalyticsId" value="${s.googleAnalyticsId || ""}"></div>
+      </div>
+      <div class="form-field" style="max-width:calc(50% - 7px);"><label>Facebook Pixel ID</label><input type="text" name="facebookPixelId" value="${s.facebookPixelId || ""}"></div>`;
+  } else if (tab === "advanced") {
+    panel.innerHTML = `
+      <p style="font-size:0.85rem;color:var(--text-muted);margin-bottom:16px;">
+        Injected on every public page. Mistakes here affect the live site immediately after saving — double-check before saving.
+      </p>
+      <div class="form-field"><label>Custom CSS</label><textarea name="customCSS" rows="8" style="font-family:monospace;font-size:0.82rem;">${s.customCSS || ""}</textarea></div>
+      <div class="form-field"><label>Custom &lt;head&gt; tags (fonts, extra meta tags)</label><textarea name="customHead" rows="4" style="font-family:monospace;font-size:0.82rem;">${s.customHead || ""}</textarea></div>`;
   }
 
-  document.getElementById("siteSettingsForm").addEventListener("submit", submitSiteSettingsForm);
+  _watchSiteSettingsDirty();
+  if (tab === "banner") updateBannerPreview();
 }
 
-async function submitSiteSettingsForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("ssSubmitBtn");
-  const tab = e.target.dataset.tab;
-  btn.disabled = true;
-  try {
-    let payload = {};
-    if (tab === "branding") {
-      payload = {
-        primaryColor: document.getElementById("ssPrimaryColor").value,
-        logoUrl: document.getElementById("ssLogoUrl").value,
-        headline: document.getElementById("ssHeadline").value,
-        subheadline: document.getElementById("ssSubheadline").value,
-        heroImageUrl: document.getElementById("ssHeroImage").value,
-      };
-    } else if (tab === "policies") {
-      payload = {
-        checkInTime: document.getElementById("ssCheckIn").value,
-        checkOutTime: document.getElementById("ssCheckOut").value,
-        cancellationPolicy: document.getElementById("ssCancellation").value,
-        baseCurrency: document.getElementById("ssCurrency").value,
-        taxRatePercent: Number(document.getElementById("ssTaxRate").value),
-      };
-    } else if (tab === "seo") {
-      payload = {
-        metaTitle: document.getElementById("ssMetaTitle").value,
-        metaDescription: document.getElementById("ssMetaDescription").value,
-        ogImageUrl: document.getElementById("ssOgImage").value,
-      };
-    } else if (tab === "maintenance") {
-      payload = {
-        maintenanceMode: document.getElementById("ssMaintenanceMode").checked,
-        maintenanceMessage: document.getElementById("ssMaintenanceMessage").value,
-      };
+function updateBannerPreview() {
+  const enabled = document.getElementById("ssBannerEnabled")?.checked;
+  const text = document.getElementById("ssBannerText")?.value || "";
+  const type = document.getElementById("ssBannerType")?.value || "info";
+  const preview = document.getElementById("ssBannerPreview");
+  if (!preview) return;
+  preview.className = `ss-banner-preview ${type} ${enabled && text ? "show" : ""}`;
+  document.getElementById("ssBannerPreviewText").textContent = text;
+}
+
+async function saveSiteSettingsCurrentTab() {
+  const panel = document.getElementById("siteSettingsPanel");
+  const payload = {};
+
+  panel.querySelectorAll("input[name], select[name], textarea[name]").forEach((el) => {
+    if (el.type === "checkbox") {
+      payload[el.name] = el.checked;
+    } else if (el.type === "number") {
+      payload[el.name] = el.value === "" ? undefined : Number(el.value);
+    } else if (el.value !== "" || el.tagName === "TEXTAREA") {
+      payload[el.name] = el.value;
     }
+  });
+
+  // maintenanceBypassToken is write-only and blank means "don't change it" —
+  // never send an empty string, that would wipe out an existing token.
+  if (payload.maintenanceBypassToken === "") delete payload.maintenanceBypassToken;
+
+  // Social links live outside the normal name-attribute sweep since they're
+  // nested under one JSON field on the model.
+  if (_siteSettingsTab === "identity") {
+    payload.socialLinks = {
+      ...(window._siteSettings?.socialLinks || {}),
+      instagram: document.getElementById("ssSocialInstagram")?.value || undefined,
+      facebook: document.getElementById("ssSocialFacebook")?.value || undefined,
+    };
+  }
+
+  try {
     const { settings } = await adminApi.updateSiteSettings(payload);
     window._siteSettings = settings;
+    _siteSettingsDirty = false;
+    document.getElementById("siteSettingsSaveBar").classList.remove("show");
+    updateMaintenanceQuickCard(settings);
     showNotice("siteSettingsNotice", "Saved.", "success");
+  } catch (err) {
+    showNotice("siteSettingsNotice", err.message);
+  }
+}
+
+function updateMaintenanceQuickCard(s) {
+  const card = document.getElementById("ssMaintCard");
+  const title = document.getElementById("ssMaintCardTitle");
+  const status = document.getElementById("ssMaintCardStatus");
+  const btn = document.getElementById("ssMaintToggleBtn");
+  if (!card) return;
+  card.classList.toggle("is-off", !s.maintenanceMode);
+  title.textContent = s.maintenanceMode ? "Maintenance Mode — LIVE" : "Maintenance Mode";
+  status.textContent = s.maintenanceMode ? "The public site is currently showing the maintenance page to guests." : "The public site is live and reachable by guests.";
+  btn.textContent = s.maintenanceMode ? "Turn off" : "Turn on";
+  btn.className = s.maintenanceMode ? "btn btn-primary" : "btn btn-danger";
+}
+
+async function toggleMaintenanceQuick() {
+  const s = window._siteSettings || {};
+  const btn = document.getElementById("ssMaintToggleBtn");
+  btn.disabled = true;
+  try {
+    const { settings } = await adminApi.updateSiteSettings({ maintenanceMode: !s.maintenanceMode });
+    window._siteSettings = settings;
+    updateMaintenanceQuickCard(settings);
+    if (_siteSettingsTab === "maintenance") renderSiteSettingsTab("maintenance");
+    showNotice("siteSettingsNotice", settings.maintenanceMode ? "Maintenance mode turned ON." : "Maintenance mode turned OFF.", "success");
   } catch (err) {
     showNotice("siteSettingsNotice", err.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+function exportSiteSettings() {
+  const s = window._siteSettings || {};
+  const blob = new Blob([JSON.stringify(s, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `hotel-settings-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function importSiteSettings(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  if (!confirm("This will overwrite your current site settings with the contents of this file. Continue?")) {
+    inputEl.value = "";
+    return;
+  }
+  try {
+    const text = await file.text();
+    const imported = JSON.parse(text);
+    // Strip read-only/system fields that shouldn't be re-sent.
+    delete imported.id; delete imported.updatedAt; delete imported.updatedById; delete imported.hasMaintenanceBypassToken;
+    const { settings } = await adminApi.updateSiteSettings(imported);
+    window._siteSettings = settings;
+    updateMaintenanceQuickCard(settings);
+    renderSiteSettingsTab(_siteSettingsTab);
+    showNotice("siteSettingsNotice", "Settings imported and saved.", "success");
+  } catch (err) {
+    showNotice("siteSettingsNotice", "Import failed: " + err.message);
+  } finally {
+    inputEl.value = "";
   }
 }
 
@@ -3147,6 +3463,104 @@ async function submitDisableTwoFactor() {
 }
 
 /* ============================================================
+   MANAGERS — Director only
+   ============================================================ */
+async function loadManagersPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Managers", "Branch managers, one per property (or more).",
+      `<button class="btn btn-primary" onclick="openManagerModal()">New manager</button>`)}
+    <div id="managersNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Name</th><th>Email</th><th>Branch</th><th>Status</th><th></th></tr></thead>
+        <tbody id="managersBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="managerModal" style="display:none;">
+      <div class="modal">
+        <h3>New manager</h3>
+        <form id="managerForm">
+          <div class="form-field"><label>Branch</label><select id="mgBranch" required><option value="">Loading branches&hellip;</option></select></div>
+          <div class="form-row">
+            <div class="form-field"><label>Full name</label><input type="text" id="mgName" required></div>
+            <div class="form-field"><label>Email</label><input type="email" id="mgEmail" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Temporary password</label><input type="text" id="mgPassword" required></div>
+            <div class="form-field"><label>Role title (optional)</label><input type="text" id="mgTitle" placeholder="e.g. General Manager"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeManagerModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="mgSubmitBtn">Create manager</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("managerForm").addEventListener("submit", submitManagerForm);
+  refreshManagersTable();
+  populateManagerBranchSelect();
+}
+
+async function populateManagerBranchSelect() {
+  try {
+    const { branches } = await adminApi.listBranches();
+    document.getElementById("mgBranch").innerHTML = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch (err) {
+    document.getElementById("mgBranch").innerHTML = `<option value="">Couldn't load branches</option>`;
+  }
+}
+
+async function refreshManagersTable() {
+  const body = document.getElementById("managersBody");
+  try {
+    const { managers } = await adminApi.listManagers();
+    body.innerHTML = managers.length ? managers.map((m) => `
+      <tr>
+        <td>${m.name}${m.roleTitle ? `<div class="muted" style="font-size:0.8rem;">${m.roleTitle}</div>` : ""}</td>
+        <td>${m.email}</td>
+        <td>${m.branch?.name || "&mdash;"}</td>
+        <td><span class="badge badge-${m.isActive ? "active" : "inactive"}">${m.isActive ? "Active" : "Inactive"}</span></td>
+        <td><button class="btn btn-sm btn-outline" onclick="toggleManagerActive('${m.id}', ${m.isActive})">${m.isActive ? "Deactivate" : "Activate"}</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No managers yet.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openManagerModal() { document.getElementById("managerForm").reset(); document.getElementById("managerModal").style.display = "flex"; }
+function closeManagerModal() { document.getElementById("managerModal").style.display = "none"; }
+
+async function submitManagerForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("mgSubmitBtn");
+  btn.disabled = true;
+  try {
+    await adminApi.createManager({
+      branchId: document.getElementById("mgBranch").value,
+      name: document.getElementById("mgName").value,
+      email: document.getElementById("mgEmail").value,
+      password: document.getElementById("mgPassword").value,
+      roleTitle: document.getElementById("mgTitle").value || undefined,
+    });
+    showNotice("managersNotice", "Manager created — welcome email sent.", "success");
+    closeManagerModal();
+    refreshManagersTable();
+  } catch (err) {
+    showNotice("managersNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function toggleManagerActive(id, currentlyActive) {
+  try { await adminApi.updateManager(id, { isActive: !currentlyActive }); refreshManagersTable(); }
+  catch (err) { showNotice("managersNotice", err.message); }
+}
+
+/* ============================================================
    SHARED HELPERS
    ============================================================ */
 function showNotice(containerId, message, type = "error") {
@@ -3179,6 +3593,8 @@ async function refreshTicketsBadgeSilently() {
   } catch { /* silent — this is a background badge refresh, not worth surfacing an error for */ }
 }
 
+let _pendingTempToken = null;
+
 document.getElementById("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const btn = document.getElementById("loginBtn");
@@ -3187,11 +3603,18 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
   btn.disabled = true;
   btn.textContent = "Logging in…";
   try {
-    const { token, staff } = await adminApi.login(
+    const result = await adminApi.login(
       document.getElementById("loginEmail").value,
       document.getElementById("loginPassword").value
     );
-    setSession(token, staff);
+    if (result.requires2FA) {
+      _pendingTempToken = result.tempToken;
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("twoFactorLoginForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
+    }
+    setSession(result.token, result.staff);
     showApp();
   } catch (err) {
     notice.innerHTML = `<div class="notice error">${err.message}</div>`;
@@ -3200,6 +3623,32 @@ document.getElementById("loginForm").addEventListener("submit", async (e) => {
     btn.textContent = "Log in";
   }
 });
+
+document.getElementById("twoFactorLoginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorLoginBtn");
+  const notice = document.getElementById("twoFactorLoginNotice");
+  notice.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Verifying…";
+  try {
+    const { token, staff } = await adminApi.loginTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    setSession(token, staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Verify";
+  }
+});
+
+function cancelTwoFactorLogin() {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorLoginForm").style.display = "none";
+  document.getElementById("twoFactorLoginForm").reset();
+  document.getElementById("loginForm").style.display = "block";
+}
 
 document.getElementById("logoutBtn").addEventListener("click", () => {
   clearSession();

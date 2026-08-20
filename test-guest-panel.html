@@ -79,6 +79,13 @@ a { color: inherit; text-decoration: none; }
 
 /* CARDS / GRIDS */
 .room-grid, .offering-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
+.quick-card { background: #fff; border: 1px solid var(--border-soft, #e6e0d4); border-radius: 10px; padding: 22px 16px; text-align: center; cursor: pointer; transition: border-color 0.2s, transform 0.2s; }
+.quick-card:hover { border-color: var(--brass); transform: translateY(-2px); }
+.quick-card i { font-size: 1.5rem; color: var(--brass-dark); margin-bottom: 10px; display: block; }
+.quick-card span { font-size: 0.86rem; font-weight: 600; }
+.eyebrow { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--brass-dark); margin-bottom: 6px; }
+.stay-switcher { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
 .room-card, .offering-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
 .room-card h3, .offering-card h4 { font-size: 1.05rem; margin-bottom: 6px; }
 .room-card .price, .offering-card .price { font-family: var(--font-display); font-size: 1.3rem; color: var(--brass-dark); margin: 10px 0; }
@@ -202,7 +209,7 @@ tr:last-child td { border-bottom: none; }
 /* ============================================================
    CONFIG / SESSION
    ============================================================ */
-const API_BASE = "https://uyeh-hotel-backend.onrender.com/api"; // adjust to your deployed backend base URL
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
 function getToken() { return localStorage.getItem("guest_token"); }
 function getRefreshToken() { return localStorage.getItem("guest_refresh_token"); }
 function getGuest() { try { return JSON.parse(localStorage.getItem("guest_user")); } catch { return null; } }
@@ -395,7 +402,8 @@ async function hydratePlatformName() {
    NAV
    ============================================================ */
 const NAV_LINKS = [
-  { page: "search", label: "Book a Stay", icon: "fa-magnifying-glass" },
+  { page: "home", label: "Home", icon: "fa-house" },
+  { page: "search", label: "Explore & Book", icon: "fa-magnifying-glass" },
   { page: "bookings", label: "My Bookings", icon: "fa-calendar-check" },
   { page: "order", label: "Order", icon: "fa-utensils" },
   { page: "events", label: "Events", icon: "fa-champagne-glasses" },
@@ -420,6 +428,7 @@ function setActiveNav(page) {
 }
 
 const PAGE_LOADERS = {
+  home: loadHomePage,
   search: loadSearchPage,
   bookings: loadMyBookingsPage,
   order: loadOrderPage,
@@ -445,6 +454,125 @@ function loadComingSoon(title, description) {
   `;
 }
 function pageHeader(title, subtitle) { return `<div class="page-header"><h1 class="page-title">${title}</h1>${subtitle ? `<p class="page-subtitle">${subtitle}</p>` : ""}</div>`; }
+
+/* ============================================================
+   HOME — active-stay aware landing page.
+   A booking counts as an "active stay" when it's CHECKED_IN, or
+   CONFIRMED with today falling between check-in and check-out.
+   Zero active stays -> Discover mode (browse/book, company-wide).
+   One active stay -> My Stay mode, order flows default to that branch.
+   Two+ active stays (rare — overlapping bookings at different
+   properties) -> My Stay mode with a switcher; guest picks which
+   stay is "active" for ordering purposes this session.
+   ============================================================ */
+let _activeStays = [];
+let _activeStayBranchId = null;
+
+function computeActiveStays(bookings) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  return (bookings || []).filter((b) => {
+    if (b.status === "CHECKED_IN") return true;
+    if (b.status === "CONFIRMED") {
+      const ci = new Date(b.checkIn); ci.setHours(0, 0, 0, 0);
+      const co = new Date(b.checkOut); co.setHours(0, 0, 0, 0);
+      return today >= ci && today < co;
+    }
+    return false;
+  });
+}
+
+async function loadHomePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { bookings } = await guestApi.listMyBookings();
+    _activeStays = computeActiveStays(bookings);
+
+    if (_activeStays.length === 0) {
+      _activeStayBranchId = null;
+      renderDiscoverHome(bookings);
+    } else {
+      // Keep the guest's prior choice if it's still a valid active stay
+      // (e.g. they picked one from the switcher, then navigated away and back).
+      if (!_activeStayBranchId || !_activeStays.some((s) => s.branchId === _activeStayBranchId)) {
+        _activeStayBranchId = _activeStays[0].branchId;
+      }
+      const chosen = _activeStays.find((s) => s.branchId === _activeStayBranchId);
+      renderMyStayHome(chosen, _activeStays);
+    }
+  } catch (err) {
+    container.innerHTML = `${pageHeader("Home")}<div class="empty-state">Couldn't load your dashboard (${err.message}).</div>`;
+  }
+}
+
+function renderDiscoverHome(bookings) {
+  const upcoming = (bookings || [])
+    .filter((b) => ["PENDING", "CONFIRMED"].includes(b.status) && new Date(b.checkIn) > new Date())
+    .sort((a, b) => new Date(a.checkIn) - new Date(b.checkIn))[0];
+  const guest = getGuest();
+
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader(`Welcome back${guest?.name ? ", " + guest.name.split(" ")[0] : ""}`, "Here's what's happening across our locations.")}
+    ${upcoming ? `
+      <div class="panel" style="margin-bottom:20px;">
+        <div class="eyebrow">Upcoming stay</div>
+        <h3 style="margin-bottom:4px;">${upcoming.room.roomType.name} — ${upcoming.branchName}</h3>
+        <p style="color:var(--text-muted);font-size:0.86rem;margin-bottom:14px;">${upcoming.checkIn.slice(0,10)} → ${upcoming.checkOut.slice(0,10)}</p>
+        <button class="btn btn-sm btn-outline" onclick="switchPage('bookings')">View booking</button>
+      </div>
+    ` : ""}
+    <div class="quick-grid">
+      <div class="quick-card" onclick="switchPage('search')"><i class="fas fa-magnifying-glass"></i><span>Explore & Book a Stay</span></div>
+      <div class="quick-card" onclick="switchPage('events')"><i class="fas fa-champagne-glasses"></i><span>Upcoming Events</span></div>
+      <div class="quick-card" onclick="switchPage('loyalty')"><i class="fas fa-gem"></i><span>Loyalty & Rewards</span></div>
+      <div class="quick-card" onclick="switchPage('wishlist')"><i class="fas fa-heart"></i><span>My Wishlist</span></div>
+    </div>
+  `;
+}
+
+function renderMyStayHome(stay, allActive) {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("My Stay", `You're currently staying at ${stay.branchName}.`)}
+    ${allActive.length > 1 ? `
+      <div class="panel" style="margin-bottom:20px;">
+        <div style="font-size:0.86rem;color:var(--text-muted);margin-bottom:10px;">You have active stays at more than one property right now — which one are you asking about?</div>
+        <div class="stay-switcher">
+          ${allActive.map((s) => `<button class="btn btn-sm ${s.branchId === _activeStayBranchId ? "btn-primary" : "btn-outline"}" onclick="selectActiveStay('${s.branchId}')">${s.branchName}</button>`).join("")}
+        </div>
+      </div>
+    ` : ""}
+    <div class="panel" style="margin-bottom:20px;">
+      <div class="eyebrow">Your room</div>
+      <h3 style="margin-bottom:4px;">${stay.room.roomType.name}</h3>
+      <p style="color:var(--text-muted);font-size:0.86rem;">Checkout: ${stay.checkOut.slice(0,10)}</p>
+    </div>
+    <div class="quick-grid">
+      <div class="quick-card" onclick="goToOrder('${stay.branchId}','ROOM_SERVICE')"><i class="fas fa-bell-concierge"></i><span>Room Service</span></div>
+      <div class="quick-card" onclick="goToOrder('${stay.branchId}','RESTAURANT')"><i class="fas fa-utensils"></i><span>Restaurant & Bar</span></div>
+      <div class="quick-card" onclick="goToOrder('${stay.branchId}','SPA')"><i class="fas fa-spa"></i><span>Spa</span></div>
+      <div class="quick-card" onclick="goToOrder('${stay.branchId}','LAUNDRY')"><i class="fas fa-shirt"></i><span>Laundry</span></div>
+      <div class="quick-card" onclick="switchPage('support')"><i class="fas fa-headset"></i><span>Get Support</span></div>
+      <div class="quick-card" onclick="switchPage('search')"><i class="fas fa-earth-africa"></i><span>Explore Other Locations</span></div>
+    </div>
+  `;
+}
+
+function selectActiveStay(branchId) {
+  _activeStayBranchId = branchId;
+  const chosen = _activeStays.find((s) => s.branchId === branchId);
+  renderMyStayHome(chosen, _activeStays);
+}
+
+// Jumps straight into the Order page pre-scoped to a branch + order type —
+// used by the My Stay quick-action cards. Calls loadOrderPage directly
+// (rather than switchPage, which calls loaders with no arguments) so the
+// preset values are baked into the initial render, not patched in after.
+function goToOrder(branchId, type) {
+  setActiveNav("order");
+  document.getElementById("pageContent").innerHTML = `<div class="loading-state">Loading…</div>`;
+  loadOrderPage(branchId, type);
+  window.scrollTo(0, 0);
+}
 
 /* ============================================================
    SEARCH & BOOK
@@ -1302,7 +1430,7 @@ function showAuth() { document.getElementById("authScreen").style.display = "fle
 function showApp() {
   document.getElementById("authScreen").style.display = "none";
   document.getElementById("appShell").style.display = "block";
-  renderNav(); switchPage("search"); refreshSupportBadgeSilently();
+  renderNav(); switchPage("home"); refreshSupportBadgeSilently();
 }
 async function refreshSupportBadgeSilently() {
   try {
