@@ -567,6 +567,11 @@ const adminApi = {
   createBranch: (payload) => adminRequest("/director/branches", { method: "POST", body: JSON.stringify(payload) }),
   updateBranch: (id, payload) => adminRequest(`/director/branches/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
+  // Payout accounts — Director only, per branch
+  listPaystackBanks: () => adminRequest("/director/paystack/banks"),
+  verifyPayoutAccount: (payload) => adminRequest("/director/paystack/verify-account", { method: "POST", body: JSON.stringify(payload) }),
+  setBranchPayoutAccount: (branchId, payload) => adminRequest(`/director/branches/${branchId}/payout-account`, { method: "POST", body: JSON.stringify(payload) }),
+
   // Company-wide rollup — Director dashboard
   getCompanyOverview: () => adminRequest("/director/company/overview"),
 
@@ -1035,6 +1040,29 @@ async function loadBranchesPage() {
         <tbody id="branchesBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div class="modal-overlay" id="payoutModal" style="display:none;">
+      <div class="modal">
+        <h3>Payout account</h3>
+        <p class="muted" id="payoutBranchLabel" style="margin-top:-8px;"></p>
+        <div id="payoutNotice"></div>
+        <form id="payoutForm">
+          <input type="hidden" id="poBranchId">
+          <div class="form-field">
+            <label>Bank</label>
+            <select id="poBankCode" required><option value="">Loading banks&hellip;</option></select>
+          </div>
+          <div class="form-field"><label>Account number</label><input type="text" id="poAccountNumber" inputmode="numeric" maxlength="10" required></div>
+          <div id="poVerifyResult" style="display:none; padding:10px 12px; border-radius:8px; background:rgba(47,93,90,0.12); margin-bottom:12px;">
+            Account name: <b id="poVerifiedName"></b>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closePayoutModal()">Cancel</button>
+            <button type="button" class="btn btn-outline" id="poVerifyBtn" onclick="verifyPayoutAccountClick()">Verify account</button>
+            <button type="submit" class="btn btn-primary" id="poSaveBtn" disabled>Save payout account</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <div class="modal-overlay" id="branchModal" style="display:none;">
       <div class="modal">
         <h3 id="branchModalTitle">Open new branch</h3>
@@ -1096,8 +1124,12 @@ async function refreshBranchesTable() {
         <td>${b.city}${b.state ? `, ${b.state}` : ""}</td>
         <td>${b.manager ? b.manager.name : `<span style="color:var(--text-muted);">Unassigned — appoint in Staff</span>`}</td>
         <td>${(b.services || []).map((s) => SERVICE_LABELS[s] || s).join(", ") || "—"}</td>
-        <td><span class="badge badge-${b.isActive ? "active" : "inactive"}">${b.isActive ? "Active" : "Inactive"}</span></td>
-        <td><button class="btn btn-sm btn-outline" onclick='openBranchModal(${JSON.stringify(b).replace(/'/g, "&#39;")})'>Edit</button></td>
+        <td><span class="badge badge-${b.isActive ? "active" : "inactive"}">${b.isActive ? "Active" : "Inactive"}</span>${b.paystackSubaccountCode ? ` <span class="badge badge-active" title="Payout account connected"><i class="fas fa-money-check"></i></span>` : ""}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openBranchModal(${JSON.stringify(b).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick='openPayoutModal(${JSON.stringify(b).replace(/'/g, "&#39;")})'>Payout</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleBranchActive('${b.id}', ${b.isActive})">${b.isActive ? "Deactivate" : "Activate"}</button>
+        </td>
       </tr>
     `).join("") : `<tr><td colspan="6" class="empty-state">No branches yet — open your first one above.</td></tr>`;
   } catch (err) {
@@ -1127,6 +1159,73 @@ function openBranchModal(branch) {
   document.getElementById("branchModal").style.display = "flex";
 }
 
+let _poVerified = null;
+
+async function openPayoutModal(branch) {
+  document.getElementById("payoutForm").reset();
+  document.getElementById("poBranchId").value = branch.id;
+  document.getElementById("payoutBranchLabel").textContent = branch.name;
+  document.getElementById("poVerifyResult").style.display = "none";
+  document.getElementById("poSaveBtn").disabled = true;
+  _poVerified = null;
+
+  const select = document.getElementById("poBankCode");
+  select.innerHTML = `<option value="">Loading banks&hellip;</option>`;
+  document.getElementById("payoutModal").style.display = "flex";
+
+  try {
+    const { banks } = await adminApi.listPaystackBanks();
+    select.innerHTML = `<option value="">Select a bank</option>` + banks.map((b) => `<option value="${b.code}">${b.name}</option>`).join("");
+    if (branch.settlementBankCode) select.value = branch.settlementBankCode;
+    if (branch.settlementAccountNumber) document.getElementById("poAccountNumber").value = branch.settlementAccountNumber;
+  } catch (err) {
+    select.innerHTML = `<option value="">Couldn't load banks</option>`;
+    showNotice("payoutNotice", err.message);
+  }
+}
+function closePayoutModal() { document.getElementById("payoutModal").style.display = "none"; }
+
+async function verifyPayoutAccountClick() {
+  const bankCode = document.getElementById("poBankCode").value;
+  const accountNumber = document.getElementById("poAccountNumber").value;
+  if (!bankCode || !accountNumber) { showNotice("payoutNotice", "Choose a bank and enter the account number first."); return; }
+  const btn = document.getElementById("poVerifyBtn");
+  btn.disabled = true;
+  try {
+    const result = await adminApi.verifyPayoutAccount({ bankCode, accountNumber });
+    _poVerified = result;
+    document.getElementById("poVerifiedName").textContent = result.accountName;
+    document.getElementById("poVerifyResult").style.display = "block";
+    document.getElementById("poSaveBtn").disabled = false;
+  } catch (err) {
+    showNotice("payoutNotice", err.message);
+    document.getElementById("poSaveBtn").disabled = true;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener("submit", async (e) => {
+  if (!e.target || e.target.id !== "payoutForm") return;
+  e.preventDefault();
+  if (!_poVerified) { showNotice("payoutNotice", "Verify the account before saving."); return; }
+  const btn = document.getElementById("poSaveBtn");
+  btn.disabled = true;
+  try {
+    const branchId = document.getElementById("poBranchId").value;
+    const bankCode = document.getElementById("poBankCode").value;
+    const bankName = document.getElementById("poBankCode").selectedOptions[0].textContent;
+    const accountNumber = document.getElementById("poAccountNumber").value;
+    await adminApi.setBranchPayoutAccount(branchId, { bankCode, bankName, accountNumber });
+    showNotice("branchesNotice", "Payout account saved — this branch's guest payments will now settle there.", "success");
+    closePayoutModal();
+    refreshBranchesTable();
+  } catch (err) {
+    showNotice("payoutNotice", err.message);
+    btn.disabled = false;
+  }
+});
+
 function autofillBranchSlug() {
   const slugField = document.getElementById("bSlug");
   if (slugField.disabled || slugField.dataset.touched === "1") return; // editing existing branch, or user already typed their own
@@ -1134,6 +1233,13 @@ function autofillBranchSlug() {
     .trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 }
 function closeBranchModal() { document.getElementById("branchModal").style.display = "none"; }
+
+async function toggleBranchActive(id, currentlyActive) {
+  const verb = currentlyActive ? "deactivate" : "reactivate";
+  if (!confirm(`Are you sure you want to ${verb} this branch? ${currentlyActive ? "It will stop taking new bookings." : ""}`)) return;
+  try { await adminApi.updateBranch(id, { isActive: !currentlyActive }); refreshBranchesTable(); }
+  catch (err) { showNotice("branchesNotice", err.message); }
+}
 
 async function submitBranchForm(e) {
   e.preventDefault();
@@ -3465,6 +3571,15 @@ async function submitDisableTwoFactor() {
 /* ============================================================
    MANAGERS — Director only
    ============================================================ */
+const MANAGER_PERMISSION_LABELS = {
+  manage_rooms: "Manage rooms", manage_bookings: "Manage bookings", manage_stock: "Manage stock",
+  manage_events: "Manage events", manage_staff: "Manage staff", manage_settings: "Manage branch settings",
+  handle_tickets: "Handle tickets", manage_payments: "Record & view payments", view_reports: "View reports",
+  manage_blog: "Manage blog", manage_menu: "Manage menu", manage_laundry: "Manage laundry",
+  manage_spa: "Manage spa", manage_reviews: "Manage reviews", manage_promos: "Manage promo codes",
+  manage_newsletter: "Manage newsletter", manage_security: "Guest lookup / security",
+};
+
 async function loadManagersPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
@@ -3473,22 +3588,33 @@ async function loadManagersPage() {
     <div id="managersNotice"></div>
     <div class="panel">
       <table>
-        <thead><tr><th>Name</th><th>Email</th><th>Branch</th><th>Status</th><th></th></tr></thead>
-        <tbody id="managersBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Name</th><th>Email</th><th>Branch</th><th>Department</th><th>Status</th><th></th></tr></thead>
+        <tbody id="managersBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="managerModal" style="display:none;">
       <div class="modal">
-        <h3>New manager</h3>
+        <h3 id="managerModalTitle">New manager</h3>
         <form id="managerForm">
-          <div class="form-field"><label>Branch</label><select id="mgBranch" required><option value="">Loading branches&hellip;</option></select></div>
+          <input type="hidden" id="mgId">
+          <div class="form-field" id="mgBranchField"><label>Branch</label><select id="mgBranch" required><option value="">Loading branches&hellip;</option></select></div>
           <div class="form-row">
             <div class="form-field"><label>Full name</label><input type="text" id="mgName" required></div>
             <div class="form-field"><label>Email</label><input type="email" id="mgEmail" required></div>
           </div>
-          <div class="form-row">
+          <div class="form-row" id="mgPasswordRow">
             <div class="form-field"><label>Temporary password</label><input type="text" id="mgPassword" required></div>
             <div class="form-field"><label>Role title (optional)</label><input type="text" id="mgTitle" placeholder="e.g. General Manager"></div>
+          </div>
+          <div class="form-field">
+            <label>Department <span style="color:var(--text-muted); font-weight:400;">(optional — auto-checks the matching permissions below)</span></label>
+            <select id="mgDepartment" onchange="applyManagerDepartmentPermissions()"><option value="">— none —</option></select>
+          </div>
+          <div class="form-field">
+            <label>Permissions</label>
+            <div class="checkbox-grid" id="mgPermissionsGrid">
+              ${Object.entries(MANAGER_PERMISSION_LABELS).map(([val, label]) => `<label class="checkbox-item"><input type="checkbox" value="${val}"> ${label}</label>`).join("")}
+            </div>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeManagerModal()">Cancel</button>
@@ -3499,8 +3625,19 @@ async function loadManagersPage() {
     </div>
   `;
   document.getElementById("managerForm").addEventListener("submit", submitManagerForm);
+  try {
+    const { departments } = await adminApi.listDepartments();
+    window._managerDeptCatalog = departments || {};
+    document.getElementById("mgDepartment").innerHTML = `<option value="">— none —</option>` + Object.keys(departments || {}).map((d) => `<option value="${d}">${d}</option>`).join("");
+  } catch { /* department stays optional */ }
   refreshManagersTable();
   populateManagerBranchSelect();
+}
+
+function applyManagerDepartmentPermissions() {
+  const dept = document.getElementById("mgDepartment").value;
+  const suggested = (window._managerDeptCatalog || {})[dept] || [];
+  document.querySelectorAll("#mgPermissionsGrid input").forEach((cb) => { if (suggested.includes(cb.value)) cb.checked = true; });
 }
 
 async function populateManagerBranchSelect() {
@@ -3516,21 +3653,54 @@ async function refreshManagersTable() {
   const body = document.getElementById("managersBody");
   try {
     const { managers } = await adminApi.listManagers();
+    window._cachedManagers = managers;
     body.innerHTML = managers.length ? managers.map((m) => `
       <tr>
         <td>${m.name}${m.roleTitle ? `<div class="muted" style="font-size:0.8rem;">${m.roleTitle}</div>` : ""}</td>
         <td>${m.email}</td>
         <td>${m.branch?.name || "&mdash;"}</td>
+        <td>${m.department || "&mdash;"}</td>
         <td><span class="badge badge-${m.isActive ? "active" : "inactive"}">${m.isActive ? "Active" : "Inactive"}</span></td>
-        <td><button class="btn btn-sm btn-outline" onclick="toggleManagerActive('${m.id}', ${m.isActive})">${m.isActive ? "Deactivate" : "Activate"}</button></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick="openManagerModal('${m.id}')">Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleManagerActive('${m.id}', ${m.isActive})">${m.isActive ? "Deactivate" : "Activate"}</button>
+        </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No managers yet.</td></tr>`;
+    `).join("") : `<tr><td colspan="6" class="empty-state">No managers yet.</td></tr>`;
   } catch (err) {
-    body.innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
   }
 }
 
-function openManagerModal() { document.getElementById("managerForm").reset(); document.getElementById("managerModal").style.display = "flex"; }
+function openManagerModal(managerId) {
+  document.getElementById("managerForm").reset();
+  document.getElementById("mgId").value = managerId || "";
+  document.querySelectorAll("#mgPermissionsGrid input").forEach((cb) => { cb.checked = false; });
+
+  const manager = managerId ? (window._cachedManagers || []).find((m) => m.id === managerId) : null;
+  document.getElementById("managerModalTitle").textContent = manager ? "Edit manager" : "New manager";
+  document.getElementById("mgSubmitBtn").textContent = manager ? "Save changes" : "Create manager";
+
+  // Branch and password are create-only — a manager's branch is fixed at
+  // creation, and the backend has no "reset this password" field on
+  // updateManager (use the normal forgot-password flow for that instead).
+  document.getElementById("mgBranchField").style.display = manager ? "none" : "block";
+  document.getElementById("mgPasswordRow").style.display = manager ? "none" : "flex";
+  document.getElementById("mgBranch").required = !manager;
+  document.getElementById("mgPassword").required = !manager;
+
+  if (manager) {
+    document.getElementById("mgName").value = manager.name;
+    document.getElementById("mgEmail").value = manager.email;
+    document.getElementById("mgEmail").disabled = true;
+    document.getElementById("mgTitle").value = manager.roleTitle || "";
+    document.getElementById("mgDepartment").value = manager.department || "";
+    document.querySelectorAll("#mgPermissionsGrid input").forEach((cb) => { cb.checked = (manager.permissions || []).includes(cb.value); });
+  } else {
+    document.getElementById("mgEmail").disabled = false;
+  }
+  document.getElementById("managerModal").style.display = "flex";
+}
 function closeManagerModal() { document.getElementById("managerModal").style.display = "none"; }
 
 async function submitManagerForm(e) {
@@ -3538,14 +3708,30 @@ async function submitManagerForm(e) {
   const btn = document.getElementById("mgSubmitBtn");
   btn.disabled = true;
   try {
-    await adminApi.createManager({
-      branchId: document.getElementById("mgBranch").value,
-      name: document.getElementById("mgName").value,
-      email: document.getElementById("mgEmail").value,
-      password: document.getElementById("mgPassword").value,
-      roleTitle: document.getElementById("mgTitle").value || undefined,
-    });
-    showNotice("managersNotice", "Manager created — welcome email sent.", "success");
+    const id = document.getElementById("mgId").value;
+    const permissions = Array.from(document.querySelectorAll("#mgPermissionsGrid input:checked")).map((el) => el.value);
+    const department = document.getElementById("mgDepartment").value || undefined;
+
+    if (id) {
+      await adminApi.updateManager(id, {
+        name: document.getElementById("mgName").value,
+        roleTitle: document.getElementById("mgTitle").value || undefined,
+        department,
+        permissions,
+      });
+      showNotice("managersNotice", "Manager updated.", "success");
+    } else {
+      await adminApi.createManager({
+        branchId: document.getElementById("mgBranch").value,
+        name: document.getElementById("mgName").value,
+        email: document.getElementById("mgEmail").value,
+        password: document.getElementById("mgPassword").value,
+        roleTitle: document.getElementById("mgTitle").value || undefined,
+        department,
+        permissions,
+      });
+      showNotice("managersNotice", "Manager created — welcome email sent.", "success");
+    }
     closeManagerModal();
     refreshManagersTable();
   } catch (err) {

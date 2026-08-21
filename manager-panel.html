@@ -342,10 +342,28 @@ const managerApi = {
   createLaundryItem: (payload) => adminRequest("/manager/laundry-items", { method: "POST", body: JSON.stringify(payload) }),
   updateLaundryItem: (id, payload) => adminRequest(`/manager/laundry-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteLaundryItem: (id) => adminRequest(`/manager/laundry-items/${id}`, { method: "DELETE" }),
+  uploadLaundryItemImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/laundry-items/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
   listSpaTreatments: () => adminRequest("/manager/spa-treatments"),
   createSpaTreatment: (payload) => adminRequest("/manager/spa-treatments", { method: "POST", body: JSON.stringify(payload) }),
   updateSpaTreatment: (id, payload) => adminRequest(`/manager/spa-treatments/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteSpaTreatment: (id) => adminRequest(`/manager/spa-treatments/${id}`, { method: "DELETE" }),
+  uploadSpaTreatmentImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/spa-treatments/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+
+  // Room type gallery
+  uploadRoomTypeImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/room-types/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+  deleteRoomTypeImage: (id, url) => adminRequest(`/manager/room-types/${id}/images`, { method: "DELETE", body: JSON.stringify({ url }) }),
+
+  // Branch Profile — READ ONLY. See patch-01 backend section 4.
+  getBranchProfile: () => adminRequest("/manager/branch-profile"),
 
   // Reviews
   listReviews: (status) => adminRequest(`/manager/reviews${status ? `?status=${status}` : ""}`),
@@ -359,6 +377,9 @@ const managerApi = {
 
   // Guest lookup
   guestLookup: (query) => adminRequest(`/manager/guest-lookup?query=${encodeURIComponent(query)}`),
+  listConciergeRequests: (status) => adminRequest(`/manager/concierge-requests${status ? `?status=${status}` : ""}`),
+  updateConciergeRequest: (id, payload) => adminRequest(`/manager/concierge-requests/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  adjustLoyalty: (payload) => adminRequest("/manager/loyalty/adjust", { method: "POST", body: JSON.stringify(payload) }),
 
   // Orders
   listOrders: (filters = {}) => {
@@ -444,7 +465,10 @@ const NAV_GROUPS = [
   },
   {
     id: "support", label: "Guest Support", icon: "fa-headset",
-    items: [{ page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" }],
+    items: [
+      { page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" },
+      { page: "concierge", label: "Concierge Requests", icon: "fa-concierge-bell", permission: "manage_concierge" },
+    ],
   },
   {
     id: "reports", label: "Reports", icon: "fa-chart-line",
@@ -494,6 +518,9 @@ function renderSidebar() {
     ${groupsHtml}
     ${settingsVisible ? `
       <div class="nav-divider"></div>
+      <div class="nav-item-standalone" data-page="branchprofile" onclick="switchPage('branchprofile')">
+        <i class="fas fa-building"></i><span>Branch Profile</span>
+      </div>
       <div class="nav-item-standalone" data-page="settings" onclick="switchPage('settings')">
         <i class="fas ${SETTINGS_ITEM.icon}"></i><span>${SETTINGS_ITEM.label}</span>
       </div>
@@ -508,6 +535,7 @@ function setActiveNav(page) { document.querySelectorAll(".nav-item, .nav-item-st
    ============================================================ */
 const PAGE_LOADERS = {
   dashboard: loadDashboardPage,
+  branchprofile: loadBranchProfilePage,
   rooms: loadRoomsPage,
   menu: loadMenuPage,
   laundry: loadLaundryPage,
@@ -524,6 +552,7 @@ const PAGE_LOADERS = {
   promocodes: loadPromoCodesPage,
   staff: loadStaffPage,
   guestlookup: loadGuestLookupPage,
+  concierge: loadConciergePage,
   tickets: loadTicketsPage,
   reports: loadReportsPage,
   settings: loadSettingsPage,
@@ -649,6 +678,11 @@ async function loadRoomsPage() {
             <div class="form-field"><label>Max occupancy</label><input type="number" id="rtOccupancy" min="1" step="1" required></div>
           </div>
           <div class="form-field"><label>Description</label><textarea id="rtDescription" rows="2"></textarea></div>
+          <div class="form-field" id="rtGalleryField" style="display:none;">
+            <label>Gallery</label>
+            <div id="rtGalleryPreview" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+            <input type="file" id="rtImageInput" accept="image/*">
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeRoomTypeModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="rtSubmitBtn">Save room type</button>
@@ -704,9 +738,18 @@ async function refreshRoomsAndTypes() {
   } catch (err) { showNotice("roomsNotice", err.message); }
 }
 
+let _rtEditingId = null;
 function openRoomTypeModal(rt) {
   document.getElementById("roomTypeModalTitle").textContent = rt ? "Edit room type" : "Add room type";
   document.getElementById("roomTypeForm").reset();
+  _rtEditingId = rt ? (rt.id || rt._id) : null;
+  document.getElementById("rtGalleryField").style.display = rt ? "block" : "none";
+  document.getElementById("rtGalleryPreview").innerHTML = (rt && rt.images || []).map((url) => `
+    <div style="position:relative;">
+      <img src="${url}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;">
+      <button type="button" onclick="removeRoomTypeImage('${url}')" style="position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;">&times;</button>
+    </div>
+  `).join("");
   document.getElementById("rtId").value = rt ? rt.id : "";
   if (rt) {
     document.getElementById("rtName").value = rt.name;
@@ -717,6 +760,13 @@ function openRoomTypeModal(rt) {
   document.getElementById("roomTypeModal").style.display = "flex";
 }
 function closeRoomTypeModal() { document.getElementById("roomTypeModal").style.display = "none"; }
+
+async function removeRoomTypeImage(url) {
+  if (!_rtEditingId) return;
+  try { await managerApi.deleteRoomTypeImage(_rtEditingId, url); refreshRoomsAndTypes(); openRoomTypeModal({ ..._cachedRoomTypes.find((r) => r.id === _rtEditingId), images: (_cachedRoomTypes.find((r) => r.id === _rtEditingId)?.images || []).filter((u) => u !== url) }); }
+  catch (err) { showNotice("roomsNotice", err.message); }
+}
+
 async function submitRoomTypeForm(e) {
   e.preventDefault();
   const btn = document.getElementById("rtSubmitBtn"); btn.disabled = true;
@@ -724,8 +774,13 @@ async function submitRoomTypeForm(e) {
     const id = document.getElementById("rtId").value;
     const payload = { name: document.getElementById("rtName").value, basePrice: Number(document.getElementById("rtPrice").value),
       maxOccupancy: Number(document.getElementById("rtOccupancy").value), description: document.getElementById("rtDescription").value || undefined };
+    let savedId = id;
     if (id) { await managerApi.updateRoomType(id, payload); showNotice("roomsNotice", "Room type updated.", "success"); }
-    else { await managerApi.createRoomType(payload); showNotice("roomsNotice", "Room type added.", "success"); }
+    else { const { roomType } = await managerApi.createRoomType(payload); savedId = roomType.id; showNotice("roomsNotice", "Room type added.", "success"); }
+
+    const file = document.getElementById("rtImageInput").files[0];
+    if (file && savedId) await managerApi.uploadRoomTypeImage(savedId, file);
+
     closeRoomTypeModal(); refreshRoomsAndTypes();
   } catch (err) { showNotice("roomsNotice", err.message); } finally { btn.disabled = false; }
 }
@@ -759,10 +814,60 @@ async function submitRoomForm(e) {
 }
 
 /* ============================================================
-   MENU — food & drink (this branch). Laundry and spa items have
-   their own real backend endpoints (/manager/laundry-items,
-   /manager/spa-treatments) but no page here yet — ask if you
-   want those built out next.
+   BRANCH PROFILE — read-only. Shows the Manager their branch's
+   policies, brand, and payout connection status. No edit controls
+   exist on this page on purpose — those live only in the Director
+   panel (see patch-03-director-panel.md).
+   ============================================================ */
+async function loadBranchProfilePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Branch Profile", "Policies and brand set by your Director. Read-only.")}
+    <div id="branchProfileContent"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { branch, companyPolicies, brand } = await managerApi.getBranchProfile();
+    document.getElementById("branchProfileContent").innerHTML = `
+      <div class="panel">
+        <h3>${branch.name}</h3>
+        <p class="muted">${branch.address || ""}${branch.city ? `, ${branch.city}` : ""}${branch.state ? `, ${branch.state}` : ""}</p>
+        <div class="stats-grid" style="margin-top:14px;">
+          <div class="stat-card"><b>${companyPolicies.checkInTime}</b><span>Check-in time</span></div>
+          <div class="stat-card"><b>${companyPolicies.checkOutTime}</b><span>Check-out time</span></div>
+          <div class="stat-card"><b>${companyPolicies.baseCurrency}</b><span>Currency</span></div>
+          <div class="stat-card"><b>${companyPolicies.taxRatePercent}%</b><span>Tax rate</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Cancellation policy</h3>
+        <p>${companyPolicies.cancellationPolicy || "No cancellation policy has been set by your Director yet."}</p>
+      </div>
+      <div class="panel">
+        <h3>Payout account</h3>
+        <p>
+          ${branch.payoutConnected
+            ? `<span class="badge badge-active">Connected</span> — settling to ${branch.payoutBankName || "a bank account on file"}.`
+            : `<span class="badge badge-inactive">Not connected</span> — this branch's guest payments settle to the company account until your Director sets one up.`}
+        </p>
+        <p class="muted" style="font-size:0.82rem;">Payout account details are managed by your Director only, for security. Contact them if this needs to change.</p>
+      </div>
+      <div class="panel">
+        <h3>Brand</h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div style="width:28px;height:28px;border-radius:6px;background:${brand.primaryColor};" title="Primary"></div>
+          <div style="width:28px;height:28px;border-radius:6px;background:${brand.secondaryColor};" title="Secondary"></div>
+          <div style="width:28px;height:28px;border-radius:6px;background:${brand.accentColor};" title="Accent"></div>
+          <span class="muted" style="font-size:0.82rem;">Set platform-wide by your Director.</span>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    document.getElementById("branchProfileContent").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   MENU — food & drink (this branch).
    ============================================================ */
 const MENU_CATEGORY_LABELS = { FOOD: "Food", DRINK: "Drink" };
 
@@ -837,6 +942,214 @@ async function submitMenuItemForm(e) {
 async function toggleMenuItemAvailable(id, currentlyAvailable) {
   try { await managerApi.updateMenuItem(id, { isAvailable: !currentlyAvailable }); refreshMenuTable(); }
   catch (err) { showNotice("menuNotice", err.message); }
+}
+
+/* ============================================================
+   LAUNDRY
+   ============================================================ */
+async function loadLaundryPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Laundry", "Wash, press, and dry-clean price list for your branch.", `<button class="btn btn-primary" onclick="openLaundryItemModal()">Add item</button>`)}
+    <div id="laundryNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Photo</th><th>Item</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
+        <tbody id="laundryBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="laundryItemModal" style="display:none;">
+      <div class="modal">
+        <h3 id="laundryItemModalTitle">Add item</h3>
+        <form id="laundryItemForm">
+          <input type="hidden" id="lId">
+          <div class="form-field"><label>Item name</label><input type="text" id="lName" placeholder="e.g. Shirt — wash & press" required></div>
+          <div class="form-field"><label>Description</label><textarea id="lDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="lPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Turnaround (hours)</label><input type="number" id="lTurnaround" min="1" step="1" value="24"></div>
+          </div>
+          <div class="form-field" id="lImageField" style="display:none;">
+            <label>Photo</label>
+            <input type="file" id="lImageInput" accept="image/*">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeLaundryItemModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="lSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("laundryItemForm").addEventListener("submit", submitLaundryItemForm);
+  refreshLaundryTable();
+}
+
+async function refreshLaundryTable() {
+  try {
+    const { laundryItems } = await managerApi.listLaundryItems();
+    document.getElementById("laundryBody").innerHTML = laundryItems.length ? laundryItems.map((l) => `
+      <tr>
+        <td>${l.image ? `<img src="${l.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
+        <td>${l.name}${l.description ? `<div class="muted" style="font-size:0.78rem;">${l.description}</div>` : ""}</td>
+        <td>&#8358;${Number(l.price).toLocaleString()}</td>
+        <td>${l.turnaroundHours}h</td>
+        <td><span class="badge badge-${l.isAvailable ? "active" : "inactive"}">${l.isAvailable ? "Available" : "Hidden"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openLaundryItemModal(${JSON.stringify(l).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleLaundryAvailable('${l.id}', ${l.isAvailable})">${l.isAvailable ? "Hide" : "Show"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No laundry items yet — add your price list above.</td></tr>`;
+  } catch (err) {
+    document.getElementById("laundryBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openLaundryItemModal(item) {
+  document.getElementById("laundryItemModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("laundryItemForm").reset();
+  document.getElementById("lId").value = item ? item.id : "";
+  document.getElementById("lImageField").style.display = item ? "block" : "none";
+  if (item) {
+    document.getElementById("lName").value = item.name;
+    document.getElementById("lDescription").value = item.description || "";
+    document.getElementById("lPrice").value = item.price;
+    document.getElementById("lTurnaround").value = item.turnaroundHours;
+  }
+  document.getElementById("laundryItemModal").style.display = "flex";
+}
+function closeLaundryItemModal() { document.getElementById("laundryItemModal").style.display = "none"; }
+
+async function submitLaundryItemForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("lSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("lId").value;
+    const payload = {
+      name: document.getElementById("lName").value,
+      description: document.getElementById("lDescription").value || undefined,
+      price: Number(document.getElementById("lPrice").value),
+      turnaroundHours: Number(document.getElementById("lTurnaround").value) || 24,
+    };
+    let savedId = id;
+    if (id) { await managerApi.updateLaundryItem(id, payload); showNotice("laundryNotice", "Item updated.", "success"); }
+    else { const { laundryItem } = await managerApi.createLaundryItem(payload); savedId = laundryItem.id; showNotice("laundryNotice", "Item added.", "success"); }
+
+    const file = document.getElementById("lImageInput").files[0];
+    if (file && savedId) await managerApi.uploadLaundryItemImage(savedId, file);
+
+    closeLaundryItemModal(); refreshLaundryTable();
+  } catch (err) { showNotice("laundryNotice", err.message); } finally { btn.disabled = false; }
+}
+
+async function toggleLaundryAvailable(id, currentlyAvailable) {
+  try { await managerApi.updateLaundryItem(id, { isAvailable: !currentlyAvailable }); refreshLaundryTable(); }
+  catch (err) { showNotice("laundryNotice", err.message); }
+}
+
+/* ============================================================
+   SPA
+   ============================================================ */
+async function loadSpaPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Spa", "Treatments guests can book for their stay.", `<button class="btn btn-primary" onclick="openSpaTreatmentModal()">Add treatment</button>`)}
+    <div id="spaNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Photo</th><th>Treatment</th><th>Duration</th><th>Price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="spaBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="spaTreatmentModal" style="display:none;">
+      <div class="modal">
+        <h3 id="spaTreatmentModalTitle">Add treatment</h3>
+        <form id="spaTreatmentForm">
+          <input type="hidden" id="spId">
+          <div class="form-field"><label>Treatment name</label><input type="text" id="spName" placeholder="e.g. Deep Tissue Massage" required></div>
+          <div class="form-field"><label>Description</label><textarea id="spDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Duration (minutes)</label><input type="number" id="spDuration" min="5" step="5" required></div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="spPrice" min="0" step="1" required></div>
+          </div>
+          <div class="form-field" id="spImageField" style="display:none;">
+            <label>Photo</label>
+            <input type="file" id="spImageInput" accept="image/*">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeSpaTreatmentModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="spSubmitBtn">Save treatment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("spaTreatmentForm").addEventListener("submit", submitSpaTreatmentForm);
+  refreshSpaTable();
+}
+
+async function refreshSpaTable() {
+  try {
+    const { spaTreatments } = await managerApi.listSpaTreatments();
+    document.getElementById("spaBody").innerHTML = spaTreatments.length ? spaTreatments.map((t) => `
+      <tr>
+        <td>${t.image ? `<img src="${t.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
+        <td>${t.name}${t.description ? `<div class="muted" style="font-size:0.78rem;">${t.description}</div>` : ""}</td>
+        <td>${t.durationMinutes} min</td>
+        <td>&#8358;${Number(t.price).toLocaleString()}</td>
+        <td><span class="badge badge-${t.isAvailable ? "active" : "inactive"}">${t.isAvailable ? "Available" : "Hidden"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openSpaTreatmentModal(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleSpaAvailable('${t.id}', ${t.isAvailable})">${t.isAvailable ? "Hide" : "Show"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No spa treatments yet — add your first one above.</td></tr>`;
+  } catch (err) {
+    document.getElementById("spaBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openSpaTreatmentModal(t) {
+  document.getElementById("spaTreatmentModalTitle").textContent = t ? "Edit treatment" : "Add treatment";
+  document.getElementById("spaTreatmentForm").reset();
+  document.getElementById("spId").value = t ? t.id : "";
+  document.getElementById("spImageField").style.display = t ? "block" : "none";
+  if (t) {
+    document.getElementById("spName").value = t.name;
+    document.getElementById("spDescription").value = t.description || "";
+    document.getElementById("spDuration").value = t.durationMinutes;
+    document.getElementById("spPrice").value = t.price;
+  }
+  document.getElementById("spaTreatmentModal").style.display = "flex";
+}
+function closeSpaTreatmentModal() { document.getElementById("spaTreatmentModal").style.display = "none"; }
+
+async function submitSpaTreatmentForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("spSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("spId").value;
+    const payload = {
+      name: document.getElementById("spName").value,
+      description: document.getElementById("spDescription").value || undefined,
+      durationMinutes: Number(document.getElementById("spDuration").value),
+      price: Number(document.getElementById("spPrice").value),
+    };
+    let savedId = id;
+    if (id) { await managerApi.updateSpaTreatment(id, payload); showNotice("spaNotice", "Treatment updated.", "success"); }
+    else { const { spaTreatment } = await managerApi.createSpaTreatment(payload); savedId = spaTreatment.id; showNotice("spaNotice", "Treatment added.", "success"); }
+
+    const file = document.getElementById("spImageInput").files[0];
+    if (file && savedId) await managerApi.uploadSpaTreatmentImage(savedId, file);
+
+    closeSpaTreatmentModal(); refreshSpaTable();
+  } catch (err) { showNotice("spaNotice", err.message); } finally { btn.disabled = false; }
+}
+
+async function toggleSpaAvailable(id, currentlyAvailable) {
+  try { await managerApi.updateSpaTreatment(id, { isAvailable: !currentlyAvailable }); refreshSpaTable(); }
+  catch (err) { showNotice("spaNotice", err.message); }
 }
 
 /* ============================================================
@@ -1721,16 +2034,118 @@ async function runGuestLookup() {
   results.innerHTML = `<div class="loading-state">Searching…</div>`;
   try {
     const { results: matches } = await managerApi.guestLookup(query);
-    results.innerHTML = matches.length ? `
-      <table><thead><tr><th>Guest</th><th>Phone</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
-        <tbody>${matches.map((m) => `
-          <tr><td>${m.guestName}</td><td>${m.guestPhone || "—"}</td><td>${m.roomNumber}</td>
-          <td>${(m.checkIn || "").slice(0,10)} &rarr; ${(m.checkOut || "").slice(0,10)}</td>
-          <td><span class="badge badge-${(m.status || "").toLowerCase()}">${m.status}</span></td></tr>
-        `).join("")}</tbody>
-      </table>
-    ` : `<div class="empty-state">No matching active or upcoming stays.</div>`;
+    window._glMatches = matches;
+    results.innerHTML = matches.length ? matches.map((m, i) => `
+      <div class="panel" style="margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div>
+            <b>${m.guestName}</b>
+            <span class="badge" style="margin-left:8px;">${m.guestTier}</span>
+            <div class="muted" style="font-size:0.82rem;">${m.guestPhone || "—"} ${m.guestEmail ? `· ${m.guestEmail}` : ""}</div>
+          </div>
+          <div style="text-align:right;">
+            <span class="badge badge-${(m.status || "").toLowerCase()}">${m.status}</span>
+            <div class="muted" style="font-size:0.82rem;">Room ${m.roomNumber} · ${(m.checkIn||"").slice(0,10)} &rarr; ${(m.checkOut||"").slice(0,10)}</div>
+          </div>
+        </div>
+        ${(m.preferences && Object.keys(m.preferences).length) ? `
+          <div style="margin-top:10px;"><b style="font-size:0.82rem;">Preferences:</b> ${Object.entries(m.preferences).map(([k,v]) => `${k}: ${v}`).join(", ")}</div>
+        ` : ""}
+        ${m.dietaryNotes ? `<div style="margin-top:4px;"><b style="font-size:0.82rem;">Dietary:</b> ${m.dietaryNotes}</div>` : ""}
+        ${m.standingSpecialRequests ? `<div style="margin-top:4px;"><b style="font-size:0.82rem;">Standing notes:</b> ${m.standingSpecialRequests}</div>` : ""}
+        ${m.thisStayRequests ? `<div style="margin-top:4px;"><b style="font-size:0.82rem;">This stay:</b> ${m.thisStayRequests}</div>` : ""}
+        <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+          <span class="muted" style="font-size:0.82rem;">${m.loyaltyPoints} points available</span>
+          <button class="btn btn-sm btn-outline" onclick="openLoyaltyAdjustModal(${i})">Adjust points</button>
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">No matching active or upcoming stays.</div>`;
   } catch (err) { results.innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+
+function openLoyaltyAdjustModal(index) {
+  const m = window._glMatches[index];
+  const points = prompt(`Adjust loyalty points for ${m.guestName}\n\nCurrent balance: ${m.loyaltyPoints}\n\nEnter points to add (e.g. 500) or remove (e.g. -200):`);
+  if (points === null) return;
+  const amount = parseInt(points, 10);
+  if (!amount || Number.isNaN(amount)) { showNotice("guestLookupNotice", "Enter a non-zero whole number."); return; }
+  const reason = prompt("Reason for this adjustment (required, shown in the guest's loyalty history):");
+  if (!reason || !reason.trim()) { showNotice("guestLookupNotice", "A reason is required."); return; }
+
+  managerApi.adjustLoyalty({ guestId: m.guestId, points: amount, reason: reason.trim() })
+    .then(() => { showNotice("guestLookupNotice", "Loyalty balance updated.", "success"); runGuestLookup(); })
+    .catch((err) => showNotice("guestLookupNotice", err.message));
+}
+
+/* ============================================================
+   CONCIERGE REQUESTS — dinner reservations, transport, in-room
+   setup, and anything else a guest asks for beyond the standard
+   catalog (manage_concierge)
+   ============================================================ */
+const CONCIERGE_STATUS_OPTIONS = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+const CONCIERGE_TYPE_LABELS = {
+  dinner_reservation: "Dinner reservation", transport: "Transport", in_room_setup: "In-room setup",
+};
+
+async function loadConciergePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Concierge Requests", "Everything a guest has asked for, beyond the standard menu.")}
+    <div id="conciergeNotice"></div>
+    <div class="panel" style="display:flex; gap:14px; align-items:flex-end;">
+      <div class="form-field" style="margin:0; min-width:200px;">
+        <label>Status</label>
+        <select id="conciergeStatusFilter" onchange="refreshConciergeTable()">
+          <option value="">All open</option>
+          ${CONCIERGE_STATUS_OPTIONS.map((s) => `<option value="${s}">${s.replace("_", " ")}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Type</th><th>Details</th><th>Requested</th><th>Status</th><th></th></tr></thead>
+        <tbody id="conciergeBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  refreshConciergeTable();
+}
+
+async function refreshConciergeTable() {
+  const status = document.getElementById("conciergeStatusFilter").value;
+  const body = document.getElementById("conciergeBody");
+  try {
+    const { requests } = await managerApi.listConciergeRequests(status);
+    body.innerHTML = requests.length ? requests.map((r) => `
+      <tr>
+        <td>${r.guest?.name || "—"}${r.guest?.phone ? `<div class="muted" style="font-size:0.78rem;">${r.guest.phone}</div>` : ""}</td>
+        <td>${CONCIERGE_TYPE_LABELS[r.type] || r.type}</td>
+        <td>${r.details}</td>
+        <td>${new Date(r.createdAt).toLocaleString()}</td>
+        <td>
+          <select onchange="updateConciergeStatus('${r.id}', this.value)" ${r.status === "COMPLETED" || r.status === "CANCELLED" ? "" : ""}>
+            ${CONCIERGE_STATUS_OPTIONS.map((s) => `<option value="${s}" ${s === r.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
+          </select>
+        </td>
+        <td>${r.status === "PENDING" ? `<button class="btn btn-sm btn-outline" onclick="claimConciergeRequest('${r.id}')">Claim</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No requests${status ? ` with status ${status}` : ""} right now.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+async function updateConciergeStatus(id, status) {
+  try { await managerApi.updateConciergeRequest(id, { status }); showNotice("conciergeNotice", "Status updated.", "success"); refreshConciergeTable(); }
+  catch (err) { showNotice("conciergeNotice", err.message); }
+}
+
+async function claimConciergeRequest(id) {
+  try {
+    const me = getStaff();
+    await managerApi.updateConciergeRequest(id, { status: "IN_PROGRESS", assignedToStaffId: me.id });
+    showNotice("conciergeNotice", "Request claimed.", "success");
+    refreshConciergeTable();
+  } catch (err) { showNotice("conciergeNotice", err.message); }
 }
 
 /* ============================================================
