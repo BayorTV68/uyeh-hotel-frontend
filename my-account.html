@@ -1,0 +1,1475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book Your Stay</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* ============================================================
+   OXYGEN HOTEL — GUEST PANEL
+   Public-facing booking site. Same brand tokens as the admin
+   tools, different shell: top nav instead of sidebar. Guests
+   register/login, search & book rooms (with food/drink/service
+   add-ons), manage their own bookings, message support, and
+   edit their profile. Single-file SPA.
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #14181f; --ivory: #f6f1e7; --panel: #ffffff;
+  --border: #e6e0d2; --border-soft: rgba(20,24,31,0.08);
+  --brass: #b98d45; --brass-dark: #96712f; --teal: #2f5d5a; --danger: #a3392a; --info: #3b6ea5;
+  --text-muted: #6b6355;
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif; --radius: 10px;
+}
+
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); font-size: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+a { color: inherit; text-decoration: none; }
+
+/* AUTH SCREEN */
+.auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink); padding: 20px; }
+.auth-card { background: var(--panel); padding: 44px 40px; border-radius: var(--radius); width: 100%; max-width: 400px; }
+.auth-card .brand { font-family: var(--font-display); font-size: 1.6rem; margin-bottom: 4px; }
+.auth-card .brand span { color: var(--brass); }
+.auth-card p.sub { color: var(--text-muted); margin-bottom: 22px; font-size: 0.88rem; }
+.auth-tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+.auth-tab-btn { flex: 1; background: none; border: none; padding: 10px; font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.auth-tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
+
+/* SHELL */
+.navbar { background: var(--ink); padding: 0 32px; display: flex; align-items: center; justify-content: space-between;
+  position: sticky; top: 0; z-index: 500; height: 68px; }
+.nav-brand { display: flex; align-items: center; gap: 10px; color: #ede6d6; font-family: var(--font-display); font-size: 1.15rem; cursor: pointer; }
+.nav-brand .logo-icon { width: 34px; height: 34px; border-radius: 8px; background: linear-gradient(135deg, var(--brass-dark), var(--brass));
+  display: flex; align-items: center; justify-content: center; color: var(--ink); font-weight: 700; }
+.nav-brand span { color: var(--brass); }
+.nav-links { display: flex; align-items: center; gap: 6px; }
+.nav-link { padding: 10px 16px; color: rgba(237,230,214,0.65); font-size: 0.86rem; font-weight: 500; cursor: pointer; border-radius: 6px; position: relative; }
+.nav-link:hover { color: #ede6d6; background: rgba(255,255,255,0.04); }
+.nav-link.active { color: var(--brass); }
+.nav-link .nav-badge { position: absolute; top: 4px; right: 6px; background: var(--danger); color: #fff; font-size: 0.6rem; font-weight: 700;
+  padding: 1px 5px; border-radius: 8px; display: none; }
+.nav-link .nav-badge.visible { display: inline-block; }
+.nav-user { display: flex; align-items: center; gap: 12px; }
+.nav-user-name { color: #ede6d6; font-size: 0.84rem; }
+.nav-logout { color: rgba(237,230,214,0.5); font-size: 0.8rem; cursor: pointer; }
+.nav-logout:hover { color: #ede6d6; }
+.mobile-nav-toggle { display: none; background: none; border: none; color: #ede6d6; font-size: 1.3rem; cursor: pointer; }
+
+.page-content { max-width: 1080px; margin: 0 auto; padding: 34px 24px 70px; }
+.page-header { margin-bottom: 24px; }
+.page-title { font-size: 1.7rem; }
+.page-subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 4px; }
+
+/* HERO / SEARCH */
+.hero { background: var(--ink); border-radius: var(--radius); padding: 46px 36px; margin-bottom: 28px; color: #ede6d6; }
+.hero h1 { font-size: 2rem; margin-bottom: 8px; }
+.hero h1 span { color: var(--brass); }
+.hero p { color: rgba(237,230,214,0.7); margin-bottom: 26px; font-size: 0.92rem; }
+.search-panel { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: var(--radius); padding: 20px; }
+.search-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr 0.7fr auto; gap: 12px; align-items: end; }
+.search-field label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: rgba(237,230,214,0.55); margin-bottom: 6px; }
+.search-field input, .search-field select { width: 100%; padding: 11px 12px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.95); font-family: var(--font-body); font-size: 0.86rem; }
+
+/* CARDS / GRIDS */
+.room-grid, .offering-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.room-card, .offering-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; position: relative; }
+.room-card h3, .offering-card h4 { font-size: 1.05rem; margin-bottom: 6px; }
+.room-card .price, .offering-card .price { font-family: var(--font-display); font-size: 1.3rem; color: var(--brass-dark); margin: 10px 0; }
+.room-card .meta, .offering-card .meta { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 12px; }
+.card-photo { width: calc(100% + 40px); margin: -20px -20px 14px -20px; height: 160px; object-fit: cover; border-radius: var(--radius) var(--radius) 0 0; display: block; }
+.card-photo-placeholder { width: calc(100% + 40px); margin: -20px -20px 14px -20px; height: 160px; border-radius: var(--radius) var(--radius) 0 0;
+  background: linear-gradient(135deg, var(--border), var(--ivory)); display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: 1.6rem; }
+.card-heart { position: absolute; top: 12px; right: 12px; width: 32px; height: 32px; border-radius: 50%; background: rgba(20,24,31,0.55);
+  color: #fff; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+.card-heart.saved { background: var(--danger); }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; }
+.panel h3 { font-size: 1.05rem; margin-bottom: 14px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+td { padding: 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.badge-confirmed, .badge-checked_in, .badge-resolved, .badge-paid { background: rgba(47,93,90,0.12); color: var(--teal); }
+.badge-cancelled, .badge-refunded { background: rgba(163,57,42,0.1); color: var(--danger); }
+.badge-pending, .badge-open { background: rgba(179,140,43,0.14); color: var(--brass-dark); }
+.badge-checked_out, .badge-in_progress { background: rgba(59,110,165,0.12); color: var(--info); }
+
+.btn { font-family: var(--font-body); font-size: 0.84rem; font-weight: 600; padding: 11px 20px; border-radius: 7px; border: none; cursor: pointer; transition: opacity 0.15s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+.btn-outline:hover:not(:disabled) { background: var(--ivory); }
+.btn-danger { background: rgba(163,57,42,0.1); color: var(--danger); }
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; margin-right: 6px; }
+.btn-block { width: 100%; }
+
+.loading-state, .empty-state { text-align: center; color: var(--text-muted); padding: 34px; font-size: 0.86rem; }
+.coming-soon { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+.coming-soon i { font-size: 2rem; color: var(--brass); margin-bottom: 12px; display: block; }
+
+.notice { padding: 12px 16px; border-radius: 7px; font-size: 0.84rem; margin-bottom: 14px; }
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.2); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--teal); border: 1px solid rgba(47,93,90,0.2); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-field { margin-bottom: 14px; }
+.form-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.form-field input, .form-field select, .form-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; font-family: var(--font-body); font-size: 0.86rem; background: #fff; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+.checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 0.86rem; font-weight: 400 !important; cursor: pointer; padding: 6px 0; }
+.checkbox-item input { width: auto !important; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(20,24,31,0.55); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; overflow-y: auto; }
+.modal { background: var(--panel); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.summary-line { display: flex; justify-content: space-between; padding: 8px 0; font-size: 0.86rem; border-bottom: 1px solid var(--border-soft); }
+.summary-line.total { font-weight: 700; border-bottom: none; padding-top: 12px; font-size: 0.98rem; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tab-btn { background: none; border: none; padding: 10px 16px; font-family: var(--font-body); font-size: 0.86rem; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
+
+.chat-thread { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; max-height: 340px; overflow-y: auto; }
+.chat-bubble { max-width: 75%; padding: 10px 14px; border-radius: 12px; font-size: 0.85rem; }
+.chat-bubble.mine { align-self: flex-end; background: var(--brass); color: var(--ink); border-bottom-right-radius: 3px; }
+.chat-bubble.theirs { align-self: flex-start; background: var(--ivory); border: 1px solid var(--border); border-bottom-left-radius: 3px; }
+.chat-bubble .meta { font-size: 0.68rem; opacity: 0.65; margin-top: 4px; }
+
+@media (max-width: 860px) {
+  .nav-links { display: none; }
+  .mobile-nav-toggle { display: block; }
+  .search-grid { grid-template-columns: 1fr 1fr; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="auth-screen" id="authScreen">
+  <div class="auth-card">
+    <div class="brand" id="authBrand">Our Hotel</div>
+    <p class="sub">Book your stay, manage reservations, and get support — all in one place.</p>
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab-btn active" data-tab="login" onclick="switchAuthTab('login')">Log in</button>
+      <button class="auth-tab-btn" data-tab="register" onclick="switchAuthTab('register')">Create account</button>
+    </div>
+    <div id="authNotice"></div>
+
+    <form id="loginForm">
+      <div class="form-field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Log in</button>
+    </form>
+
+    <form id="registerForm" style="display:none;">
+      <div class="form-field"><label>Full name</label><input type="text" id="regName" required></div>
+      <div class="form-field"><label>Email</label><input type="email" id="regEmail" required></div>
+      <div class="form-field"><label>Phone</label><input type="text" id="regPhone"></div>
+      <div class="form-field"><label>Password</label><input type="password" id="regPassword" required minlength="8"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="registerBtn">Create account</button>
+    </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus></div>
+      <button type="submit" class="btn btn-primary btn-block" id="twoFactorBtn">Verify</button>
+      <button type="button" id="twoFactorBackBtn" style="width:100%; margin-top:10px; background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer;">&larr; Back to login</button>
+    </form>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <div class="navbar">
+    <div class="nav-brand" onclick="switchPage('search')"><div class="logo-icon" id="navBrandIcon">H</div><span id="navBrandText">Our Hotel</span></div>
+    <div class="nav-links" id="navLinks"></div>
+    <div class="nav-user">
+      <span class="nav-user-name" id="navUserName"></span>
+      <span class="nav-logout" id="logoutBtn">Log out</span>
+    </div>
+    <button class="mobile-nav-toggle" id="mobileNavToggle"><i class="fas fa-bars"></i></button>
+  </div>
+  <div class="page-content" id="pageContent"></div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG / SESSION
+   ============================================================ */
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api"; // adjust to your deployed backend base URL
+function getToken() { return localStorage.getItem("guest_token"); }
+function getRefreshToken() { return localStorage.getItem("guest_refresh_token"); }
+function getGuest() { try { return JSON.parse(localStorage.getItem("guest_user")); } catch { return null; } }
+function setSession(token, refreshToken, guest) {
+  localStorage.setItem("guest_token", token);
+  localStorage.setItem("guest_refresh_token", refreshToken || "");
+  localStorage.setItem("guest_user", JSON.stringify(guest));
+}
+function clearSession() {
+  localStorage.removeItem("guest_token");
+  localStorage.removeItem("guest_refresh_token");
+  localStorage.removeItem("guest_user");
+}
+
+/* ============================================================
+   API — guest-scoped. The backend derives "which guest" from the
+   token on every /guest/* call below; this panel never sends a
+   guestId, so a guest can never view or act on another guest's
+   bookings/tickets/payments by editing a request.
+
+   IMPORTANT — paths corrected against the real backend:
+   - There is no /public/* prefix anywhere. Branch listing and
+     branch-scoped browsing (room types, availability, menu, bar
+     menu, spa treatments, laundry items, events, reviews) all live
+     directly under /branches/:branchId/... on publicRoutes.
+   - Booking/ticket CREATION, cancellation, and detail-lookup are
+     also on publicRoutes (branch-scoped), NOT under /guest/* — the
+     /guest/* namespace only has the account-scoped LIST views
+     (bookings, orders, tickets) plus profile/preferences/loyalty/
+     wishlist/reviews.
+   - createBooking requires a specific roomId, not a room TYPE id —
+     see checkAvailability() below, which returns individual rooms.
+   - Payment is a separate step after booking/order creation, not
+     part of it — see initiateBookingPayment/initiateOrderPayment.
+   ============================================================ */
+async function guestRequest(path, options = {}) {
+  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+  if (getToken()) headers.Authorization = `Bearer ${getToken()}`;
+  const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  if (res.status === 401) { clearSession(); showAuth(); throw new Error("Session expired — please log in again"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+const guestApi = {
+  register: (payload) => guestRequest("/auth/guest/register", { method: "POST", body: JSON.stringify(payload) }),
+  login: (email, password) => guestRequest("/auth/guest/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+  setupTwoFactor: () => guestRequest("/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => guestRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => guestRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  verifyTwoFactor: (tempToken, code) => guestRequest("/auth/login/2fa", { method: "POST", body: JSON.stringify({ tempToken, code }) }),
+
+  // Platform name — set only by the Director (see hotel-server settings backbone)
+  getSettings: () => guestRequest("/settings"),
+
+  listBranches: () => guestRequest("/branches"),
+  getBranch: (branchId) => guestRequest(`/branches/${branchId}`),
+  // Returns full Room records directly — Room absorbed RoomType, so
+  // there's no separate "type" to group by anymore. Each result is a
+  // complete, bookable listing with its own name/price/photos.
+  checkAvailability: (branchId, checkIn, checkOut) =>
+    guestRequest(`/branches/${branchId}/availability?checkIn=${checkIn}&checkOut=${checkOut}`),
+
+  createBooking: (branchId, payload) => guestRequest(`/branches/${branchId}/bookings`, { method: "POST", body: JSON.stringify(payload) }),
+  initiateBookingPayment: (branchId, bookingId, callbackUrl) =>
+    guestRequest(`/branches/${branchId}/bookings/${bookingId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
+  listMyBookings: () => guestRequest("/guest/bookings"),
+  cancelBooking: (branchId, id) => guestRequest(`/branches/${branchId}/bookings/${id}/cancel`, { method: "PATCH" }),
+  // No invoice route exists on the backend yet — intentionally not offered
+  // in this panel rather than linking to something that 404s.
+
+  listMyTickets: () => guestRequest("/guest/tickets"),
+  createTicket: (branchId, payload) => guestRequest(`/branches/${branchId}/tickets`, { method: "POST", body: JSON.stringify(payload) }),
+  getTicket: (branchId, id) => guestRequest(`/branches/${branchId}/tickets/${id}`),
+  // Requires server-patch-15 (adds POST /branches/:branchId/tickets/:id/messages
+  // for guests — that route did not exist in the original backend at all).
+  replyToTicket: (branchId, id, message) => guestRequest(`/branches/${branchId}/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
+
+  getProfile: () => guestRequest("/guest/profile"),
+  updateProfile: (payload) => guestRequest("/guest/profile", { method: "PATCH", body: JSON.stringify(payload) }),
+  changePassword: (payload) => guestRequest("/guest/profile/password", { method: "PATCH", body: JSON.stringify(payload) }),
+  updatePreferences: (payload) => guestRequest("/guest/preferences", { method: "PATCH", body: JSON.stringify(payload) }),
+  listMyOrders: () => guestRequest("/guest/orders"),
+
+  // --- Loyalty (new section) ---
+  getLoyalty: () => guestRequest("/guest/loyalty"),
+  redeemLoyaltyPoints: (points) => guestRequest("/guest/loyalty/redeem", { method: "POST", body: JSON.stringify({ points }) }),
+
+  // --- Wishlist (new section) ---
+  listWishlist: () => guestRequest("/guest/wishlist"),
+  addWishlistItem: (payload) => guestRequest("/guest/wishlist", { method: "POST", body: JSON.stringify(payload) }),
+  removeWishlistItem: (id) => guestRequest(`/guest/wishlist/${id}`, { method: "DELETE" }),
+
+  // --- Reviews (new section) ---
+  createReview: (payload) => guestRequest("/guest/reviews", { method: "POST", body: JSON.stringify(payload) }),
+
+  // --- Events (was "coming soon" — real endpoint exists) ---
+  listEvents: (branchId) => guestRequest(`/branches/${branchId}/events`),
+
+  // --- Upcoming Events (hotel-hosted, ticketed — distinct from Events
+  // above, which is a guest renting the hall for their OWN function).
+  // Only PUBLISHED ones are ever visible here. Buying a ticket goes
+  // through the same createOrder() below (type: UPCOMING_EVENT_TICKET).
+  listUpcomingEvents: (branchId) => guestRequest(`/branches/${branchId}/upcoming-events`),
+
+  // --- Ordering (new section) — catalog browsing per type, all branch-scoped ---
+  getMenu: (branchId) => guestRequest(`/branches/${branchId}/menu`),
+  getBarMenu: (branchId) => guestRequest(`/branches/${branchId}/bar-menu`),
+  getSpaTreatments: (branchId) => guestRequest(`/branches/${branchId}/spa-treatments`),
+  getLaundryItems: (branchId) => guestRequest(`/branches/${branchId}/laundry-items`),
+  createOrder: (branchId, payload) => guestRequest(`/branches/${branchId}/orders`, { method: "POST", body: JSON.stringify(payload) }),
+  initiateOrderPayment: (branchId, orderId, callbackUrl) =>
+    guestRequest(`/branches/${branchId}/orders/${orderId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
+};
+
+/* ============================================================
+   AUTH SCREEN
+   ============================================================ */
+function switchAuthTab(tab) {
+  document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  document.getElementById("loginForm").style.display = tab === "login" ? "block" : "none";
+  document.getElementById("registerForm").style.display = tab === "register" ? "block" : "none";
+  document.getElementById("authNotice").innerHTML = "";
+}
+function showAuthNotice(message, type = "error") { document.getElementById("authNotice").innerHTML = `<div class="notice ${type}">${message}</div>`; }
+
+let _pendingTempToken = null;
+
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Logging in…";
+  try {
+    const result = await guestApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (result.requires2FA) {
+      _pendingTempToken = result.tempToken;
+      document.getElementById("authTabs").style.display = "none";
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("registerForm").style.display = "none";
+      document.getElementById("twoFactorForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
+    }
+    setSession(result.token, result.refreshToken, result.guest);
+    showApp();
+  } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+
+document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorBtn"); btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const result = await guestApi.verifyTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    _pendingTempToken = null;
+    setSession(result.token, result.refreshToken, result.guest);
+    showApp();
+  } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Verify"; }
+});
+
+document.getElementById("twoFactorBackBtn").addEventListener("click", () => {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorForm").style.display = "none";
+  document.getElementById("twoFactorForm").reset();
+  document.getElementById("authTabs").style.display = "flex";
+  document.getElementById("loginForm").style.display = "block";
+  document.getElementById("authNotice").innerHTML = "";
+});
+document.getElementById("registerForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("registerBtn"); btn.disabled = true; btn.textContent = "Creating account…";
+  try {
+    const result = await guestApi.register({
+      name: document.getElementById("regName").value, email: document.getElementById("regEmail").value,
+      phone: document.getElementById("regPhone").value || undefined, password: document.getElementById("regPassword").value,
+    });
+    setSession(result.token, result.refreshToken, result.guest);
+    showApp();
+  } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Create account"; }
+});
+
+/* ============================================================
+   PLATFORM NAME — set only by the Director, never hardcoded
+   ============================================================ */
+async function hydratePlatformName() {
+  try {
+    const { settings } = await guestApi.getSettings();
+    const name = settings.platformName || settings.name || "Our Hotel";
+    document.title = document.title.replace("Our Hotel", name).replace("Book Your Stay", `Book Your Stay — ${name}`);
+    const authBrand = document.getElementById("authBrand"); if (authBrand) authBrand.textContent = name;
+    const navBrandText = document.getElementById("navBrandText"); if (navBrandText) navBrandText.textContent = name;
+    const navBrandIcon = document.getElementById("navBrandIcon"); if (navBrandIcon) navBrandIcon.textContent = name.charAt(0).toUpperCase();
+  } catch (err) { /* keep the "Our Hotel" fallback already in the HTML */ }
+}
+
+/* ============================================================
+   NAV
+   ============================================================ */
+const NAV_LINKS = [
+  { page: "search", label: "Book a Stay", icon: "fa-magnifying-glass" },
+  { page: "bookings", label: "My Bookings", icon: "fa-calendar-check" },
+  { page: "order", label: "Order", icon: "fa-utensils" },
+  { page: "events", label: "Events", icon: "fa-champagne-glasses" },
+  { page: "upcomingevents", label: "Upcoming Events", icon: "fa-calendar-star" },
+  { page: "loyalty", label: "Loyalty", icon: "fa-gem" },
+  { page: "wishlist", label: "Wishlist", icon: "fa-heart" },
+  { page: "support", label: "Support", icon: "fa-headset", badgeId: "supportNavBadge" },
+  { page: "profile", label: "Profile", icon: "fa-user" },
+];
+
+function renderNav() {
+  const guest = getGuest();
+  document.getElementById("navUserName").textContent = guest ? guest.name : "";
+  document.getElementById("navLinks").innerHTML = NAV_LINKS.map((l) => `
+    <div class="nav-link" data-page="${l.page}" onclick="switchPage('${l.page}')">
+      <i class="fas ${l.icon}"></i> ${l.label}
+      ${l.badgeId ? `<span class="nav-badge" id="${l.badgeId}">0</span>` : ""}
+    </div>
+  `).join("");
+}
+function setActiveNav(page) {
+  document.querySelectorAll(".nav-link").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page));
+}
+
+const PAGE_LOADERS = {
+  search: loadSearchPage,
+  bookings: loadMyBookingsPage,
+  order: loadOrderPage,
+  events: loadEventsPage,
+  upcomingevents: loadUpcomingEventsPage,
+  loyalty: loadLoyaltyPage,
+  wishlist: loadWishlistPage,
+  support: loadSupportPage,
+  profile: loadProfilePage,
+};
+function switchPage(page) {
+  setActiveNav(page);
+  const loader = PAGE_LOADERS[page];
+  const container = document.getElementById("pageContent");
+  if (!loader) { container.innerHTML = `<div class="empty-state">Page not found.</div>`; return; }
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  loader();
+  window.scrollTo(0, 0);
+}
+function loadComingSoon(title, description) {
+  document.getElementById("pageContent").innerHTML = `
+    <div class="page-header"><h1 class="page-title">${title}</h1></div>
+    <div class="panel"><div class="coming-soon"><i class="fas fa-hourglass-half"></i><p><b>${title} is coming soon.</b></p><p style="margin-top:6px;">${description}</p></div></div>
+  `;
+}
+function pageHeader(title, subtitle) { return `<div class="page-header"><h1 class="page-title">${title}</h1>${subtitle ? `<p class="page-subtitle">${subtitle}</p>` : ""}</div>`; }
+
+/* ============================================================
+   SEARCH & BOOK
+   ============================================================ */
+let _searchContext = null;
+let _availableRoomsCache = []; // flat list of real Room records from the last search
+
+async function loadSearchPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = `<option value="">Loading branches…</option>`;
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { branchOptions = `<option value="">Couldn't load branches</option>`; }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  container.innerHTML = `
+    <div class="hero">
+      <h1>Find your <span>next stay</span></h1>
+      <p>Search rooms across our branches and book in minutes.</p>
+      <div class="search-panel">
+        <div class="search-grid">
+          <div class="search-field"><label>Branch</label><select id="seBranch">${branchOptions}</select></div>
+          <div class="search-field"><label>Check-in</label><input type="date" id="seCheckIn" min="${today}" value="${today}"></div>
+          <div class="search-field"><label>Check-out</label><input type="date" id="seCheckOut" min="${today}"></div>
+          <div class="search-field"><label>Guests</label><input type="number" id="seGuests" min="1" value="1"></div>
+          <button class="btn btn-primary" onclick="runRoomSearch()">Search</button>
+        </div>
+      </div>
+    </div>
+    <div id="searchNotice"></div>
+    <div id="searchResults"></div>
+  `;
+}
+
+async function runRoomSearch() {
+  const branchId = document.getElementById("seBranch").value;
+  const checkIn = document.getElementById("seCheckIn").value;
+  const checkOut = document.getElementById("seCheckOut").value;
+  const guests = document.getElementById("seGuests").value;
+  const resultsEl = document.getElementById("searchResults");
+
+  if (!branchId || !checkIn || !checkOut) { showNotice("searchNotice", "Pick a branch and both dates to search."); return; }
+  if (checkOut <= checkIn) { showNotice("searchNotice", "Check-out must be after check-in."); return; }
+
+  resultsEl.innerHTML = `<div class="loading-state">Searching…</div>`;
+  _searchContext = { branchId, checkIn, checkOut, guests };
+
+  try {
+    const { availableRooms } = await guestApi.checkAvailability(branchId, checkIn, checkOut);
+    _availableRoomsCache = availableRooms || [];
+
+    resultsEl.innerHTML = _availableRoomsCache.length ? `
+      <div class="room-grid">
+        ${_availableRoomsCache.map((r) => `
+          <div class="room-card">
+            <button class="card-heart" title="Save to wishlist" onclick="addToWishlist({branchId:'${branchId}', roomId:'${r.id}'}, 'searchNotice')"><i class="fas fa-heart"></i></button>
+            ${r.images && r.images[0] ? `<img class="card-photo" src="${r.images[0]}" alt="${r.name}">` : `<div class="card-photo-placeholder"><i class="fa-solid fa-bed"></i></div>`}
+            <h3>${r.name}</h3>
+            <div class="meta">Room ${r.roomNumber} &middot; Sleeps up to ${r.maxOccupancy}</div>
+            <div class="price">&#8358;${Number(r.basePrice).toLocaleString()}<span style="font-size:0.75rem; color:var(--text-muted); font-weight:400;"> / night</span></div>
+            <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${r.description || ""}</p>
+            <button class="btn btn-primary btn-block" onclick='openBookingModal(${JSON.stringify(r).replace(/'/g, "&#39;")})'>Book this room</button>
+          </div>
+        `).join("")}
+      </div>
+    ` : `<div class="empty-state">No rooms available for those dates — try a different branch or date range.</div>`;
+  } catch (err) {
+    resultsEl.innerHTML = "";
+    showNotice("searchNotice", err.message);
+  }
+}
+
+function openBookingModal(room) {
+  const guest = getGuest();
+  const nights = Math.max(1, Math.round((new Date(_searchContext.checkOut) - new Date(_searchContext.checkIn)) / 86400000));
+  const roomSubtotal = room.basePrice * nights;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.id = "bookingModal";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Book — ${room.name} (Room ${room.roomNumber})</h3>
+      <div id="bookingModalNotice"></div>
+      <form id="bookingForm">
+        <div class="form-row">
+          <div class="form-field"><label>Guest name</label><input type="text" id="bkGuestName" value="${guest.name}" required></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="bkPhone" value="${guest.phone || ""}"></div>
+        </div>
+        <div class="form-field"><label>Special requests <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><textarea id="bkRequests" rows="2"></textarea></div>
+        <div class="form-field"><label>Promo code <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="bkPromo" placeholder="e.g. LOYALTY-AB12CD"></div>
+        <div class="summary-line"><span>${nights} night${nights > 1 ? "s" : ""} &times; &#8358;${Number(room.basePrice).toLocaleString()}</span><span>&#8358;${roomSubtotal.toLocaleString()}</span></div>
+        <div class="summary-line total"><span>Total</span><span>&#8358;${roomSubtotal.toLocaleString()} <span style="font-weight:400; font-size:0.76rem; color:var(--text-muted);">(promo discount applied at checkout, if valid)</span></span></div>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">You'll pay securely via Paystack on the next step — card, bank transfer, or USSD.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeBookingModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="bkSubmitBtn">Continue to payment</button>
+        </div>
+      </form>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById("bookingForm").addEventListener("submit", (e) => submitBookingForm(e, room));
+}
+function closeBookingModal() { const el = document.getElementById("bookingModal"); if (el) el.remove(); }
+
+async function submitBookingForm(e, room) {
+  e.preventDefault();
+  const btn = document.getElementById("bkSubmitBtn"); btn.disabled = true; btn.textContent = "Processing…";
+  try {
+    const { booking } = await guestApi.createBooking(_searchContext.branchId, {
+      roomId: room.id,
+      checkIn: _searchContext.checkIn,
+      checkOut: _searchContext.checkOut,
+      guestsCount: Number(_searchContext.guests),
+      specialRequests: document.getElementById("bkRequests").value || undefined,
+      promoCode: document.getElementById("bkPromo").value || undefined,
+      guest: { name: document.getElementById("bkGuestName").value, email: getGuest().email, phone: document.getElementById("bkPhone").value || undefined },
+    });
+
+    // Booking is created PENDING — payment is a separate step.
+    const { authorizationUrl } = await guestApi.initiateBookingPayment(_searchContext.branchId, booking.id, window.location.origin + window.location.pathname);
+    closeBookingModal();
+    if (authorizationUrl) {
+      window.location.href = authorizationUrl;
+    } else {
+      showNotice("searchNotice", `Booking confirmed! Reference: ${booking.id}. See it under "My Bookings".`, "success");
+      switchPage("bookings");
+    }
+  } catch (err) {
+    showNotice("bookingModalNotice", err.message);
+  } finally {
+    btn.disabled = false; btn.textContent = "Continue to payment";
+  }
+}
+
+/* ============================================================
+   MY BOOKINGS
+   ============================================================ */
+async function loadMyBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("My Bookings", "Everything you've booked with us.")}
+    <div id="myBookingsNotice"></div>
+    <div id="myBookingsList"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { bookings } = await guestApi.listMyBookings();
+    document.getElementById("myBookingsList").innerHTML = bookings.length ? bookings.map((b) => `
+      <div class="panel">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
+          <div style="display:flex; gap:12px; align-items:flex-start;">
+            ${b.room.images && b.room.images[0] ? `<img src="${b.room.images[0]}" style="width:56px;height:56px;object-fit:cover;border-radius:8px;flex-shrink:0;">` : ""}
+            <div>
+              <h3 style="margin-bottom:4px;">${b.room.name} — ${b.branchName}</h3>
+              <p style="color:var(--text-muted); font-size:0.86rem;">${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</p>
+            </div>
+          </div>
+          <span class="badge badge-${b.status.toLowerCase()}">${b.status}</span>
+        </div>
+        <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
+          ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.branchId}','${b.id}')">Cancel booking</button>` : ""}
+          ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.name.replace(/'/g, "&#39;")}')">Leave a review</button>` : ""}
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">You haven't booked with us yet. <a href="#" onclick="switchPage('search'); return false;" style="color:var(--brass-dark); font-weight:600;">Find a room →</a></div>`;
+  } catch (err) {
+    document.getElementById("myBookingsList").innerHTML = "";
+    showNotice("myBookingsNotice", err.message);
+  }
+}
+async function cancelMyBooking(branchId, id) {
+  if (!confirm("Cancel this booking? This can't be undone.")) return;
+  try { await guestApi.cancelBooking(branchId, id); loadMyBookingsPage(); }
+  catch (err) { showNotice("myBookingsNotice", err.message); }
+}
+
+function openReviewModal(bookingId, roomTypeName) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "reviewModal";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Review your stay — ${roomTypeName}</h3>
+      <div id="reviewNotice"></div>
+      <form id="reviewForm">
+        <div class="form-field">
+          <label>Rating</label>
+          <select id="rvRating" required>
+            <option value="5">★★★★★ Excellent</option>
+            <option value="4">★★★★ Very good</option>
+            <option value="3">★★★ Average</option>
+            <option value="2">★★ Poor</option>
+            <option value="1">★ Very poor</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Title <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="rvTitle"></div>
+        <div class="form-field"><label>Your review <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><textarea id="rvBody" rows="3"></textarea></div>
+        <p style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">Reviews are checked by the branch before appearing publicly.</p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('reviewModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="rvSubmitBtn">Submit review</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("reviewForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("rvSubmitBtn"); btn.disabled = true;
+    try {
+      const { message } = await guestApi.createReview({
+        bookingId, ratingValue: Number(document.getElementById("rvRating").value),
+        title: document.getElementById("rvTitle").value || undefined,
+        body: document.getElementById("rvBody").value || undefined,
+      });
+      overlay.remove();
+      showNotice("myBookingsNotice", message || "Thanks for your review!", "success");
+    } catch (err) {
+      document.getElementById("reviewNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ============================================================
+   EVENTS (was "coming soon" — real endpoint, now wired)
+   ============================================================ */
+async function loadEventsPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = "";
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { /* handled below */ }
+
+  container.innerHTML = `
+    ${pageHeader("Events", "Upcoming events at our branches.")}
+    <div class="form-field" style="max-width:320px;"><label>Branch</label><select id="evBranch" onchange="loadEventsForBranch()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
+    <div id="eventsNotice"></div>
+    <div id="eventsList"><div class="loading-state">Pick a branch to see its events.</div></div>
+  `;
+  if (branchOptions) loadEventsForBranch();
+}
+async function loadEventsForBranch() {
+  const branchId = document.getElementById("evBranch").value;
+  const listEl = document.getElementById("eventsList");
+  if (!branchId) return;
+  listEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { events } = await guestApi.listEvents(branchId);
+    listEl.innerHTML = events.length ? `<div class="room-grid">${events.map((ev) => `
+      <div class="room-card">
+        <button class="card-heart" title="Save to wishlist" onclick="addToWishlist({branchId:'${branchId}', eventId:'${ev.id}'})"><i class="fas fa-heart"></i></button>
+        ${ev.images && ev.images[0] ? `<img class="card-photo" src="${ev.images[0]}" alt="${ev.name}">` : `<div class="card-photo-placeholder"><i class="fa-solid fa-champagne-glasses"></i></div>`}
+        <h3>${ev.name}</h3>
+        <div class="meta">${new Date(ev.startsAt).toLocaleString()}${ev.capacity ? ` &middot; ${ev.capacity} spots` : ""}</div>
+        ${ev.price ? `<div class="price">&#8358;${Number(ev.price).toLocaleString()}</div>` : `<div class="price">Free</div>`}
+        <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${ev.description || ""}</p>
+        <button class="btn btn-primary btn-block" onclick='openEventTicketModal(${JSON.stringify({ ...ev, _branchId: branchId }).replace(/'/g, "&#39;")})'>Get ticket</button>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">No events scheduled at this branch right now.</div>`;
+  } catch (err) {
+    listEl.innerHTML = "";
+    showNotice("eventsNotice", err.message);
+  }
+}
+
+/** Books an EVENT_TICKET order directly — quantity + total, then straight
+ * to Paystack. Previously this redirected to the general Order page and
+ * force-set a select value that wasn't even one of its options, so the
+ * catalog never loaded and a ticket could never actually be bought. */
+function openEventTicketModal(ev) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "eventTicketModal";
+  const price = Number(ev.price) || 0;
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Tickets — ${ev.name}</h3>
+      <div id="eventTicketNotice"></div>
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">${new Date(ev.startsAt).toLocaleString()}</p>
+      <form id="eventTicketForm">
+        <div class="form-field"><label>Number of tickets</label><input type="number" id="etQuantity" min="1" step="1" value="1" required oninput="updateEventTicketTotal(${price})"></div>
+        <div class="summary-line total"><span>Total</span><span id="etTotal">&#8358;${price.toLocaleString()}</span></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('eventTicketModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="etSubmitBtn">Continue to payment</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("eventTicketForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("etSubmitBtn"); btn.disabled = true;
+    try {
+      const quantity = Math.max(1, Number(document.getElementById("etQuantity").value) || 1);
+      const { order } = await guestApi.createOrder(ev._branchId, { type: "EVENT_TICKET", eventId: ev.id, quantity });
+      const { authorizationUrl } = await guestApi.initiateOrderPayment(ev._branchId, order.id, window.location.origin + window.location.pathname);
+      overlay.remove();
+      if (authorizationUrl) window.location.href = authorizationUrl;
+      else showNotice("eventsNotice", "Ticket booked!", "success");
+    } catch (err) {
+      document.getElementById("eventTicketNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+      btn.disabled = false;
+    }
+  });
+}
+function updateEventTicketTotal(price) {
+  const qty = Math.max(1, Number(document.getElementById("etQuantity").value) || 1);
+  document.getElementById("etTotal").textContent = `₦${(price * qty).toLocaleString()}`;
+}
+
+/* ============================================================
+   UPCOMING EVENTS — hotel-hosted, ticketed events. Distinct from Events
+   above (a guest renting the hall for their OWN function). Only
+   PUBLISHED ones ever show here. Buying a ticket creates an
+   UPCOMING_EVENT_TICKET order, same Paystack redirect pattern as
+   everything else. "My tickets" below reuses listMyOrders() — no
+   separate ticket endpoint needed.
+   ============================================================ */
+async function loadUpcomingEventsPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = "";
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { /* handled below */ }
+
+  container.innerHTML = `
+    ${pageHeader("Upcoming Events", "Hotel-hosted events — buy a ticket and you're on the guest list.")}
+    <div class="form-field" style="max-width:320px;"><label>Branch</label><select id="ueBranch" onchange="loadUpcomingEventsForBranch()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
+    <div id="upcomingEventsNotice"></div>
+    <div id="upcomingEventsListEl"><div class="loading-state">Pick a branch to see what's on.</div></div>
+    <div class="panel" style="margin-top:24px;">
+      <h3 style="margin-bottom:12px;">My tickets</h3>
+      <div id="myTicketsList"><div class="loading-state">Loading…</div></div>
+    </div>
+  `;
+  if (branchOptions) loadUpcomingEventsForBranch();
+  loadMyTickets();
+}
+
+async function loadUpcomingEventsForBranch() {
+  const branchId = document.getElementById("ueBranch").value;
+  const listEl = document.getElementById("upcomingEventsListEl");
+  if (!branchId) return;
+  listEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { upcomingEvents } = await guestApi.listUpcomingEvents(branchId);
+    listEl.innerHTML = upcomingEvents.length ? `<div class="room-grid">${upcomingEvents.map((ue) => `
+      <div class="room-card">
+        ${ue.images && ue.images[0] ? `<img class="card-photo" src="${ue.images[0]}" alt="${ue.title}">` : `<div class="card-photo-placeholder"><i class="fa-solid fa-calendar-star"></i></div>`}
+        <h3>${ue.title}</h3>
+        <div class="meta">${new Date(ue.startsAt).toLocaleString()}${ue.capacity ? ` &middot; ${ue.capacity} spots` : ""}</div>
+        ${ue.ticketPrice ? `<div class="price">&#8358;${Number(ue.ticketPrice).toLocaleString()}</div>` : `<div class="price">Free</div>`}
+        <p style="color:var(--text-muted); font-size:0.84rem; margin-bottom:14px;">${ue.description || ""}</p>
+        <button class="btn btn-primary btn-block" onclick='openUpcomingEventTicketModal(${JSON.stringify({ ...ue, _branchId: branchId }).replace(/'/g, "&#39;")})'>Get ticket</button>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">Nothing on the calendar at this branch right now.</div>`;
+  } catch (err) {
+    listEl.innerHTML = "";
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+function openUpcomingEventTicketModal(ue) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "ueTicketModal";
+  const price = Number(ue.ticketPrice) || 0;
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Tickets — ${ue.title}</h3>
+      <div id="ueTicketNotice"></div>
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">${new Date(ue.startsAt).toLocaleString()}</p>
+      <form id="ueTicketForm">
+        <div class="form-field"><label>Number of tickets</label><input type="number" id="ueQuantity" min="1" step="1" value="1" required oninput="updateUpcomingEventTicketTotal(${price})"></div>
+        <div class="summary-line total"><span>Total</span><span id="ueTotal">&#8358;${price.toLocaleString()}</span></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('ueTicketModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="ueSubmitBtn">Continue to payment</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("ueTicketForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("ueSubmitBtn"); btn.disabled = true;
+    try {
+      const quantity = Math.max(1, Number(document.getElementById("ueQuantity").value) || 1);
+      const { order } = await guestApi.createOrder(ue._branchId, { type: "UPCOMING_EVENT_TICKET", upcomingEventId: ue.id, quantity });
+      const { authorizationUrl } = await guestApi.initiateOrderPayment(ue._branchId, order.id, window.location.origin + window.location.pathname);
+      overlay.remove();
+      if (authorizationUrl) window.location.href = authorizationUrl;
+      else { showNotice("upcomingEventsNotice", "Ticket booked!", "success"); loadMyTickets(); }
+    } catch (err) {
+      document.getElementById("ueTicketNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+      btn.disabled = false;
+    }
+  });
+}
+function updateUpcomingEventTicketTotal(price) {
+  const qty = Math.max(1, Number(document.getElementById("ueQuantity").value) || 1);
+  document.getElementById("ueTotal").textContent = `₦${(price * qty).toLocaleString()}`;
+}
+
+async function loadMyTickets() {
+  const el = document.getElementById("myTicketsList");
+  try {
+    const { orders } = await guestApi.listMyOrders();
+    const tickets = orders.filter((o) => o.type === "UPCOMING_EVENT_TICKET");
+    el.innerHTML = tickets.length ? tickets.map((o) => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
+        <div>
+          <b>${o.upcomingEvent ? o.upcomingEvent.title : "Event"}</b>
+          <div style="color:var(--text-muted); font-size:0.82rem;">${o.items?.quantity || 1} ticket(s) &middot; ${o.branchName || ""}</div>
+        </div>
+        <span class="badge badge-${(o.status || "").toLowerCase()}">${o.status}</span>
+      </div>
+    `).join("") : `<div class="empty-state">No event tickets yet.</div>`;
+  } catch (err) {
+    el.innerHTML = "";
+  }
+}
+
+/* ============================================================
+   LOYALTY (new section)
+   ============================================================ */
+async function loadLoyaltyPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Loyalty", "Earn points on stays, redeem them for a discount code.")}
+    <div id="loyaltyNotice"></div>
+    <div id="loyaltyContent"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { points, tier, history } = await guestApi.getLoyalty();
+    document.getElementById("loyaltyContent").innerHTML = `
+      <div class="panel" style="text-align:center; margin-bottom:20px;">
+        <div style="font-size:2.4rem; font-weight:700; font-family:var(--font-display,serif);">${points}</div>
+        <div style="color:var(--text-muted); margin-bottom:4px;">points available</div>
+        <span class="badge badge-confirmed">${tier} tier</span>
+      </div>
+      <div class="panel" style="margin-bottom:20px;">
+        <h3 style="margin-bottom:12px;">Redeem points</h3>
+        <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">Redeem in blocks of 100 for a one-time discount code you can apply at checkout.</p>
+        <form id="redeemForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+          <div class="form-field" style="margin-bottom:0;"><label>Points (multiples of 100)</label><input type="number" id="rdPoints" min="100" step="100" value="100" style="max-width:140px;"></div>
+          <button type="submit" class="btn btn-primary" id="rdSubmitBtn">Redeem</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h3 style="margin-bottom:12px;">History</h3>
+        ${history.length ? history.map((h) => `
+          <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid var(--border-soft); font-size:0.86rem;">
+            <span>${h.reason}</span>
+            <span style="font-weight:600; color:${h.points > 0 ? 'var(--success,#2f7d5f)' : 'var(--danger,#a3392a)'};">${h.points > 0 ? "+" : ""}${h.points}</span>
+          </div>
+        `).join("") : `<p style="color:var(--text-muted); font-size:0.86rem;">No activity yet.</p>`}
+      </div>
+    `;
+    document.getElementById("redeemForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("rdSubmitBtn"); btn.disabled = true;
+      try {
+        const { code, discountValue } = await guestApi.redeemLoyaltyPoints(Number(document.getElementById("rdPoints").value));
+        showNotice("loyaltyNotice", `Code ${code || ""} created${discountValue ? ` — worth ₦${Number(discountValue).toLocaleString()}` : ""}. Enter it at checkout.`, "success");
+        loadLoyaltyPage();
+      } catch (err) { showNotice("loyaltyNotice", err.message); btn.disabled = false; }
+    });
+  } catch (err) {
+    document.getElementById("loyaltyContent").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   WISHLIST (new section)
+   ============================================================ */
+async function loadWishlistPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Wishlist", "Rooms and events you've saved.")}
+    <div id="wishlistNotice"></div>
+    <div id="wishlistContent"><div class="loading-state">Loading…</div></div>
+  `;
+  await refreshWishlist();
+}
+async function refreshWishlist() {
+  try {
+    const { wishlist } = await guestApi.listWishlist();
+    document.getElementById("wishlistContent").innerHTML = wishlist.length ? `<div class="room-grid">${wishlist.map((w) => `
+      <div class="room-card">
+        ${(w.room && w.room.images && w.room.images[0]) || (w.event && w.event.images && w.event.images[0]) ? `<img class="card-photo" src="${(w.room || w.event).images[0]}" alt="">` : `<div class="card-photo-placeholder"><i class="fa-solid ${w.room ? "fa-bed" : "fa-champagne-glasses"}"></i></div>`}
+        <h3>${w.room ? w.room.name : (w.event ? w.event.name : "Saved item")}</h3>
+        <div class="meta">${w.branch ? w.branch.name : ""}</div>
+        <button class="btn btn-sm btn-outline btn-block" onclick="removeFromWishlist('${w.id}')">Remove</button>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">Nothing saved yet — tap the heart icon on a room or event to save it here.</div>`;
+  } catch (err) {
+    document.getElementById("wishlistContent").innerHTML = "";
+    showNotice("wishlistNotice", err.message);
+  }
+}
+async function addToWishlist(payload, noticeId = "eventsNotice") {
+  try { await guestApi.addWishlistItem(payload); showNotice(noticeId, "Saved to wishlist.", "success"); }
+  catch (err) { showNotice(noticeId, err.message); }
+}
+async function removeFromWishlist(id) {
+  try { await guestApi.removeWishlistItem(id); refreshWishlist(); }
+  catch (err) { showNotice("wishlistNotice", err.message); }
+}
+
+/* ============================================================
+   ORDER (new section) — Room Service / Restaurant / Bar / Laundry /
+   Spa / Event Ticket, one type-dispatched flow matching the real
+   createOrder() controller's payload shape per type.
+   ============================================================ */
+let _orderCart = []; // [{ id, name, price, quantity }] for line-item types
+
+async function loadOrderPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptions = "";
+  try {
+    const { branches } = await guestApi.listBranches();
+    branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  } catch { /* handled below */ }
+
+  container.innerHTML = `
+    ${pageHeader("Order Something", "Room service, restaurant, bar, laundry, spa — order directly, pay through Paystack.")}
+    <div class="form-row" style="margin-bottom:20px;">
+      <div class="form-field"><label>Branch</label><select id="orBranch" onchange="loadOrderCatalog()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
+      <div class="form-field">
+        <label>What would you like to order?</label>
+        <select id="orType" onchange="loadOrderCatalog()">
+          <option value="ROOM_SERVICE">Room service</option>
+          <option value="RESTAURANT">Restaurant (dine-in)</option>
+          <option value="BAR">Bar</option>
+          <option value="LAUNDRY">Laundry</option>
+          <option value="SPA">Spa treatment</option>
+        </select>
+      </div>
+    </div>
+    <div id="orderNotice"></div>
+    <div id="orderCatalog"><div class="loading-state">Pick a branch to see what's available.</div></div>
+    <div id="orderCartSummary"></div>
+  `;
+  _orderCart = [];
+  if (branchOptions) loadOrderCatalog();
+}
+
+async function loadOrderCatalog() {
+  const branchId = document.getElementById("orBranch").value;
+  const type = document.getElementById("orType").value;
+  const catalogEl = document.getElementById("orderCatalog");
+  if (!branchId) return;
+  catalogEl.innerHTML = `<div class="loading-state">Loading…</div>`;
+  _orderCart = [];
+  renderOrderCartSummary();
+
+  try {
+    if (type === "SPA") {
+      const { spaTreatments } = await guestApi.getSpaTreatments(branchId);
+      catalogEl.innerHTML = spaTreatments.length ? `<div class="offering-grid">${spaTreatments.map((t) => `
+        <div class="offering-card">
+          <b>${t.name}</b> — &#8358;${Number(t.price).toLocaleString()} <span style="color:var(--text-muted); font-size:0.8rem;">(${t.durationMinutes} min)</span>
+          <p style="font-size:0.82rem; color:var(--text-muted); margin:6px 0;">${t.description || ""}</p>
+          <button class="btn btn-sm btn-primary" onclick='bookSpaTreatment(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Book slot</button>
+        </div>
+      `).join("")}</div>` : `<div class="empty-state">No spa treatments available at this branch.</div>`;
+      return;
+    }
+
+    let items = [];
+    let priceField = "price", idField = "id";
+    if (type === "ROOM_SERVICE" || type === "RESTAURANT") {
+      const { menuItems } = await guestApi.getMenu(branchId);
+      items = type === "ROOM_SERVICE" ? menuItems.filter((m) => m.availableForRoomService) : menuItems;
+    } else if (type === "BAR") {
+      const { menuItems } = await guestApi.getBarMenu(branchId);
+      items = menuItems;
+    } else if (type === "LAUNDRY") {
+      const { laundryItems } = await guestApi.getLaundryItems(branchId);
+      items = laundryItems;
+    }
+
+    catalogEl.innerHTML = items.length ? `<div class="offering-grid">${items.map((it) => `
+      <div class="offering-card">
+        <b>${it.name}</b> — &#8358;${Number(it.price).toLocaleString()}
+        <p style="font-size:0.82rem; color:var(--text-muted); margin:6px 0;">${it.description || ""}</p>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <input type="number" min="1" value="1" id="qty-${it.id}" style="width:60px; padding:6px; border:1px solid var(--border,#ddd); border-radius:6px;">
+          <button class="btn btn-sm btn-primary" onclick='addToOrderCart(${JSON.stringify(it).replace(/'/g, "&#39;")})'>Add</button>
+        </div>
+      </div>
+    `).join("")}</div>` : `<div class="empty-state">Nothing available here right now.</div>`;
+  } catch (err) {
+    catalogEl.innerHTML = "";
+    showNotice("orderNotice", err.message);
+  }
+}
+
+function addToOrderCart(item) {
+  const qty = Math.max(1, Number(document.getElementById(`qty-${item.id}`).value) || 1);
+  const existing = _orderCart.find((l) => l.id === item.id);
+  if (existing) existing.quantity += qty;
+  else _orderCart.push({ id: item.id, name: item.name, price: Number(item.price), quantity: qty });
+  renderOrderCartSummary();
+}
+function removeFromOrderCart(id) {
+  _orderCart = _orderCart.filter((l) => l.id !== id);
+  renderOrderCartSummary();
+}
+function renderOrderCartSummary() {
+  const el = document.getElementById("orderCartSummary");
+  if (!_orderCart.length) { el.innerHTML = ""; return; }
+  const total = _orderCart.reduce((sum, l) => sum + l.price * l.quantity, 0);
+  el.innerHTML = `
+    <div class="panel" style="margin-top:20px;">
+      <h3 style="margin-bottom:10px;">Your order</h3>
+      ${_orderCart.map((l) => `
+        <div class="summary-line"><span>${l.name} &times; ${l.quantity}</span><span>&#8358;${(l.price * l.quantity).toLocaleString()} <button class="btn btn-sm btn-outline" style="margin-left:8px;" onclick="removeFromOrderCart('${l.id}')">&times;</button></span></div>
+      `).join("")}
+      <div class="summary-line total"><span>Total</span><span>&#8358;${total.toLocaleString()}</span></div>
+      <button class="btn btn-primary btn-block" style="margin-top:10px;" id="orSubmitBtn" onclick="submitOrder()">Place order &amp; pay</button>
+    </div>
+  `;
+}
+
+async function submitOrder() {
+  const branchId = document.getElementById("orBranch").value;
+  const type = document.getElementById("orType").value;
+  const btn = document.getElementById("orSubmitBtn");
+  if (btn) { btn.disabled = true; btn.textContent = "Processing…"; }
+  try {
+    const lineField = type === "LAUNDRY" ? "laundryItemId" : "menuItemId";
+    const lines = _orderCart.map((l) => ({ [lineField]: l.id, quantity: l.quantity }));
+    const { order } = await guestApi.createOrder(branchId, {
+      type, lines,
+      guest: getGuest() ? undefined : undefined, // logged-in guest — backend uses the token
+    });
+    const { authorizationUrl } = await guestApi.initiateOrderPayment(branchId, order.id, window.location.origin + window.location.pathname);
+    if (authorizationUrl) {
+      window.location.href = authorizationUrl;
+    } else {
+      _orderCart = [];
+      showNotice("orderNotice", "Order placed!", "success");
+      renderOrderCartSummary();
+    }
+  } catch (err) {
+    showNotice("orderNotice", err.message);
+    if (btn) { btn.disabled = false; btn.textContent = "Place order & pay"; }
+  }
+}
+
+function bookSpaTreatment(treatment) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "spaModal";
+  const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>Book — ${treatment.name}</h3>
+      <div id="spaModalNotice"></div>
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">${treatment.durationMinutes} minutes &middot; &#8358;${Number(treatment.price).toLocaleString()}</p>
+      <form id="spaForm">
+        <div class="form-field"><label>Date &amp; time</label><input type="datetime-local" id="spTime" min="${now.toISOString().slice(0,16)}" required></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('spaModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="spSubmitBtn">Book &amp; pay</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById("spaForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const branchId = document.getElementById("orBranch").value;
+    const btn = document.getElementById("spSubmitBtn"); btn.disabled = true;
+    try {
+      const { order } = await guestApi.createOrder(branchId, {
+        type: "SPA", treatmentId: treatment.id, scheduledAt: new Date(document.getElementById("spTime").value).toISOString(),
+      });
+      const { authorizationUrl } = await guestApi.initiateOrderPayment(branchId, order.id, window.location.origin + window.location.pathname);
+      overlay.remove();
+      if (authorizationUrl) window.location.href = authorizationUrl;
+      else showNotice("orderNotice", "Spa appointment booked!", "success");
+    } catch (err) {
+      document.getElementById("spaModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+      btn.disabled = false;
+    }
+  });
+}
+
+/* ============================================================
+   SUPPORT
+   ============================================================ */
+async function loadSupportPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Support", "Questions about a stay or a booking? We're here to help.")}
+    <div id="supportNotice"></div>
+    <button class="btn btn-primary" style="margin-bottom:18px;" onclick="openNewTicketModal()">New support request</button>
+    <div id="ticketsList"><div class="loading-state">Loading…</div></div>
+  `;
+  await refreshSupportTickets();
+}
+async function refreshSupportTickets() {
+  try {
+    const { tickets } = await guestApi.listMyTickets();
+    window._myTickets = tickets; // so openTicketThread can look up branchId without a re-fetch
+    document.getElementById("ticketsList").innerHTML = tickets.length ? tickets.map((t) => `
+      <div class="panel" style="cursor:pointer;" onclick="openTicketThread('${t.id}')">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <div><b>${t.subject}</b><p style="color:var(--text-muted); font-size:0.8rem; margin-top:2px;">${(t.createdAt||"").slice(0,10)}</p></div>
+          <span class="badge badge-${t.status.toLowerCase()}">${t.status}</span>
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">No support requests yet.</div>`;
+
+    const openCount = tickets.filter((t) => ["OPEN","IN_PROGRESS"].includes(t.status)).length;
+    const badge = document.getElementById("supportNavBadge");
+    if (badge) { badge.textContent = openCount; badge.classList.toggle("visible", openCount > 0); }
+  } catch (err) { document.getElementById("ticketsList").innerHTML = ""; showNotice("supportNotice", err.message); }
+}
+function openNewTicketModal() {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "newTicketModal";
+  overlay.innerHTML = `
+    <div class="modal">
+      <h3>New support request</h3>
+      <div id="newTicketNotice"></div>
+      <form id="newTicketForm">
+        <div class="form-field"><label>Which branch is this about?</label><select id="ntBranch"></select></div>
+        <div class="form-field"><label>Subject</label><input type="text" id="ntSubject" required></div>
+        <div class="form-field"><label>Message</label><textarea id="ntMessage" rows="4" required></textarea></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('newTicketModal').remove()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="ntSubmitBtn">Send</button>
+        </div>
+      </form>
+    </div>`;
+  document.body.appendChild(overlay);
+  guestApi.listBranches().then(({ branches }) => {
+    document.getElementById("ntBranch").innerHTML = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
+  }).catch(() => { document.getElementById("ntBranch").innerHTML = `<option value="">Couldn't load branches</option>`; });
+
+  document.getElementById("newTicketForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("ntSubmitBtn"); btn.disabled = true;
+    try {
+      const branchId = document.getElementById("ntBranch").value;
+      await guestApi.createTicket(branchId, {
+        subject: document.getElementById("ntSubject").value,
+        message: document.getElementById("ntMessage").value,
+      });
+      overlay.remove(); showNotice("supportNotice", "Support request sent.", "success"); refreshSupportTickets();
+    } catch (err) { document.getElementById("newTicketNotice").innerHTML = `<div class="notice error">${err.message}</div>`; }
+    finally { btn.disabled = false; }
+  });
+}
+async function openTicketThread(id) {
+  const summary = (window._myTickets || []).find((t) => t.id === id);
+  const branchId = summary ? summary.branchId : null;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "ticketThreadModal";
+  overlay.innerHTML = `<div class="modal"><div class="loading-state">Loading…</div></div>`;
+  document.body.appendChild(overlay);
+  try {
+    if (!branchId) throw new Error("Couldn't determine which branch this ticket belongs to — please refresh and try again.");
+    const { ticket } = await guestApi.getTicket(branchId, id);
+    overlay.querySelector(".modal").innerHTML = `
+      <h3>${ticket.subject} <span class="badge badge-${ticket.status.toLowerCase()}" style="margin-left:8px;">${ticket.status}</span></h3>
+      <div class="chat-thread">
+        ${(ticket.messages || []).map((m) => `
+          <div class="chat-bubble ${m.senderType === "GUEST" ? "mine" : "theirs"}">
+            ${m.message}
+            <div class="meta">${m.senderType === "GUEST" ? "You" : "Staff"} &middot; ${(m.createdAt||"").replace("T"," ").slice(0,16)}</div>
+          </div>
+        `).join("") || `<p style="color:var(--text-muted); font-size:0.84rem;">No messages yet.</p>`}
+      </div>
+      <form id="replyForm">
+        <div class="form-field"><textarea id="replyMessage" rows="2" placeholder="Write a reply…" required></textarea></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('ticketThreadModal').remove()">Close</button>
+          <button type="submit" class="btn btn-primary" id="replySubmitBtn">Send reply</button>
+        </div>
+      </form>
+    `;
+    document.getElementById("replyForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("replySubmitBtn"); btn.disabled = true;
+      try { await guestApi.replyToTicket(branchId, id, document.getElementById("replyMessage").value); overlay.remove(); refreshSupportTickets(); openTicketThread(id); }
+      catch (err) { alert(err.message); btn.disabled = false; }
+    });
+  } catch (err) {
+    overlay.querySelector(".modal").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   PROFILE
+   ============================================================ */
+async function loadProfilePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Profile", "Your account details.")}
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="details" onclick="switchProfileTab('details')">Details</button>
+      <button class="tab-btn" data-tab="preferences" onclick="switchProfileTab('preferences')">Preferences</button>
+      <button class="tab-btn" data-tab="password" onclick="switchProfileTab('password')">Password</button>
+      <button class="tab-btn" data-tab="security" onclick="switchProfileTab('security')">Security</button>
+    </div>
+    <div id="profileNotice"></div>
+    <div class="panel" id="profilePanel"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { profile } = await guestApi.getProfile();
+    window._guestProfile = profile;
+    renderProfileTab("details");
+  } catch (err) { document.getElementById("profilePanel").innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+function switchProfileTab(tab) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+  renderProfileTab(tab);
+}
+function renderProfileTab(tab) {
+  const p = window._guestProfile || {};
+  const panel = document.getElementById("profilePanel");
+  if (tab === "security") {
+    renderSecurityTab(panel);
+    return;
+  }
+  if (tab === "details") {
+    panel.innerHTML = `
+      <form id="profileForm">
+        <div class="form-row">
+          <div class="form-field"><label>Full name</label><input type="text" id="pfName" value="${p.name || ""}" required></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="pfPhone" value="${p.phone || ""}"></div>
+        </div>
+        <div class="form-field"><label>Email</label><input type="email" id="pfEmail" value="${p.email || ""}" required></div>
+        <button type="submit" class="btn btn-primary" id="pfSubmitBtn">Save changes</button>
+      </form>`;
+    document.getElementById("profileForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("pfSubmitBtn"); btn.disabled = true;
+      try {
+        const { profile } = await guestApi.updateProfile({ name: document.getElementById("pfName").value,
+          phone: document.getElementById("pfPhone").value, email: document.getElementById("pfEmail").value });
+        window._guestProfile = profile;
+        const session = getGuest(); session.name = profile.name; setSession(getToken(), getRefreshToken(), session); renderNav();
+        showNotice("profileNotice", "Profile updated.", "success");
+      } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+    });
+  } else if (tab === "preferences") {
+    panel.innerHTML = `
+      <form id="preferencesForm">
+        <div class="form-field"><label>Dietary notes <span style="color:var(--text-muted); font-weight:400;">(allergies, restrictions)</span></label><textarea id="pfDietary" rows="2">${p.dietaryNotes || ""}</textarea></div>
+        <div class="form-field"><label>Standing requests <span style="color:var(--text-muted); font-weight:400;">(room preferences, anything staff should know ahead of time)</span></label><textarea id="pfRequests" rows="2">${p.specialRequests || ""}</textarea></div>
+        <button type="submit" class="btn btn-primary" id="pefSubmitBtn">Save preferences</button>
+      </form>`;
+    document.getElementById("preferencesForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("pefSubmitBtn"); btn.disabled = true;
+      try {
+        const { profile } = await guestApi.updatePreferences({
+          dietaryNotes: document.getElementById("pfDietary").value,
+          specialRequests: document.getElementById("pfRequests").value,
+        });
+        window._guestProfile = { ...window._guestProfile, ...profile };
+        showNotice("profileNotice", "Preferences saved.", "success");
+      } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+    });
+  } else {
+    panel.innerHTML = `
+      <form id="passwordForm">
+        <div class="form-field"><label>Current password</label><input type="password" id="pwCurrent" required></div>
+        <div class="form-field"><label>New password</label><input type="password" id="pwNew" required minlength="8"></div>
+        <button type="submit" class="btn btn-primary" id="pwSubmitBtn">Update password</button>
+      </form>`;
+    document.getElementById("passwordForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("pwSubmitBtn"); btn.disabled = true;
+      try {
+        await guestApi.changePassword({ currentPassword: document.getElementById("pwCurrent").value, newPassword: document.getElementById("pwNew").value });
+        showNotice("profileNotice", "Password updated.", "success");
+        document.getElementById("passwordForm").reset();
+      } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+    });
+  }
+}
+
+function renderSecurityTab(panel) {
+  const guest = getGuest();
+  const enabled = !!guest.twoFactorEnabled;
+  panel.innerHTML = `
+    <h3 style="margin-bottom:14px;">Two-factor authentication</h3>
+    ${enabled ? `
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:14px;">
+        <span class="badge badge-confirmed">Enabled</span> Your account requires a code from your authenticator app at every login.
+      </p>
+      <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+    ` : `
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-bottom:14px;">
+        <span class="badge badge-pending">Disabled</span> Add a second step at login using an authenticator app (Google Authenticator, Authy, 1Password, etc.) — recommended if you save payment details to your account.
+      </p>
+      <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+    `}
+  `;
+  renderTwoFactorModals();
+}
+
+function renderTwoFactorModals() {
+  if (document.getElementById("enable2FAModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this with your authenticator app, then enter the code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); renderProfileTab('security');">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await guestApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("profileNotice", err.message); }
+}
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await guestApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const guest = getGuest(); guest.twoFactorEnabled = true; setSession(getToken(), getRefreshToken(), guest);
+  } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+}
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await guestApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const guest = getGuest(); guest.twoFactorEnabled = false; setSession(getToken(), getRefreshToken(), guest);
+    renderProfileTab("security");
+    showNotice("profileNotice", "2FA turned off.", "success");
+  } catch (err) { showNotice("profileNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   SHARED / BOOT
+   ============================================================ */
+function showNotice(containerId, message, type = "error") {
+  const el = document.getElementById(containerId); if (!el) return;
+  el.innerHTML = `<div class="notice ${type}">${message}</div>`;
+  setTimeout(() => { if (el) el.innerHTML = ""; }, 4500);
+}
+function showAuth() { document.getElementById("authScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
+function showApp() {
+  document.getElementById("authScreen").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  renderNav(); switchPage("search"); refreshSupportBadgeSilently();
+}
+async function refreshSupportBadgeSilently() {
+  try {
+    const { tickets } = await guestApi.listMyTickets();
+    const openCount = tickets.filter((t) => ["OPEN","IN_PROGRESS"].includes(t.status)).length;
+    const badge = document.getElementById("supportNavBadge");
+    if (badge) { badge.textContent = openCount; badge.classList.toggle("visible", openCount > 0); }
+  } catch { /* silent — background badge refresh */ }
+}
+document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showAuth(); });
+document.getElementById("mobileNavToggle").addEventListener("click", () => {
+  const links = document.getElementById("navLinks");
+  links.style.display = links.style.display === "flex" ? "none" : "flex";
+  links.style.cssText += "position:absolute; top:68px; left:0; right:0; background:#14181f; flex-direction:column; padding:8px; z-index:600;";
+});
+
+// Boot
+hydratePlatformName();
+if (getToken() && getGuest()) { showApp(); } else { showAuth(); }
+</script>
+</body>
+</html>

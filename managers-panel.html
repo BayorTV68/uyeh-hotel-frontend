@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manager Panel — Oxygen Hotel</title>
+<meta name="robots" content="noindex, nofollow">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* ============================================================
+   OXYGEN HOTEL — MANAGER PANEL
+   Branch-scoped counterpart to the Director admin dashboard.
+   Same design tokens/theme, no company-wide sections.
+   Single-file SPA: sidebar + topbar shell stay fixed, page
+   content area swapped via JS (switchPage) using innerHTML.
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #14181f; --ink-light: #1c2230; --ivory: #f6f1e7; --panel: #ffffff;
+  --border: #e6e0d2; --border-soft: rgba(20,24,31,0.08);
+  --brass: #b98d45; --brass-dark: #96712f; --teal: #2f5d5a; --danger: #a3392a; --info: #3b6ea5;
+  --text-muted: #6b6355; --text-on-dark: #ede6d6; --text-on-dark-muted: rgba(237,230,214,0.6);
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif; --radius: 8px;
+}
+
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); overflow-x: hidden; font-size: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+a { color: inherit; }
+
+/* LOGIN */
+.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink); }
+.login-card { background: var(--panel); padding: 48px 40px; border-radius: var(--radius); width: 100%; max-width: 380px; }
+.login-card .brand { font-family: var(--font-display); font-size: 1.5rem; margin-bottom: 6px; }
+.login-card .brand span { color: var(--brass); }
+.login-card p.sub { color: var(--text-muted); margin-bottom: 28px; font-size: 0.88rem; }
+
+/* SIDEBAR */
+.sidebar { position: fixed; left: 0; top: 0; height: 100vh; width: 270px; background: var(--ink);
+  border-right: 1px solid rgba(237,230,214,0.08); padding: 26px 0; z-index: 1000; overflow-y: auto; transition: transform 0.3s ease; }
+.sidebar-header { padding: 0 26px 22px; border-bottom: 1px solid rgba(237,230,214,0.08); display: flex; align-items: center; gap: 12px; }
+.logo-icon { width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, var(--brass-dark), var(--brass));
+  display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 1.1rem; }
+.logo-text { font-family: var(--font-display); font-size: 1.2rem; color: var(--text-on-dark); }
+.logo-text span { color: var(--brass); }
+
+.admin-info { padding: 18px 26px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(237,230,214,0.08); }
+.admin-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--teal), #3d7873);
+  display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 0.95rem; flex-shrink: 0; }
+.admin-details .admin-name { color: var(--text-on-dark); font-size: 0.88rem; font-weight: 600; }
+.admin-details .admin-role { color: var(--brass); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1px; }
+.admin-details .admin-branch { color: var(--text-on-dark-muted); font-size: 0.74rem; margin-top: 1px; }
+
+.nav-menu { padding: 14px 0; }
+.nav-item-standalone { padding: 11px 26px; display: flex; align-items: center; gap: 12px; color: var(--text-on-dark-muted);
+  cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; font-size: 0.88rem; font-weight: 500; }
+.nav-item-standalone:hover { background: rgba(185,141,69,0.06); color: var(--text-on-dark); }
+.nav-item-standalone.active { background: rgba(185,141,69,0.1); color: var(--brass); border-left-color: var(--brass); }
+.nav-item-standalone i { width: 18px; text-align: center; }
+.nav-divider { height: 1px; background: rgba(237,230,214,0.08); margin: 10px 26px 10px; }
+
+.nav-group { margin-bottom: 2px; }
+.nav-group-header { padding: 10px 26px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; transition: all 0.15s; }
+.nav-group-header:hover { background: rgba(255,255,255,0.02); }
+.nav-group-header .group-icon { width: 18px; text-align: center; font-size: 0.85rem; color: rgba(185,141,69,0.6); }
+.nav-group-header .group-label { flex: 1; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-on-dark-muted); }
+.nav-group-header .group-chevron { font-size: 0.65rem; color: rgba(237,230,214,0.25); transition: transform 0.2s; }
+.nav-group.open > .nav-group-header .group-chevron { transform: rotate(180deg); color: var(--brass); }
+.nav-group.open > .nav-group-header .group-icon, .nav-group.open > .nav-group-header .group-label { color: var(--brass); }
+.nav-group-header .group-badge { font-size: 0.62rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: rgba(163,57,42,0.25); color: #e08a7a; display: none; }
+.nav-group-header .group-badge.visible { display: inline-block; }
+.nav-group-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
+.nav-group.open > .nav-group-body { max-height: 600px; }
+
+.nav-item { padding: 10px 26px 10px 50px; display: flex; align-items: center; gap: 11px; color: var(--text-on-dark-muted);
+  cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; font-size: 0.84rem; font-weight: 500; position: relative; }
+.nav-item:hover { background: rgba(185,141,69,0.05); color: var(--text-on-dark); }
+.nav-item.active { background: rgba(185,141,69,0.1); color: var(--brass); border-left-color: var(--brass); }
+.nav-item i { width: 16px; text-align: center; font-size: 0.82rem; }
+.nav-item .nav-badge { margin-left: auto; background: rgba(163,57,42,0.25); color: #e08a7a; padding: 1px 7px; border-radius: 9px; font-size: 0.64rem; font-weight: 700; display: none; }
+.nav-item .nav-badge.visible { display: inline-block; }
+
+.sidebar-footer { padding: 16px 26px 0; margin-top: 12px; }
+.logout-link { color: var(--text-on-dark-muted); font-size: 0.82rem; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.logout-link:hover { color: var(--text-on-dark); }
+
+/* MAIN */
+.main-content { margin-left: 270px; min-height: 100vh; }
+.topbar { background: rgba(246,241,231,0.94); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); padding: 16px 36px;
+  display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; gap: 16px; }
+.hamburger-btn { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 6px; }
+.hamburger-btn span { width: 22px; height: 2px; background: var(--ink); border-radius: 2px; }
+.search-bar { flex: 1; max-width: 420px; position: relative; }
+.search-bar input { width: 100%; padding: 10px 16px 10px 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.88rem; font-family: var(--font-body); }
+.search-bar input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+.search-bar i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; }
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+.topbar-btn { width: 40px; height: 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; color: var(--ink); }
+
+.page-content { padding: 30px 36px 60px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.page-title { font-size: 1.5rem; }
+.page-subtitle { color: var(--text-muted); font-size: 0.88rem; margin-top: 4px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+.stat-card b { font-family: var(--font-display); font-size: 1.6rem; display: block; }
+.stat-card span { color: var(--text-muted); font-size: 0.8rem; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; }
+.panel h3 { font-size: 1.05rem; margin-bottom: 14px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+td { padding: 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.badge-active, .badge-paid, .badge-confirmed, .badge-checked_in, .badge-resolved, .badge-available, .badge-create { background: rgba(47,93,90,0.12); color: var(--teal); }
+.badge-inactive, .badge-cancelled, .badge-refunded, .badge-delete { background: rgba(163,57,42,0.1); color: var(--danger); }
+.badge-pending, .badge-open, .badge-maintenance, .badge-update { background: rgba(179,140,43,0.14); color: var(--brass-dark); }
+.badge-in_progress, .badge-cleaning, .badge-occupied { background: rgba(59,110,165,0.12); color: var(--info); }
+
+.btn { font-family: var(--font-body); font-size: 0.84rem; font-weight: 600; padding: 10px 18px; border-radius: var(--radius); border: none; cursor: pointer; transition: opacity 0.15s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+.btn-outline:hover:not(:disabled) { background: var(--ivory); }
+.btn-danger { background: rgba(163,57,42,0.1); color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: rgba(163,57,42,0.18); }
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; margin-right: 6px; }
+
+.loading-state, .empty-state { text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.86rem; }
+.coming-soon { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+.coming-soon i { font-size: 2rem; color: var(--brass); margin-bottom: 12px; display: block; }
+
+.notice { padding: 12px 16px; border-radius: var(--radius); font-size: 0.84rem; margin-bottom: 14px; }
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.2); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--teal); border: 1px solid rgba(47,93,90,0.2); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-field { margin-bottom: 14px; }
+.form-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+.form-field input, .form-field select, .form-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--font-body); font-size: 0.86rem; background: #fff; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+.checkbox-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.checkbox-item { display: flex; align-items: center; gap: 8px; font-size: 0.84rem; font-weight: 400 !important; cursor: pointer; }
+.checkbox-item input { width: auto !important; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(20,24,31,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
+.modal { background: var(--panel); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 1px solid var(--border); }
+.tab-btn { background: none; border: none; padding: 10px 16px; font-family: var(--font-body); font-size: 0.86rem; font-weight: 500; color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.tab-btn:hover { color: var(--ink); }
+.tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
+
+@media (max-width: 900px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { margin-left: 0; }
+  .hamburger-btn { display: flex; }
+  .form-row, .checkbox-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="brand">Oxygen <span>Hotel</span></div>
+    <p class="sub">Manager panel — sign in with your staff account.</p>
+    <div id="loginNotice"></div>
+    <form id="loginForm">
+      <div class="form-field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
+    </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus></div>
+      <button type="submit" class="btn btn-primary" id="twoFactorBtn" style="width:100%; margin-top:6px;">Verify</button>
+      <button type="button" id="twoFactorBackBtn" style="width:100%; margin-top:10px; background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer;">&larr; Back to login</button>
+    </form>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">O</div>
+      <div class="logo-text">Oxygen <span>Hotel</span></div>
+    </div>
+    <div class="admin-info">
+      <div class="admin-avatar" id="adminAvatar">M</div>
+      <div class="admin-details">
+        <div class="admin-name" id="adminName"></div>
+        <div class="admin-role" id="adminRole"></div>
+        <div class="admin-branch" id="adminBranch"></div>
+      </div>
+    </div>
+    <div class="nav-menu" id="navMenu"></div>
+    <div class="sidebar-footer">
+      <div class="logout-link" id="securityBtn" onclick="openSecurityModal()" style="margin-bottom:10px;"><i class="fas fa-shield-halved"></i> Security</div>
+      <div class="logout-link" id="logoutBtn"><i class="fas fa-arrow-right-from-bracket"></i> Log out</div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="topbar">
+      <button class="hamburger-btn" id="hamburgerBtn"><span></span><span></span><span></span></button>
+      <div class="search-bar"><i class="fas fa-magnifying-glass"></i><input type="text" placeholder="Search…" disabled></div>
+      <div class="topbar-actions">
+        <div class="topbar-btn" id="ticketsBellBtn"><i class="fas fa-bell"></i><span class="nav-badge" id="ticketsBellBadge" style="position:absolute; top:2px; right:2px;">0</span></div>
+      </div>
+    </div>
+    <div class="page-content" id="pageContent"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG / SESSION
+   ============================================================ */
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+function getToken() { return localStorage.getItem("mgr_token"); }
+function getStaff() { try { return JSON.parse(localStorage.getItem("mgr_staff")); } catch { return null; } }
+function setSession(token, staff) { localStorage.setItem("mgr_token", token); localStorage.setItem("mgr_staff", JSON.stringify(staff)); }
+function clearSession() { localStorage.removeItem("mgr_token"); localStorage.removeItem("mgr_staff"); }
+function hasPermission(perm) {
+  const s = getStaff();
+  return !!s;
+}
+// This panel is for Manager only
+
+/* ============================================================
+   API
+   ============================================================ */
+async function adminRequest(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}`, ...(options.headers || {}) },
+  });
+  if (res.status === 401) { clearSession(); showLogin(); throw new Error("Session expired"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+// All calls below are branch-scoped server-side to the logged-in staff member's
+// branchId — this panel never sends a branchId, and the backend must ignore one
+// if it's ever present in a payload from this client.
+const managerApi = {
+  setupTwoFactor: () => adminRequest("/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => adminRequest("/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => adminRequest("/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  login: async (email, password) => {
+    const res = await fetch(`${API_BASE}/auth/manager/login`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Login failed");
+    if (data.requires2FA) return data; // { requires2FA: true, tempToken } — caller shows the code-entry screen
+
+    // The bug this was fixing: the backend returns the account under a
+    // `manager` key — never `staff`. Reading the wrong key silently
+    // produced `undefined`, which then got JSON.stringify'd into
+    // localStorage as the literal string "undefined" and broke every
+    // session read after login.
+    if (!data.manager) throw new Error("Unexpected login response — no account data returned");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.manager };
+  },
+
+  verifyTwoFactor: async (tempToken, code) => {
+    const res = await fetch(`${API_BASE}/auth/login/2fa`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempToken, code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Verification failed");
+    if (!data.manager) throw new Error("Unexpected response — no account data returned");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.manager };
+  },
+  getDepartments: () => adminRequest("/manager/departments"),
+
+  getSettings: () => adminRequest("/manager/branch-settings"),
+  updateSettings: (payload) => adminRequest("/manager/branch-settings", { method: "PATCH", body: JSON.stringify(payload) }),
+
+  getReports: () => adminRequest("/manager/reports"),
+
+  // Rooms — Manager can only view and update status/housekeeping now.
+  // Creating, editing, deleting a room, or touching its photos, is
+  // Director-only (see admin-panel.html) — none of those routes are
+  // reachable from this panel anymore, on purpose.
+  listRooms: () => adminRequest("/manager/rooms"),
+  updateRoomStatus: (id, status) => adminRequest(`/manager/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Upcoming Events — draft/submit side. Director approves/rejects from
+  // their own panel.
+  listUpcomingEvents: (status) => adminRequest(`/manager/upcoming-events${status ? `?status=${status}` : ""}`),
+  createUpcomingEvent: (payload) => adminRequest("/manager/upcoming-events", { method: "POST", body: JSON.stringify(payload) }),
+  updateUpcomingEvent: (id, payload) => adminRequest(`/manager/upcoming-events/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  submitUpcomingEvent: (id) => adminRequest(`/manager/upcoming-events/${id}/submit`, { method: "POST" }),
+  deleteUpcomingEvent: (id) => adminRequest(`/manager/upcoming-events/${id}`, { method: "DELETE" }),
+
+  listMenuItems: (category) => adminRequest(`/manager/menu${category ? `?category=${category}` : ""}`),
+  createMenuItem: (payload) => adminRequest("/manager/menu", { method: "POST", body: JSON.stringify(payload) }),
+  updateMenuItem: (id, payload) => adminRequest(`/manager/menu/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  listBookings: (status) => adminRequest(`/manager/bookings${status ? `?status=${status}` : ""}`),
+  updateBookingStatus: (id, status) => adminRequest(`/manager/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  listStaff: () => adminRequest("/manager/staff"),
+  createStaff: (payload) => adminRequest("/manager/staff", { method: "POST", body: JSON.stringify(payload) }),
+  updateStaff: (id, payload) => adminRequest(`/manager/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  listTickets: (status) => adminRequest(`/manager/tickets${status ? `?status=${status}` : ""}`),
+  getTicket: (id) => adminRequest(`/manager/tickets/${id}`),
+  assignTicket: (id) => adminRequest(`/manager/tickets/${id}/assign`, { method: "PATCH" }),
+  replyToTicket: (id, message) => adminRequest(`/manager/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
+  resolveTicket: (id) => adminRequest(`/manager/tickets/${id}/resolve`, { method: "PATCH" }),
+
+  // Stock
+  listStockItems: () => adminRequest("/manager/stock"),
+  createStockItem: (payload) => adminRequest("/manager/stock", { method: "POST", body: JSON.stringify(payload) }),
+  updateStockItem: (id, payload) => adminRequest(`/manager/stock/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteStockItem: (id) => adminRequest(`/manager/stock/${id}`, { method: "DELETE" }),
+
+  // Events
+  listEvents: () => adminRequest("/manager/events"),
+  createEvent: (payload) => adminRequest("/manager/events", { method: "POST", body: JSON.stringify(payload) }),
+  updateEvent: (id, payload) => adminRequest(`/manager/events/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteEvent: (id) => adminRequest(`/manager/events/${id}`, { method: "DELETE" }),
+  uploadEventImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/events/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+  deleteEventImage: (id, imageUrl) => adminRequest(`/manager/events/${id}/images`, { method: "DELETE", body: JSON.stringify({ imageUrl }) }),
+
+  // Laundry & Spa
+  listLaundryItems: () => adminRequest("/manager/laundry-items"),
+  createLaundryItem: (payload) => adminRequest("/manager/laundry-items", { method: "POST", body: JSON.stringify(payload) }),
+  updateLaundryItem: (id, payload) => adminRequest(`/manager/laundry-items/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteLaundryItem: (id) => adminRequest(`/manager/laundry-items/${id}`, { method: "DELETE" }),
+  uploadLaundryItemImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/laundry-items/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+  listSpaTreatments: () => adminRequest("/manager/spa-treatments"),
+  createSpaTreatment: (payload) => adminRequest("/manager/spa-treatments", { method: "POST", body: JSON.stringify(payload) }),
+  updateSpaTreatment: (id, payload) => adminRequest(`/manager/spa-treatments/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteSpaTreatment: (id) => adminRequest(`/manager/spa-treatments/${id}`, { method: "DELETE" }),
+  uploadSpaTreatmentImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/spa-treatments/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+
+  // Branch Profile — READ ONLY. See patch-01 backend section 4.
+  getBranchProfile: () => adminRequest("/manager/branch-profile"),
+
+  // Reviews
+  listReviews: (status) => adminRequest(`/manager/reviews${status ? `?status=${status}` : ""}`),
+  moderateReview: (id, status) => adminRequest(`/manager/reviews/${id}/moderate`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  replyToReview: (id, reply) => adminRequest(`/manager/reviews/${id}/reply`, { method: "POST", body: JSON.stringify({ reply }) }),
+
+  // Promo codes
+  listPromoCodes: () => adminRequest("/manager/promo-codes"),
+  createPromoCode: (payload) => adminRequest("/manager/promo-codes", { method: "POST", body: JSON.stringify(payload) }),
+  updatePromoCode: (id, payload) => adminRequest(`/manager/promo-codes/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  // Guest lookup
+  guestLookup: (query) => adminRequest(`/manager/guest-lookup?query=${encodeURIComponent(query)}`),
+  listConciergeRequests: (status) => adminRequest(`/manager/concierge-requests${status ? `?status=${status}` : ""}`),
+  updateConciergeRequest: (id, payload) => adminRequest(`/manager/concierge-requests/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  adjustLoyalty: (payload) => adminRequest("/manager/loyalty/adjust", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Orders
+  listOrders: (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return adminRequest(`/manager/orders${params.toString() ? `?${params}` : ""}`);
+  },
+  updateOrderStatus: (id, status) => adminRequest(`/manager/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Group bookings
+  listGroupBookings: () => adminRequest("/manager/group-bookings"),
+  createGroupBooking: (payload) => adminRequest("/manager/group-bookings", { method: "POST", body: JSON.stringify(payload) }),
+  listBlogPosts: () => adminRequest("/manager/blog"),
+  createBlogPost: (payload) => adminRequest("/manager/blog", { method: "POST", body: JSON.stringify(payload) }),
+  updateBlogPost: (id, payload) => adminRequest(`/manager/blog/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBlogPost: (id) => adminRequest(`/manager/blog/${id}`, { method: "DELETE" }),
+
+  // Newsletter — draft/edit/submit only. Sending itself is a Director
+  // action from the main admin dashboard once submitted.
+  listNewsletterCampaigns: () => adminRequest("/manager/newsletter/campaigns"),
+  createNewsletterCampaign: (payload) => adminRequest("/manager/newsletter/campaigns", { method: "POST", body: JSON.stringify(payload) }),
+  updateNewsletterCampaign: (id, payload) => adminRequest(`/manager/newsletter/campaigns/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  submitNewsletterCampaign: (id) => adminRequest(`/manager/newsletter/campaigns/${id}/submit`, { method: "POST" }),
+
+  // Transactions
+  listTransactions: (filters = {}) => {
+    const params = new URLSearchParams(filters);
+    return adminRequest(`/manager/transactions${params.toString() ? `?${params}` : ""}`);
+  },
+  getTransaction: (id) => adminRequest(`/manager/transactions/${id}`),
+  recordPayment: (payload) => adminRequest("/manager/transactions", { method: "POST", body: JSON.stringify(payload) }),
+  // No refundTransaction here — refunds are Director-only now (server-enforced),
+  // this panel doesn't offer the action at all rather than show one that'd 403.
+  getInvoiceUrl: (id) => `${API_BASE}/manager/transactions/${id}/invoice?token=${getToken()}`,
+
+  // Blog
+  listBlogPosts: () => adminRequest("/manager/blog"),
+  createBlogPost: (payload) => adminRequest("/manager/blog", { method: "POST", body: JSON.stringify(payload) }),
+  updateBlogPost: (id, payload) => adminRequest(`/manager/blog/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteBlogPost: (id) => adminRequest(`/manager/blog/${id}`, { method: "DELETE" }),
+  uploadBlogImage: (id, file) => {
+    const formData = new FormData(); formData.append("image", file);
+    return fetch(`${API_BASE}/manager/blog/${id}/image`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
+  },
+};
+
+/* ============================================================
+   NAV CONFIG — branch-scoped only, no Company/Site-Settings/Audit/Analytics
+   ============================================================ */
+const NAV_GROUPS = [
+  {
+    id: "operations", label: "Operations", icon: "fa-th-large",
+    items: [
+      { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
+      { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
+      { page: "laundry", label: "Laundry", icon: "fa-shirt", permission: "manage_laundry" },
+      { page: "spa", label: "Spa", icon: "fa-spa", permission: "manage_spa" },
+      { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
+      { page: "groupbookings", label: "Group Bookings", icon: "fa-people-group", permission: "manage_bookings" },
+      { page: "orders", label: "Orders", icon: "fa-bell-concierge", permission: "manage_bookings" },
+      { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
+      { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
+      { page: "upcomingevents", label: "Upcoming Events", icon: "fa-calendar-star" },
+    ],
+  },
+  {
+    id: "finance", label: "Finance", icon: "fa-sack-dollar",
+    items: [{ page: "transactions", label: "Transactions", icon: "fa-receipt", permission: "manage_payments" }],
+  },
+  {
+    id: "marketing", label: "Marketing", icon: "fa-bullhorn",
+    items: [
+      { page: "blog", label: "Blog", icon: "fa-newspaper", permission: "manage_blog" },
+      { page: "newsletter", label: "Newsletter", icon: "fa-envelope-open-text", permission: "manage_newsletter" },
+      { page: "reviews", label: "Reviews", icon: "fa-star", permission: "manage_reviews" },
+      { page: "promocodes", label: "Promo Codes", icon: "fa-tags", permission: "manage_promos" },
+    ],
+  },
+  {
+    id: "people", label: "People", icon: "fa-users",
+    items: [
+      { page: "staff", label: "Staff", icon: "fa-user-tie", permission: "manage_staff" },
+      { page: "guestlookup", label: "Guest Lookup", icon: "fa-magnifying-glass-location", permission: "manage_security" },
+    ],
+  },
+  {
+    id: "support", label: "Guest Support", icon: "fa-headset",
+    items: [
+      { page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" },
+      { page: "concierge", label: "Concierge Requests", icon: "fa-concierge-bell", permission: "manage_concierge" },
+    ],
+  },
+  {
+    id: "reports", label: "Reports", icon: "fa-chart-line",
+    items: [{ page: "reports", label: "Branch Reports", icon: "fa-chart-line", permission: "view_reports" }],
+  },
+];
+const SETTINGS_ITEM = { page: "settings", label: "Branch Settings", icon: "fa-gear", permission: "manage_settings" };
+
+function renderSidebar() {
+  const staff = getStaff();
+  if (!staff) return;
+
+  document.getElementById("adminAvatar").textContent = staff.name.charAt(0).toUpperCase();
+  document.getElementById("adminName").textContent = staff.name;
+  document.getElementById("adminRole").textContent = staff.title || staff.role;
+  document.getElementById("adminBranch").textContent = staff.branchName || "";
+
+  const groupsHtml = NAV_GROUPS.map((group) => {
+    const visibleItems = group.items; // Manager sees every item — no permission filtering for this panel.
+    if (!visibleItems.length) return "";
+    return `
+      <div class="nav-group open" data-group="${group.id}">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <i class="fas ${group.icon} group-icon"></i>
+          <span class="group-label">${group.label}</span>
+          <i class="fas fa-chevron-down group-chevron"></i>
+        </div>
+        <div class="nav-group-body">
+          ${visibleItems.map((item) => `
+            <div class="nav-item" data-page="${item.page}" onclick="switchPage('${item.page}')">
+              <i class="fas ${item.icon}"></i><span>${item.label}</span>
+              ${item.badgeId ? `<span class="nav-badge" id="${item.badgeId}">0</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  const settingsVisible = true; // Manager always has access to their own branch settings.
+
+  document.getElementById("navMenu").innerHTML = `
+    <div class="nav-item-standalone active" data-page="dashboard" onclick="switchPage('dashboard')">
+      <i class="fas fa-house"></i><span>Dashboard</span>
+    </div>
+    <div class="nav-divider"></div>
+    ${groupsHtml}
+    ${settingsVisible ? `
+      <div class="nav-divider"></div>
+      <div class="nav-item-standalone" data-page="branchprofile" onclick="switchPage('branchprofile')">
+        <i class="fas fa-building"></i><span>Branch Profile</span>
+      </div>
+      <div class="nav-item-standalone" data-page="settings" onclick="switchPage('settings')">
+        <i class="fas ${SETTINGS_ITEM.icon}"></i><span>${SETTINGS_ITEM.label}</span>
+      </div>
+    ` : ""}
+  `;
+}
+function toggleNavGroup(headerEl) { headerEl.parentElement.classList.toggle("open"); }
+function setActiveNav(page) { document.querySelectorAll(".nav-item, .nav-item-standalone").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page)); }
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+const PAGE_LOADERS = {
+  dashboard: loadDashboardPage,
+  branchprofile: loadBranchProfilePage,
+  rooms: loadRoomsPage,
+  menu: loadMenuPage,
+  laundry: loadLaundryPage,
+  spa: loadSpaPage,
+  bookings: loadBookingsPage,
+  groupbookings: loadGroupBookingsPage,
+  orders: loadOrdersPage,
+  stock: loadStockPage,
+  events: loadEventsPage,
+  upcomingevents: loadUpcomingEventsPage,
+  transactions: loadTransactionsPage,
+  blog: loadBlogPage,
+  newsletter: loadNewsletterPage,
+  reviews: loadReviewsPage,
+  promocodes: loadPromoCodesPage,
+  staff: loadStaffPage,
+  guestlookup: loadGuestLookupPage,
+  concierge: loadConciergePage,
+  tickets: loadTicketsPage,
+  reports: loadReportsPage,
+  settings: loadSettingsPage,
+};
+
+function switchPage(page) {
+  setActiveNav(page);
+  const loader = PAGE_LOADERS[page];
+  const container = document.getElementById("pageContent");
+  if (!loader) { container.innerHTML = `<div class="empty-state">Unknown page.</div>`; return; }
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  loader();
+  if (window.innerWidth <= 900) document.getElementById("sidebar").classList.remove("open");
+}
+function loadComingSoon(title, description) {
+  document.getElementById("pageContent").innerHTML = `
+    <div class="page-header"><div><h1 class="page-title">${title}</h1></div></div>
+    <div class="panel"><div class="coming-soon"><i class="fas fa-hammer"></i><p><b>${title} isn't built yet.</b></p><p style="margin-top:6px;">${description}</p></div></div>
+  `;
+}
+function pageHeader(title, subtitle, actionHtml = "") {
+  return `<div class="page-header"><div><h1 class="page-title">${title}</h1>${subtitle ? `<p class="page-subtitle">${subtitle}</p>` : ""}</div>${actionHtml}</div>`;
+}
+
+/* ============================================================
+   DASHBOARD — this branch only
+   ============================================================ */
+async function loadDashboardPage() {
+  const staff = getStaff();
+  const container = document.getElementById("pageContent");
+  const cards = [];
+  let bookingsPanel = "", ticketsPanel = "";
+
+  try {
+    if (hasPermission("manage_bookings")) {
+      const { bookings } = await managerApi.listBookings();
+      const upcoming = bookings.filter((b) => ["PENDING", "CONFIRMED"].includes(b.status));
+      cards.push({ label: "Upcoming bookings", value: upcoming.length });
+      if (bookings.length) {
+        bookingsPanel = `
+          <div class="panel"><h3>Recent bookings</h3>
+            <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
+              <tbody>${bookings.slice(0, 6).map((b) => `
+                <tr><td>${b.guest.name}</td><td>${b.room.name} — ${b.room.roomNumber}</td>
+                <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
+                <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+    if (hasPermission("manage_rooms")) {
+      const { rooms } = await managerApi.listRooms();
+      cards.push({ label: "Total rooms", value: rooms.length });
+    }
+    if (hasPermission("handle_tickets")) {
+      const { tickets } = await managerApi.listTickets("OPEN");
+      cards.push({ label: "Open tickets", value: tickets.length });
+      if (tickets.length) {
+        ticketsPanel = `
+          <div class="panel"><h3>Open guest tickets</h3>
+            <table><thead><tr><th>Subject</th><th>Guest</th><th>Priority</th><th>Status</th></tr></thead>
+              <tbody>${tickets.slice(0, 6).map((t) => `
+                <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
+                <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+    if (hasPermission("manage_staff")) {
+      const { staff: staffList } = await managerApi.listStaff();
+      cards.push({ label: "Branch staff", value: staffList.filter((s) => s.isActive).length });
+    }
+    if (hasPermission("view_reports")) {
+      const { report } = await managerApi.getReports();
+      cards.push({ label: "Revenue this month", value: `\u20a6${Number(report?.revenueThisMonth || 0).toLocaleString()}` });
+    }
+
+    container.innerHTML = `
+      ${pageHeader("Overview", staff.branchName ? `What's happening at ${staff.branchName} right now.` : "A quick look at what's happening right now.")}
+      <div class="stats-grid">
+        ${cards.length ? cards.map((c) => `<div class="stat-card"><b>${c.value}</b><span>${c.label}</span></div>`).join("")
+          : `<div class="empty-state">Your account doesn't have access to any dashboard sections yet — ask your Director to grant permissions.</div>`}
+      </div>
+      ${bookingsPanel}${ticketsPanel}
+    `;
+  } catch (err) {
+    container.innerHTML = `${pageHeader("Overview")}<div class="empty-state">Couldn't load your overview (${err.message}).</div>`;
+  }
+}
+
+/* ============================================================
+   ROOMS — read-only for Manager now. A Director builds and prices every
+   room (name, price, photos, room number, floor) in their own panel;
+   Manager can only see the list and flip status (Active/Maintenance/
+   Inactive). Housekeeping status is handled on its own page below —
+   see loadHousekeepingPage.
+   ============================================================ */
+async function loadRoomsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Rooms", "Rooms are built and priced by your Director. You can view them and change status here.")}
+    <div id="roomsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th></th><th>Room #</th><th>Name</th><th>Price</th><th>Floor</th><th>Status</th></tr></thead>
+        <tbody id="roomsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshRooms();
+}
+
+async function refreshRooms() {
+  try {
+    const { rooms } = await managerApi.listRooms();
+    document.getElementById("roomsBody").innerHTML = rooms.length ? rooms.map((r) => `
+      <tr>
+        <td>${r.images && r.images[0] ? `<img src="${r.images[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;">` : ""}</td>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>&#8358;${Number(r.basePrice).toLocaleString()}</td>
+        <td>${r.floor || "—"}</td>
+        <td>
+          <select onchange="changeRoomStatus('${r.id}', this.value)">
+            <option value="ACTIVE" ${r.status === "ACTIVE" ? "selected" : ""}>Active</option>
+            <option value="MAINTENANCE" ${r.status === "MAINTENANCE" ? "selected" : ""}>Maintenance</option>
+            <option value="INACTIVE" ${r.status === "INACTIVE" ? "selected" : ""}>Inactive</option>
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No rooms yet — ask your Director to add some.</td></tr>`;
+  } catch (err) { showNotice("roomsNotice", err.message); }
+}
+
+async function changeRoomStatus(id, status) {
+  try {
+    await managerApi.updateRoomStatus(id, status);
+    showNotice("roomsNotice", "Room status updated.", "success");
+  } catch (err) {
+    showNotice("roomsNotice", err.message);
+    refreshRooms();
+  }
+}
+
+/* ============================================================
+   BRANCH PROFILE — read-only. Shows the Manager their branch's
+   policies, brand, and payout connection status. No edit controls
+   exist on this page on purpose — those live only in the Director
+   panel (see patch-03-director-panel.md).
+   ============================================================ */
+async function loadBranchProfilePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Branch Profile", "Policies and brand set by your Director. Read-only.")}
+    <div id="branchProfileContent"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { branch, companyPolicies, brand } = await managerApi.getBranchProfile();
+    document.getElementById("branchProfileContent").innerHTML = `
+      <div class="panel">
+        <h3>${branch.name}</h3>
+        <p class="muted">${branch.address || ""}${branch.city ? `, ${branch.city}` : ""}${branch.state ? `, ${branch.state}` : ""}</p>
+        <div class="stats-grid" style="margin-top:14px;">
+          <div class="stat-card"><b>${companyPolicies.checkInTime}</b><span>Check-in time</span></div>
+          <div class="stat-card"><b>${companyPolicies.checkOutTime}</b><span>Check-out time</span></div>
+          <div class="stat-card"><b>${companyPolicies.baseCurrency}</b><span>Currency</span></div>
+          <div class="stat-card"><b>${companyPolicies.taxRatePercent}%</b><span>Tax rate</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Cancellation policy</h3>
+        <p>${companyPolicies.cancellationPolicy || "No cancellation policy has been set by your Director yet."}</p>
+      </div>
+      <div class="panel">
+        <h3>Payout account</h3>
+        <p>
+          ${branch.payoutConnected
+            ? `<span class="badge badge-active">Connected</span> — settling to ${branch.payoutBankName || "a bank account on file"}.`
+            : `<span class="badge badge-inactive">Not connected</span> — this branch's guest payments settle to the company account until your Director sets one up.`}
+        </p>
+        <p class="muted" style="font-size:0.82rem;">Payout account details are managed by your Director only, for security. Contact them if this needs to change.</p>
+      </div>
+      <div class="panel">
+        <h3>Brand</h3>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <div style="width:28px;height:28px;border-radius:6px;background:${brand.primaryColor};" title="Primary"></div>
+          <div style="width:28px;height:28px;border-radius:6px;background:${brand.secondaryColor};" title="Secondary"></div>
+          <div style="width:28px;height:28px;border-radius:6px;background:${brand.accentColor};" title="Accent"></div>
+          <span class="muted" style="font-size:0.82rem;">Set platform-wide by your Director.</span>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    document.getElementById("branchProfileContent").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   MENU — food & drink (this branch).
+   ============================================================ */
+const MENU_CATEGORY_LABELS = { FOOD: "Food", DRINK: "Drink" };
+
+async function loadMenuPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Menu", "Food & drink priced for your branch.", `<button class="btn btn-primary" onclick="openMenuItemModal()">Add item</button>`)}
+    <div id="menuNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="menuBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="menuItemModal" style="display:none;">
+      <div class="modal">
+        <h3 id="menuItemModalTitle">Add item</h3>
+        <form id="menuItemForm">
+          <input type="hidden" id="miId">
+          <div class="form-field"><label>Name</label><input type="text" id="miName" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Category</label>
+              <select id="miCategory" required><option value="FOOD">Food</option><option value="DRINK">Drink</option></select>
+            </div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="miPrice" min="0" step="1" required></div>
+          </div>
+          <div class="form-field"><label>Description</label><textarea id="miDescription" rows="2"></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeMenuItemModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="miSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("menuItemForm").addEventListener("submit", submitMenuItemForm);
+  refreshMenuTable();
+}
+async function refreshMenuTable() {
+  try {
+    const { menuItems } = await managerApi.listMenuItems();
+    document.getElementById("menuBody").innerHTML = menuItems.length ? menuItems.map((m) => `
+      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td><td>&#8358;${Number(m.price).toLocaleString()}</td>
+      <td><span class="badge badge-${m.isAvailable ? "active" : "inactive"}">${m.isAvailable ? "Available" : "Unavailable"}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick='openMenuItemModal(${JSON.stringify(m).replace(/'/g, "&#39;")})'>Edit</button>
+      <button class="btn btn-sm btn-outline" onclick="toggleMenuItemAvailable('${m.id}', ${m.isAvailable})">${m.isAvailable ? "Deactivate" : "Activate"}</button></td></tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No items yet.</td></tr>`;
+  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openMenuItemModal(m) {
+  document.getElementById("menuItemModalTitle").textContent = m ? "Edit item" : "Add item";
+  document.getElementById("menuItemForm").reset();
+  document.getElementById("miId").value = m ? m.id : "";
+  if (m) {
+    document.getElementById("miName").value = m.name; document.getElementById("miCategory").value = m.category;
+    document.getElementById("miPrice").value = m.price; document.getElementById("miDescription").value = m.description || "";
+  }
+  document.getElementById("menuItemModal").style.display = "flex";
+}
+function closeMenuItemModal() { document.getElementById("menuItemModal").style.display = "none"; }
+async function submitMenuItemForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("miSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("miId").value;
+    const payload = { name: document.getElementById("miName").value, category: document.getElementById("miCategory").value,
+      price: Number(document.getElementById("miPrice").value), description: document.getElementById("miDescription").value || undefined };
+    if (id) { await managerApi.updateMenuItem(id, payload); showNotice("menuNotice", "Item updated.", "success"); }
+    else { await managerApi.createMenuItem(payload); showNotice("menuNotice", "Item added.", "success"); }
+    closeMenuItemModal(); refreshMenuTable();
+  } catch (err) { showNotice("menuNotice", err.message); } finally { btn.disabled = false; }
+}
+async function toggleMenuItemAvailable(id, currentlyAvailable) {
+  try { await managerApi.updateMenuItem(id, { isAvailable: !currentlyAvailable }); refreshMenuTable(); }
+  catch (err) { showNotice("menuNotice", err.message); }
+}
+
+/* ============================================================
+   LAUNDRY
+   ============================================================ */
+async function loadLaundryPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Laundry", "Wash, press, and dry-clean price list for your branch.", `<button class="btn btn-primary" onclick="openLaundryItemModal()">Add item</button>`)}
+    <div id="laundryNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Photo</th><th>Item</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
+        <tbody id="laundryBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="laundryItemModal" style="display:none;">
+      <div class="modal">
+        <h3 id="laundryItemModalTitle">Add item</h3>
+        <form id="laundryItemForm">
+          <input type="hidden" id="lId">
+          <div class="form-field"><label>Item name</label><input type="text" id="lName" placeholder="e.g. Shirt — wash & press" required></div>
+          <div class="form-field"><label>Description</label><textarea id="lDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="lPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Turnaround (hours)</label><input type="number" id="lTurnaround" min="1" step="1" value="24"></div>
+          </div>
+          <div class="form-field" id="lImageField" style="display:none;">
+            <label>Photo</label>
+            <input type="file" id="lImageInput" accept="image/*">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeLaundryItemModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="lSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("laundryItemForm").addEventListener("submit", submitLaundryItemForm);
+  refreshLaundryTable();
+}
+
+async function refreshLaundryTable() {
+  try {
+    const { laundryItems } = await managerApi.listLaundryItems();
+    document.getElementById("laundryBody").innerHTML = laundryItems.length ? laundryItems.map((l) => `
+      <tr>
+        <td>${l.image ? `<img src="${l.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
+        <td>${l.name}${l.description ? `<div class="muted" style="font-size:0.78rem;">${l.description}</div>` : ""}</td>
+        <td>&#8358;${Number(l.price).toLocaleString()}</td>
+        <td>${l.turnaroundHours}h</td>
+        <td><span class="badge badge-${l.isAvailable ? "active" : "inactive"}">${l.isAvailable ? "Available" : "Hidden"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openLaundryItemModal(${JSON.stringify(l).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleLaundryAvailable('${l.id}', ${l.isAvailable})">${l.isAvailable ? "Hide" : "Show"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No laundry items yet — add your price list above.</td></tr>`;
+  } catch (err) {
+    document.getElementById("laundryBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openLaundryItemModal(item) {
+  document.getElementById("laundryItemModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("laundryItemForm").reset();
+  document.getElementById("lId").value = item ? item.id : "";
+  document.getElementById("lImageField").style.display = item ? "block" : "none";
+  if (item) {
+    document.getElementById("lName").value = item.name;
+    document.getElementById("lDescription").value = item.description || "";
+    document.getElementById("lPrice").value = item.price;
+    document.getElementById("lTurnaround").value = item.turnaroundHours;
+  }
+  document.getElementById("laundryItemModal").style.display = "flex";
+}
+function closeLaundryItemModal() { document.getElementById("laundryItemModal").style.display = "none"; }
+
+async function submitLaundryItemForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("lSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("lId").value;
+    const payload = {
+      name: document.getElementById("lName").value,
+      description: document.getElementById("lDescription").value || undefined,
+      price: Number(document.getElementById("lPrice").value),
+      turnaroundHours: Number(document.getElementById("lTurnaround").value) || 24,
+    };
+    let savedId = id;
+    if (id) { await managerApi.updateLaundryItem(id, payload); showNotice("laundryNotice", "Item updated.", "success"); }
+    else { const { laundryItem } = await managerApi.createLaundryItem(payload); savedId = laundryItem.id; showNotice("laundryNotice", "Item added.", "success"); }
+
+    const file = document.getElementById("lImageInput").files[0];
+    if (file && savedId) await managerApi.uploadLaundryItemImage(savedId, file);
+
+    closeLaundryItemModal(); refreshLaundryTable();
+  } catch (err) { showNotice("laundryNotice", err.message); } finally { btn.disabled = false; }
+}
+
+async function toggleLaundryAvailable(id, currentlyAvailable) {
+  try { await managerApi.updateLaundryItem(id, { isAvailable: !currentlyAvailable }); refreshLaundryTable(); }
+  catch (err) { showNotice("laundryNotice", err.message); }
+}
+
+/* ============================================================
+   SPA
+   ============================================================ */
+async function loadSpaPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Spa", "Treatments guests can book for their stay.", `<button class="btn btn-primary" onclick="openSpaTreatmentModal()">Add treatment</button>`)}
+    <div id="spaNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Photo</th><th>Treatment</th><th>Duration</th><th>Price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="spaBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="spaTreatmentModal" style="display:none;">
+      <div class="modal">
+        <h3 id="spaTreatmentModalTitle">Add treatment</h3>
+        <form id="spaTreatmentForm">
+          <input type="hidden" id="spId">
+          <div class="form-field"><label>Treatment name</label><input type="text" id="spName" placeholder="e.g. Deep Tissue Massage" required></div>
+          <div class="form-field"><label>Description</label><textarea id="spDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Duration (minutes)</label><input type="number" id="spDuration" min="5" step="5" required></div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="spPrice" min="0" step="1" required></div>
+          </div>
+          <div class="form-field" id="spImageField" style="display:none;">
+            <label>Photo</label>
+            <input type="file" id="spImageInput" accept="image/*">
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeSpaTreatmentModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="spSubmitBtn">Save treatment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("spaTreatmentForm").addEventListener("submit", submitSpaTreatmentForm);
+  refreshSpaTable();
+}
+
+async function refreshSpaTable() {
+  try {
+    const { spaTreatments } = await managerApi.listSpaTreatments();
+    document.getElementById("spaBody").innerHTML = spaTreatments.length ? spaTreatments.map((t) => `
+      <tr>
+        <td>${t.image ? `<img src="${t.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
+        <td>${t.name}${t.description ? `<div class="muted" style="font-size:0.78rem;">${t.description}</div>` : ""}</td>
+        <td>${t.durationMinutes} min</td>
+        <td>&#8358;${Number(t.price).toLocaleString()}</td>
+        <td><span class="badge badge-${t.isAvailable ? "active" : "inactive"}">${t.isAvailable ? "Available" : "Hidden"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openSpaTreatmentModal(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleSpaAvailable('${t.id}', ${t.isAvailable})">${t.isAvailable ? "Hide" : "Show"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No spa treatments yet — add your first one above.</td></tr>`;
+  } catch (err) {
+    document.getElementById("spaBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+function openSpaTreatmentModal(t) {
+  document.getElementById("spaTreatmentModalTitle").textContent = t ? "Edit treatment" : "Add treatment";
+  document.getElementById("spaTreatmentForm").reset();
+  document.getElementById("spId").value = t ? t.id : "";
+  document.getElementById("spImageField").style.display = t ? "block" : "none";
+  if (t) {
+    document.getElementById("spName").value = t.name;
+    document.getElementById("spDescription").value = t.description || "";
+    document.getElementById("spDuration").value = t.durationMinutes;
+    document.getElementById("spPrice").value = t.price;
+  }
+  document.getElementById("spaTreatmentModal").style.display = "flex";
+}
+function closeSpaTreatmentModal() { document.getElementById("spaTreatmentModal").style.display = "none"; }
+
+async function submitSpaTreatmentForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("spSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("spId").value;
+    const payload = {
+      name: document.getElementById("spName").value,
+      description: document.getElementById("spDescription").value || undefined,
+      durationMinutes: Number(document.getElementById("spDuration").value),
+      price: Number(document.getElementById("spPrice").value),
+    };
+    let savedId = id;
+    if (id) { await managerApi.updateSpaTreatment(id, payload); showNotice("spaNotice", "Treatment updated.", "success"); }
+    else { const { spaTreatment } = await managerApi.createSpaTreatment(payload); savedId = spaTreatment.id; showNotice("spaNotice", "Treatment added.", "success"); }
+
+    const file = document.getElementById("spImageInput").files[0];
+    if (file && savedId) await managerApi.uploadSpaTreatmentImage(savedId, file);
+
+    closeSpaTreatmentModal(); refreshSpaTable();
+  } catch (err) { showNotice("spaNotice", err.message); } finally { btn.disabled = false; }
+}
+
+async function toggleSpaAvailable(id, currentlyAvailable) {
+  try { await managerApi.updateSpaTreatment(id, { isAvailable: !currentlyAvailable }); refreshSpaTable(); }
+  catch (err) { showNotice("spaNotice", err.message); }
+}
+
+/* ============================================================
+   BOOKINGS
+   ============================================================ */
+async function loadBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Bookings", "Confirm, check in, check out, or cancel.")}
+    <div id="bookingsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th></th></tr></thead>
+        <tbody id="bookingsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshBookingsTable();
+}
+async function refreshBookingsTable() {
+  const NEXT_STATUS = { PENDING: "CONFIRMED", CONFIRMED: "CHECKED_IN", CHECKED_IN: "CHECKED_OUT" };
+  try {
+    const { bookings } = await managerApi.listBookings();
+    document.getElementById("bookingsBody").innerHTML = bookings.length ? bookings.map((b) => `
+      <tr><td>${b.guest.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${b.guest.email}</span></td>
+      <td>${b.room.name} — ${b.room.roomNumber}</td>
+      <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
+      <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
+      <td>${NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceBooking('${b.id}','CANCELLED')">Cancel</button>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No bookings yet.</td></tr>`;
+  } catch (err) { document.getElementById("bookingsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+async function advanceBooking(id, status) {
+  try { await managerApi.updateBookingStatus(id, status); refreshBookingsTable(); }
+  catch (err) { showNotice("bookingsNotice", err.message); }
+}
+
+/* ============================================================
+   STAFF — this branch only. Manager cannot appoint a Manager
+   or set/see a branch selector; server must reject either if sent.
+   ============================================================ */
+// manage_staff and manage_newsletter are deliberately absent — neither can
+// ever be delegated to a Staff account (server-enforced, not just hidden
+// here). A Manager holds both automatically; Staff never can.
+const ALL_PERMISSIONS = [
+  ["manage_rooms", "Manage rooms"], ["manage_bookings", "Manage bookings"], ["manage_stock", "Manage stock"],
+  ["manage_events", "Manage events"], ["manage_menu", "Manage menu"], ["manage_laundry", "Manage laundry"],
+  ["manage_spa", "Manage spa"], ["handle_tickets", "Handle tickets"], ["manage_reviews", "Manage reviews"],
+  ["manage_promos", "Manage promo codes"], ["manage_security", "Guest verification (security)"],
+  ["manage_settings", "Branch settings"], ["view_reports", "View reports"],
+  ["manage_payments", "Record payments"], ["manage_blog", "Manage blog"],
+];
+
+async function loadStaffPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Staff", "Manage who has access at your branch, and to what.", `<button class="btn btn-primary" onclick="openStaffModal()">New staff account</button>`)}
+    <div id="staffNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Name</th><th>Title</th><th>Department</th><th>Permissions</th><th>Status</th><th></th></tr></thead>
+        <tbody id="staffBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="editStaffModal" style="display:none;">
+      <div class="modal">
+        <h3>Edit permissions</h3>
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;" id="esStaffLabel"></p>
+        <form id="editStaffForm">
+          <input type="hidden" id="esId">
+          <div class="form-row">
+            <div class="form-field"><label>Job title</label><input type="text" id="esTitle"></div>
+            <div class="form-field"><label>Department</label><select id="esDepartment"><option value="">— None —</option></select></div>
+          </div>
+          <div class="form-field">
+            <label>Permissions</label>
+            <div class="checkbox-grid" id="esPermissionsGrid"></div>
+            <p style="color:var(--text-muted); font-size:0.78rem; margin-top:8px;">Activating/deactivating this account requires a Director — ask them from the main admin dashboard.</p>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeEditStaffModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="esSubmitBtn">Save changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div class="modal-overlay" id="staffModal" style="display:none;">
+      <div class="modal">
+        <h3>New staff account</h3>
+        <form id="staffForm">
+          <div class="form-row">
+            <div class="form-field"><label>Full name</label><input type="text" id="sName" required></div>
+            <div class="form-field"><label>Email</label><input type="email" id="sEmail" required></div>
+          </div>
+          <div class="form-field"><label>Temporary password</label><input type="text" id="sPassword" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Job title <span style="color:var(--text-muted); font-weight:400;">(free text)</span></label>
+              <input type="text" id="sTitle" placeholder="e.g. Front Desk Receptionist"></div>
+            <div class="form-field"><label>Department <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+              <select id="sDepartment"><option value="">— None —</option></select></div>
+          </div>
+          <div class="form-field">
+            <label>Permissions</label>
+            <div class="checkbox-grid" id="sPermissionsGrid"></div>
+            <p style="color:var(--text-muted); font-size:0.78rem; margin-top:8px;">Staff management and newsletter authorship stay Manager-only — refunds also always require Director approval, even for staff with "Record payments."</p>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeStaffModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="sSubmitBtn">Create account</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("sPermissionsGrid").innerHTML = ALL_PERMISSIONS.map(([value, label]) =>
+    `<label class="checkbox-item"><input type="checkbox" value="${value}"> ${label}</label>`).join("");
+  try {
+    const { departments } = await managerApi.getDepartments();
+    const select = document.getElementById("sDepartment");
+    select.innerHTML += Object.keys(departments).map((d) => `<option value="${d}">${d}</option>`).join("");
+  } catch { /* department list is optional — form still works without it */ }
+  document.getElementById("staffForm").addEventListener("submit", submitStaffForm);
+  document.getElementById("editStaffForm").addEventListener("submit", submitEditStaffForm);
+  refreshStaffTable();
+}
+async function refreshStaffTable() {
+  try {
+    const { staff } = await managerApi.listStaff();
+    window._staffCache = staff;
+    document.getElementById("staffBody").innerHTML = staff.map((s) => `
+      <tr><td>${s.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${s.email}</span></td>
+      <td>${s.roleTitle || "—"}</td><td>${s.department || "—"}</td><td>${(s.permissions || []).length ? s.permissions.join(", ") : "—"}</td>
+      <td><span class="badge badge-${s.isActive ? "active" : "inactive"}">${s.isActive ? "Active" : "Inactive"}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick="openEditPermissionsModal('${s.id}')">Edit permissions</button></td></tr>
+    `).join("");
+  } catch (err) { document.getElementById("staffBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+// Activating/deactivating a staff account requires Director approval — not
+// something this panel can do. Removed the toggle rather than leave a
+// button that always 403s; a Director does this from the admin dashboard.
+async function openEditPermissionsModal(id) {
+  const s = (window._staffCache || []).find((x) => x.id === id);
+  if (!s) return;
+  document.getElementById("esId").value = s.id;
+  document.getElementById("esStaffLabel").textContent = `${s.name} — ${s.email}`;
+  document.getElementById("esTitle").value = s.roleTitle || "";
+  document.getElementById("esPermissionsGrid").innerHTML = ALL_PERMISSIONS.map(([value, label]) =>
+    `<label class="checkbox-item"><input type="checkbox" value="${value}" ${(s.permissions || []).includes(value) ? "checked" : ""}> ${label}</label>`).join("");
+  const deptSelect = document.getElementById("esDepartment");
+  deptSelect.innerHTML = `<option value="">— None —</option>`;
+  try {
+    const { departments } = await managerApi.getDepartments();
+    deptSelect.innerHTML += Object.keys(departments).map((d) => `<option value="${d}" ${d === s.department ? "selected" : ""}>${d}</option>`).join("");
+  } catch { /* optional */ }
+  document.getElementById("editStaffModal").style.display = "flex";
+}
+function closeEditStaffModal() { document.getElementById("editStaffModal").style.display = "none"; }
+async function submitEditStaffForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("esSubmitBtn"); btn.disabled = true;
+  try {
+    const permissions = Array.from(document.querySelectorAll("#esPermissionsGrid input:checked")).map((el) => el.value);
+    const id = document.getElementById("esId").value;
+    await managerApi.updateStaff(id, {
+      roleTitle: document.getElementById("esTitle").value || undefined,
+      department: document.getElementById("esDepartment").value || undefined,
+      permissions,
+    });
+    closeEditStaffModal(); showNotice("staffNotice", "Permissions updated.", "success"); refreshStaffTable();
+  } catch (err) { showNotice("staffNotice", err.message); } finally { btn.disabled = false; }
+}
+function openStaffModal() { document.getElementById("staffModal").style.display = "flex"; }
+function closeStaffModal() { document.getElementById("staffModal").style.display = "none"; }
+async function submitStaffForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("sSubmitBtn"); btn.disabled = true;
+  try {
+    const permissions = Array.from(document.querySelectorAll('#sPermissionsGrid input:checked')).map((el) => el.value);
+    // branchId is intentionally omitted — the backend derives it from the
+    // logged-in manager's own branchId and ignores any client-supplied value.
+    const payload = { name: document.getElementById("sName").value, email: document.getElementById("sEmail").value,
+      password: document.getElementById("sPassword").value,
+      roleTitle: document.getElementById("sTitle").value || undefined,
+      department: document.getElementById("sDepartment").value || undefined, permissions };
+    await managerApi.createStaff(payload);
+    closeStaffModal(); showNotice("staffNotice", "Staff account created.", "success"); refreshStaffTable();
+  } catch (err) { showNotice("staffNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   TICKETS
+   ============================================================ */
+async function loadTicketsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Guest Tickets", "Support requests from guests at your branch.")}
+    <div id="ticketsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Subject</th><th>Guest</th><th>Priority</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ticketsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshTicketsTable();
+}
+async function refreshTicketsTable() {
+  try {
+    const { tickets } = await managerApi.listTickets();
+    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => `
+      <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
+      <td>${t.assignedStaff ? t.assignedStaff.name : "—"}</td><td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+      <td>${!t.assignedStaff ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
+      ${t.status !== "RESOLVED" ? `<button class="btn btn-sm btn-outline" onclick="resolveTicketRow('${t.id}')">Resolve</button>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
+
+    const openCount = tickets.filter((t) => ["OPEN", "IN_PROGRESS"].includes(t.status)).length;
+    const bellBadge = document.getElementById("ticketsBellBadge");
+    const navBadge = document.getElementById("ticketsNavBadge");
+    [bellBadge, navBadge].forEach((el) => { if (!el) return; el.textContent = openCount; el.style.display = openCount ? "flex" : "none"; el.classList.toggle("visible", openCount > 0); });
+  } catch (err) { document.getElementById("ticketsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+async function claimTicket(id) { try { await managerApi.assignTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
+async function resolveTicketRow(id) { try { await managerApi.resolveTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
+
+/* ============================================================
+   REPORTS — read-only branch snapshot (view_reports)
+   ============================================================ */
+async function loadReportsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Branch Reports", "A snapshot of this branch's activity.")}
+    <div id="reportsNotice"></div>
+    <div class="stats-grid" id="reportsStatCards"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { report } = await managerApi.getReports();
+    document.getElementById("reportsStatCards").innerHTML = `
+      <div class="stat-card"><b>${report.roomCount}</b><span>Rooms</span></div>
+      <div class="stat-card"><b>${report.activeBookings}</b><span>Active bookings</span></div>
+      <div class="stat-card"><b>${report.bookingsThisMonth}</b><span>Bookings this month</span></div>
+      <div class="stat-card"><b>&#8358;${Number(report.revenueThisMonth).toLocaleString()}</b><span>Revenue this month</span></div>
+      <div class="stat-card"><b>${report.openTickets}</b><span>Open tickets</span></div>
+    `;
+  } catch (err) { showNotice("reportsNotice", err.message); }
+}
+
+/* ============================================================
+   TRANSACTIONS — record payments, issue refunds, print invoices
+   (manage_payments)
+   ============================================================ */
+const TXN_SOURCE_LABELS = { booking: "Room booking", food: "Food", drink: "Drink", service: "Service", event: "Event" };
+const TXN_METHOD_LABELS = { CASH: "Cash", CARD: "Card", TRANSFER: "Transfer", PAYSTACK: "Paystack", FLUTTERWAVE: "Flutterwave" };
+const NEWSLETTER_STATUS_LABELS = {
+  DRAFT: "Draft", PENDING_APPROVAL: "Awaiting Director approval",
+  SENDING: "Sending…", SENT: "Sent", FAILED: "Failed to send",
+};
+
+async function loadTransactionsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Transactions", "Every payment, receipt, and refund at your branch.",
+      `<button class="btn btn-primary" onclick="openPaymentModal()">Record payment</button>`)}
+    <div id="transactionsNotice"></div>
+    <div class="stats-grid" id="txnStatCards"></div>
+    <div class="panel" style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-field" style="margin:0; min-width:160px;"><label>Source</label>
+        <select id="txnSourceFilter" onchange="refreshTransactionsTable()">
+          <option value="">All sources</option>
+          <option value="booking">Room booking</option><option value="food">Food</option>
+          <option value="drink">Drink</option><option value="service">Service</option><option value="event">Event</option>
+        </select>
+      </div>
+      <div class="form-field" style="margin:0; min-width:160px;"><label>Status</label>
+        <select id="txnStatusFilter" onchange="refreshTransactionsTable()">
+          <option value="">All statuses</option><option value="PENDING">Pending</option>
+          <option value="PAID">Paid</option><option value="REFUNDED">Refunded</option>
+        </select>
+      </div>
+    </div>
+    <div class="panel">
+      <table><thead><tr><th>Date</th><th>Guest</th><th>Source</th><th>Method</th><th>Amount</th><th>Status</th><th></th></tr></thead>
+        <tbody id="transactionsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="paymentModal" style="display:none;">
+      <div class="modal">
+        <h3>Record payment</h3>
+        <form id="paymentForm">
+          <div class="form-field"><label>Booking ID <span style="color:var(--text-muted); font-weight:400;">(leave blank for a non-booking sale)</span></label><input type="text" id="pyBookingId"></div>
+          <div class="form-field"><label>Guest name</label><input type="text" id="pyGuestName" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Source</label>
+              <select id="pySource" required><option value="booking">Room booking</option><option value="food">Food</option><option value="drink">Drink</option><option value="service">Service</option><option value="event">Event</option></select>
+            </div>
+            <div class="form-field"><label>Amount (&#8358;)</label><input type="number" id="pyAmount" min="0" step="1" required></div>
+          </div>
+          <div class="form-field"><label>Method</label>
+            <select id="pyMethod" required><option value="CASH">Cash</option><option value="CARD">Card</option><option value="TRANSFER">Transfer</option><option value="PAYSTACK">Paystack</option><option value="FLUTTERWAVE">Flutterwave</option></select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closePaymentModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pySubmitBtn">Record</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+  `;
+  document.getElementById("paymentForm").addEventListener("submit", submitPaymentForm);
+  refreshTransactionsTable();
+}
+async function refreshTransactionsTable() {
+  try {
+    const filters = {};
+    const sourceEl = document.getElementById("txnSourceFilter");
+    const statusEl = document.getElementById("txnStatusFilter");
+    if (sourceEl && sourceEl.value) filters.source = sourceEl.value;
+    if (statusEl && statusEl.value) filters.status = statusEl.value;
+
+    const { transactions, totals } = await managerApi.listTransactions(filters);
+    document.getElementById("txnStatCards").innerHTML = `
+      <div class="stat-card"><b>&#8358;${Number(totals?.paid || 0).toLocaleString()}</b><span>Total paid</span></div>
+      <div class="stat-card"><b>&#8358;${Number(totals?.pending || 0).toLocaleString()}</b><span>Pending</span></div>
+      <div class="stat-card"><b>&#8358;${Number(totals?.refunded || 0).toLocaleString()}</b><span>Refunded</span></div>
+      <div class="stat-card"><b>${transactions.length}</b><span>Transactions</span></div>
+    `;
+    document.getElementById("transactionsBody").innerHTML = transactions.length ? transactions.map((t) => `
+      <tr><td>${(t.createdAt || "").slice(0,10)}</td><td>${t.guestName}</td><td>${TXN_SOURCE_LABELS[t.source] || t.source}</td>
+      <td>${TXN_METHOD_LABELS[t.method] || t.method}</td><td>&#8358;${Number(t.amount).toLocaleString()}</td>
+      <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+      <td><a class="btn btn-sm btn-outline" href="${managerApi.getInvoiceUrl(t.id)}" target="_blank" rel="noopener">Invoice</a>
+      ${t.status === "PAID" ? `<span style="color:var(--text-muted); font-size:0.76rem; margin-left:6px;">Refund via Director</span>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="7" class="empty-state">No transactions yet.</td></tr>`;
+  } catch (err) { document.getElementById("transactionsBody").innerHTML = `<tr><td colspan="7" class="empty-state">${err.message}</td></tr>`; }
+}
+function openPaymentModal() { document.getElementById("paymentModal").style.display = "flex"; }
+function closePaymentModal() { document.getElementById("paymentModal").style.display = "none"; document.getElementById("paymentForm").reset(); }
+async function submitPaymentForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("pySubmitBtn"); btn.disabled = true;
+  try {
+    await managerApi.recordPayment({
+      bookingId: document.getElementById("pyBookingId").value || undefined,
+      guestName: document.getElementById("pyGuestName").value,
+      source: document.getElementById("pySource").value,
+      amount: Number(document.getElementById("pyAmount").value),
+      method: document.getElementById("pyMethod").value,
+    });
+    closePaymentModal(); showNotice("transactionsNotice", "Payment recorded.", "success"); refreshTransactionsTable();
+  } catch (err) { showNotice("transactionsNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   STOCK — inventory with low-stock flags (manage_stock)
+   ============================================================ */
+async function loadStockPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Stock", "Inventory for your branch, with low-stock flags.",
+      `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
+    <div id="stockNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Quantity</th><th>Unit</th><th>Low-stock threshold</th><th></th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="stockModal" style="display:none;">
+      <div class="modal">
+        <h3 id="stockModalTitle">Add item</h3>
+        <form id="stockForm">
+          <input type="hidden" id="stId">
+          <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
+          <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
+            <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stThreshold" min="0" step="1" value="5" required></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("stockForm").addEventListener("submit", submitStockForm);
+  refreshStockTable();
+}
+async function refreshStockTable() {
+  try {
+    const { stockItems } = await managerApi.listStockItems();
+    document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
+      <tr>
+        <td>${s.name}</td>
+        <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-pending">${s.quantity}</span>` : s.quantity}</td>
+        <td>${s.unit}</td>
+        <td>${s.lowStockThreshold}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteStockRow('${s.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No stock items yet.</td></tr>`;
+  } catch (err) { document.getElementById("stockBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openStockModal(item) {
+  document.getElementById("stockModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("stockForm").reset();
+  document.getElementById("stId").value = item ? item.id : "";
+  if (item) {
+    document.getElementById("stName").value = item.name;
+    document.getElementById("stUnit").value = item.unit;
+    document.getElementById("stQuantity").value = item.quantity;
+    document.getElementById("stThreshold").value = item.lowStockThreshold;
+  }
+  document.getElementById("stockModal").style.display = "flex";
+}
+function closeStockModal() { document.getElementById("stockModal").style.display = "none"; }
+async function submitStockForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("stSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("stId").value;
+    const payload = {
+      name: document.getElementById("stName").value,
+      unit: document.getElementById("stUnit").value || "unit",
+      quantity: Number(document.getElementById("stQuantity").value),
+      lowStockThreshold: Number(document.getElementById("stThreshold").value),
+    };
+    if (id) await managerApi.updateStockItem(id, payload); else await managerApi.createStockItem(payload);
+    closeStockModal(); showNotice("stockNotice", "Saved.", "success"); refreshStockTable();
+  } catch (err) { showNotice("stockNotice", err.message); } finally { btn.disabled = false; }
+}
+async function deleteStockRow(id) {
+  if (!confirm("Delete this stock item?")) return;
+  try { await managerApi.deleteStockItem(id); refreshStockTable(); } catch (err) { showNotice("stockNotice", err.message); }
+}
+
+/* ============================================================
+   EVENTS (manage_events)
+   ============================================================ */
+async function loadEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Events", "Publish upcoming events guests can book into.",
+      `<button class="btn btn-primary" onclick="openEventModal()">Add event</button>`)}
+    <div id="eventsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Starts</th><th>Ends</th><th>Capacity</th><th>Price</th><th></th></tr></thead>
+        <tbody id="eventsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="eventModal" style="display:none;">
+      <div class="modal">
+        <h3 id="eventModalTitle">Add event</h3>
+        <form id="eventForm">
+          <input type="hidden" id="evId">
+          <div class="form-field"><label>Name</label><input type="text" id="evName" required></div>
+          <div class="form-field"><label>Description</label><textarea id="evDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Starts at</label><input type="datetime-local" id="evStartsAt" required></div>
+            <div class="form-field"><label>Ends at</label><input type="datetime-local" id="evEndsAt"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Capacity</label><input type="number" id="evCapacity" min="0" step="1"></div>
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="evPrice" min="0" step="1"></div>
+          </div>
+          <div class="form-field" id="evImageField" style="display:none;">
+            <label>Cover image</label>
+            <input type="file" id="evImageFile" accept="image/*">
+            <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="uploadEventImageNow()">Upload</button>
+            <div id="evImagePreview" style="margin-top:10px;"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="evSubmitBtn">Save event</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("eventForm").addEventListener("submit", submitEventForm);
+  await refreshEventsTable();
+}
+async function refreshEventsTable() {
+  try {
+    const { events } = await managerApi.listEvents();
+    document.getElementById("eventsBody").innerHTML = events.length ? events.map((ev) => `
+      <tr>
+        <td>${ev.name}</td>
+        <td>${new Date(ev.startsAt).toLocaleString()}</td>
+        <td>${ev.endsAt ? new Date(ev.endsAt).toLocaleString() : "—"}</td>
+        <td>${ev.capacity ?? "—"}</td>
+        <td>${ev.price ? `&#8358;${Number(ev.price).toLocaleString()}` : "Free"}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openEventModal(${JSON.stringify(ev).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteEventRow('${ev.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No events yet.</td></tr>`;
+  } catch (err) { document.getElementById("eventsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+function toLocalDatetimeInput(iso) { if (!iso) return ""; const d = new Date(iso); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 16); }
+function openEventModal(ev) {
+  document.getElementById("eventModalTitle").textContent = ev ? "Edit event" : "Add event";
+  document.getElementById("eventForm").reset();
+  document.getElementById("evId").value = ev ? ev.id : "";
+  document.getElementById("evImageField").style.display = ev ? "" : "none";
+  document.getElementById("evImagePreview").innerHTML = "";
+  if (ev) {
+    document.getElementById("evName").value = ev.name;
+    document.getElementById("evDescription").value = ev.description || "";
+    document.getElementById("evStartsAt").value = toLocalDatetimeInput(ev.startsAt);
+    document.getElementById("evEndsAt").value = toLocalDatetimeInput(ev.endsAt);
+    document.getElementById("evCapacity").value = ev.capacity ?? "";
+    document.getElementById("evPrice").value = ev.price ?? "";
+    if (ev.images && ev.images.length) {
+      document.getElementById("evImagePreview").innerHTML = ev.images.map((url) =>
+        `<div style="display:inline-block; margin-right:8px;"><img src="${url}" style="width:70px; height:70px; object-fit:cover; border-radius:6px;"><br><button type="button" class="btn btn-sm btn-danger" style="margin-top:4px;" onclick="deleteEventImageNow('${url}')">Remove</button></div>`
+      ).join("");
+    }
+  }
+  document.getElementById("eventModal").style.display = "flex";
+}
+function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
+async function submitEventForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("evSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("evId").value;
+    const payload = {
+      name: document.getElementById("evName").value,
+      description: document.getElementById("evDescription").value || undefined,
+      startsAt: document.getElementById("evStartsAt").value,
+      endsAt: document.getElementById("evEndsAt").value || undefined,
+      capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
+      price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : undefined,
+    };
+    let savedId = id;
+    if (id) await managerApi.updateEvent(id, payload);
+    else { const { event } = await managerApi.createEvent(payload); savedId = event.id; }
+    closeEventModal(); showNotice("eventsNotice", "Saved. You can now attach a cover image by editing this event.", "success"); refreshEventsTable();
+  } catch (err) { showNotice("eventsNotice", err.message); } finally { btn.disabled = false; }
+}
+async function uploadEventImageNow() {
+  const id = document.getElementById("evId").value;
+  const file = document.getElementById("evImageFile").files[0];
+  if (!id || !file) return;
+  try {
+    await managerApi.uploadEventImage(id, file);
+    showNotice("eventsNotice", "Image uploaded.", "success");
+    const { events } = await managerApi.listEvents();
+    openEventModal(events.find((ev) => ev.id === id));
+  } catch (err) { showNotice("eventsNotice", err.message); }
+}
+async function deleteEventImageNow(imageUrl) {
+  const id = document.getElementById("evId").value;
+  try {
+    await managerApi.deleteEventImage(id, imageUrl);
+    const { events } = await managerApi.listEvents();
+    openEventModal(events.find((ev) => ev.id === id));
+  } catch (err) { showNotice("eventsNotice", err.message); }
+}
+async function deleteEventRow(id) {
+  if (!confirm("Delete this event?")) return;
+  try { await managerApi.deleteEvent(id); refreshEventsTable(); } catch (err) { showNotice("eventsNotice", err.message); }
+}
+
+/* ============================================================
+   UPCOMING EVENTS — hotel-hosted, ticketed events. Distinct from Events
+   above (a guest renting the hall for their OWN function). You draft
+   these here; your Director approves or rejects them from their panel.
+   Once published, guests can buy tickets. You can only edit while a
+   draft is DRAFT or REJECTED — once submitted it's locked until your
+   Director acts on it.
+   ============================================================ */
+const UPCOMING_EVENT_STATUS_LABELS = {
+  DRAFT: "Draft", PENDING_APPROVAL: "Pending approval", PUBLISHED: "Published",
+  REJECTED: "Rejected", CANCELLED: "Cancelled", COMPLETED: "Completed",
+};
+let _cachedUpcomingEvents = [];
+
+async function loadUpcomingEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Upcoming Events", "Hotel-hosted, ticketed events. Draft here, submit for approval, and your Director publishes it.",
+      `<button class="btn btn-primary" onclick="openUpcomingEventModal()">New event</button>`)}
+    <div id="upcomingEventsNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Title</th><th>When</th><th>Capacity</th><th>Ticket price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="upcomingEventsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="upcomingEventModal" style="display:none;">
+      <div class="modal">
+        <h3 id="ueModalTitle">New event</h3>
+        <form id="upcomingEventForm">
+          <input type="hidden" id="ueId">
+          <div class="form-field"><label>Title</label><input type="text" id="ueTitle" required></div>
+          <div class="form-field"><label>Description</label><textarea id="ueDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Starts</label><input type="datetime-local" id="ueStartsAt" required></div>
+            <div class="form-field"><label>Ends <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="datetime-local" id="ueEndsAt"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Capacity <span style="color:var(--text-muted); font-weight:400;">(blank = unlimited)</span></label><input type="number" id="ueCapacity" min="1" step="1"></div>
+            <div class="form-field"><label>Ticket price (&#8358;) <span style="color:var(--text-muted); font-weight:400;">(blank = free)</span></label><input type="number" id="ueTicketPrice" min="0" step="1"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeUpcomingEventModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="ueSubmitBtn">Save draft</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("upcomingEventForm").addEventListener("submit", submitUpcomingEventForm);
+  await refreshUpcomingEvents();
+}
+
+async function refreshUpcomingEvents() {
+  try {
+    const { upcomingEvents } = await managerApi.listUpcomingEvents();
+    _cachedUpcomingEvents = upcomingEvents;
+    document.getElementById("upcomingEventsBody").innerHTML = upcomingEvents.length ? upcomingEvents.map((ue) => `
+      <tr>
+        <td>${ue.title}${ue.rejectionReason ? `<div style="color:var(--text-muted); font-size:0.78rem;">Rejected: ${ue.rejectionReason}</div>` : ""}</td>
+        <td>${new Date(ue.startsAt).toLocaleString()}</td>
+        <td>${ue.capacity ?? "Unlimited"}</td>
+        <td>${ue.ticketPrice ? `&#8358;${Number(ue.ticketPrice).toLocaleString()}` : "Free"}</td>
+        <td><span class="badge badge-${ue.status.toLowerCase()}">${UPCOMING_EVENT_STATUS_LABELS[ue.status] || ue.status}</span></td>
+        <td>
+          ${["DRAFT", "REJECTED"].includes(ue.status) ? `
+            <button class="btn btn-sm btn-outline" onclick='openUpcomingEventModal(${JSON.stringify(ue).replace(/'/g, "&#39;")})'>Edit</button>
+            <button class="btn btn-sm btn-primary" onclick="submitUpcomingEventConfirm('${ue.id}')">Submit</button>
+            <button class="btn btn-sm btn-outline" onclick="deleteUpcomingEventConfirm('${ue.id}')">Delete</button>
+          ` : ""}
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No upcoming events yet — create one above.</td></tr>`;
+  } catch (err) { showNotice("upcomingEventsNotice", err.message); }
+}
+
+function openUpcomingEventModal(ue) {
+  document.getElementById("ueModalTitle").textContent = ue ? "Edit event" : "New event";
+  document.getElementById("upcomingEventForm").reset();
+  document.getElementById("ueId").value = ue ? ue.id : "";
+  if (ue) {
+    document.getElementById("ueTitle").value = ue.title;
+    document.getElementById("ueDescription").value = ue.description || "";
+    document.getElementById("ueStartsAt").value = ue.startsAt ? ue.startsAt.slice(0, 16) : "";
+    document.getElementById("ueEndsAt").value = ue.endsAt ? ue.endsAt.slice(0, 16) : "";
+    document.getElementById("ueCapacity").value = ue.capacity ?? "";
+    document.getElementById("ueTicketPrice").value = ue.ticketPrice ?? "";
+  }
+  document.getElementById("upcomingEventModal").style.display = "flex";
+}
+function closeUpcomingEventModal() { document.getElementById("upcomingEventModal").style.display = "none"; }
+
+async function submitUpcomingEventForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("ueSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("ueId").value;
+    const payload = {
+      title: document.getElementById("ueTitle").value,
+      description: document.getElementById("ueDescription").value || undefined,
+      startsAt: document.getElementById("ueStartsAt").value,
+      endsAt: document.getElementById("ueEndsAt").value || undefined,
+      capacity: document.getElementById("ueCapacity").value ? Number(document.getElementById("ueCapacity").value) : undefined,
+      ticketPrice: document.getElementById("ueTicketPrice").value ? Number(document.getElementById("ueTicketPrice").value) : undefined,
+    };
+    if (id) { await managerApi.updateUpcomingEvent(id, payload); showNotice("upcomingEventsNotice", "Draft updated.", "success"); }
+    else { await managerApi.createUpcomingEvent(payload); showNotice("upcomingEventsNotice", "Draft created.", "success"); }
+    closeUpcomingEventModal();
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitUpcomingEventConfirm(id) {
+  if (!confirm("Submit this event for Director approval? You won't be able to edit it until they act on it.")) return;
+  try {
+    await managerApi.submitUpcomingEvent(id);
+    showNotice("upcomingEventsNotice", "Submitted for approval.", "success");
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+async function deleteUpcomingEventConfirm(id) {
+  if (!confirm("Delete this draft?")) return;
+  try {
+    await managerApi.deleteUpcomingEvent(id);
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+/* ============================================================
+   LAUNDRY (manage_laundry)
+   ============================================================ */
+async function loadLaundryPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Laundry", "Services and pricing for your branch.", `<button class="btn btn-primary" onclick="openLaundryModal()">Add item</button>`)}
+    <div id="laundryNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
+        <tbody id="laundryBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="laundryModal" style="display:none;">
+      <div class="modal">
+        <h3 id="laundryModalTitle">Add item</h3>
+        <form id="laundryForm">
+          <input type="hidden" id="lnId">
+          <div class="form-field"><label>Name</label><input type="text" id="lnName" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="lnPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Turnaround (hours)</label><input type="number" id="lnTurnaround" min="1" value="24"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeLaundryModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="lnSubmitBtn">Save item</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("laundryForm").addEventListener("submit", submitLaundryForm);
+  refreshLaundryTable();
+}
+async function refreshLaundryTable() {
+  try {
+    const { laundryItems } = await managerApi.listLaundryItems();
+    document.getElementById("laundryBody").innerHTML = laundryItems.length ? laundryItems.map((l) => `
+      <tr>
+        <td>${l.name}</td><td>&#8358;${Number(l.price).toLocaleString()}</td><td>${l.turnaroundHours || 24}h</td>
+        <td><span class="badge ${l.isAvailable ? "badge-active" : "badge-inactive"}">${l.isAvailable ? "Active" : "Inactive"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openLaundryModal(${JSON.stringify(l).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleLaundryActive('${l.id}', ${l.isAvailable})">${l.isAvailable ? "Deactivate" : "Activate"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No laundry items yet.</td></tr>`;
+  } catch (err) { document.getElementById("laundryBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openLaundryModal(item) {
+  document.getElementById("laundryModalTitle").textContent = item ? "Edit item" : "Add item";
+  document.getElementById("laundryForm").reset();
+  document.getElementById("lnId").value = item ? item.id : "";
+  if (item) { document.getElementById("lnName").value = item.name; document.getElementById("lnPrice").value = item.price; document.getElementById("lnTurnaround").value = item.turnaroundHours || 24; }
+  document.getElementById("laundryModal").style.display = "flex";
+}
+function closeLaundryModal() { document.getElementById("laundryModal").style.display = "none"; }
+async function submitLaundryForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("lnSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("lnId").value;
+    const payload = { name: document.getElementById("lnName").value, price: Number(document.getElementById("lnPrice").value), turnaroundHours: Number(document.getElementById("lnTurnaround").value) || 24 };
+    if (id) await managerApi.updateLaundryItem(id, payload); else await managerApi.createLaundryItem(payload);
+    closeLaundryModal(); showNotice("laundryNotice", "Saved.", "success"); refreshLaundryTable();
+  } catch (err) { showNotice("laundryNotice", err.message); } finally { btn.disabled = false; }
+}
+async function toggleLaundryActive(id, currentlyActive) {
+  try { await managerApi.updateLaundryItem(id, { isAvailable: !currentlyActive }); refreshLaundryTable(); } catch (err) { showNotice("laundryNotice", err.message); }
+}
+
+/* ============================================================
+   SPA (manage_spa)
+   ============================================================ */
+async function loadSpaPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Spa", "Treatments and pricing for your branch.", `<button class="btn btn-primary" onclick="openSpaModal()">Add treatment</button>`)}
+    <div id="spaNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Price</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+        <tbody id="spaBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="spaModal" style="display:none;">
+      <div class="modal">
+        <h3 id="spaModalTitle">Add treatment</h3>
+        <form id="spaForm">
+          <input type="hidden" id="spId">
+          <div class="form-field"><label>Name</label><input type="text" id="spName" required></div>
+          <div class="form-field"><label>Description</label><textarea id="spDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="spPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Duration (minutes)</label><input type="number" id="spDuration" min="1" value="60"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeSpaModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="spSubmitBtn">Save treatment</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("spaForm").addEventListener("submit", submitSpaForm);
+  refreshSpaTable();
+}
+async function refreshSpaTable() {
+  try {
+    const { spaTreatments } = await managerApi.listSpaTreatments();
+    document.getElementById("spaBody").innerHTML = spaTreatments.length ? spaTreatments.map((s) => `
+      <tr>
+        <td>${s.name}</td><td>&#8358;${Number(s.price).toLocaleString()}</td><td>${s.durationMinutes || 60} min</td>
+        <td><span class="badge ${s.isAvailable ? "badge-active" : "badge-inactive"}">${s.isAvailable ? "Active" : "Inactive"}</span></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openSpaModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="toggleSpaActive('${s.id}', ${s.isAvailable})">${s.isAvailable ? "Deactivate" : "Activate"}</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No treatments yet.</td></tr>`;
+  } catch (err) { document.getElementById("spaBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openSpaModal(item) {
+  document.getElementById("spaModalTitle").textContent = item ? "Edit treatment" : "Add treatment";
+  document.getElementById("spaForm").reset();
+  document.getElementById("spId").value = item ? item.id : "";
+  if (item) { document.getElementById("spName").value = item.name; document.getElementById("spDescription").value = item.description || ""; document.getElementById("spPrice").value = item.price; document.getElementById("spDuration").value = item.durationMinutes || 60; }
+  document.getElementById("spaModal").style.display = "flex";
+}
+function closeSpaModal() { document.getElementById("spaModal").style.display = "none"; }
+async function submitSpaForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("spSubmitBtn"); btn.disabled = true;
+  try {
+    const id = document.getElementById("spId").value;
+    const payload = { name: document.getElementById("spName").value, description: document.getElementById("spDescription").value || undefined, price: Number(document.getElementById("spPrice").value), durationMinutes: Number(document.getElementById("spDuration").value) || 60 };
+    if (id) await managerApi.updateSpaTreatment(id, payload); else await managerApi.createSpaTreatment(payload);
+    closeSpaModal(); showNotice("spaNotice", "Saved.", "success"); refreshSpaTable();
+  } catch (err) { showNotice("spaNotice", err.message); } finally { btn.disabled = false; }
+}
+async function toggleSpaActive(id, currentlyActive) {
+  try { await managerApi.updateSpaTreatment(id, { isAvailable: !currentlyActive }); refreshSpaTable(); } catch (err) { showNotice("spaNotice", err.message); }
+}
+
+/* ============================================================
+   REVIEWS (manage_reviews)
+   ============================================================ */
+async function loadReviewsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Reviews", "Guest reviews awaiting moderation and reply.")}
+    <div id="reviewsNotice"></div>
+    <div class="tabs">
+      <button class="tab-btn active" data-status="PENDING" onclick="switchReviewsTab('PENDING', this)">Pending</button>
+      <button class="tab-btn" data-status="PUBLISHED" onclick="switchReviewsTab('PUBLISHED', this)">Published</button>
+      <button class="tab-btn" data-status="REJECTED" onclick="switchReviewsTab('REJECTED', this)">Rejected</button>
+    </div>
+    <div class="panel" id="reviewsList"><div class="loading-state">Loading…</div></div>
+  `;
+  refreshReviewsList("PENDING");
+}
+function switchReviewsTab(status, btn) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+  btn.classList.add("active");
+  refreshReviewsList(status);
+}
+async function refreshReviewsList(status) {
+  const container = document.getElementById("reviewsList");
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { reviews } = await managerApi.listReviews(status);
+    container.innerHTML = reviews.length ? reviews.map((r) => `
+      <div style="padding:16px 0; border-bottom:1px solid var(--border-soft);">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+          <div>
+            <b>${"&#9733;".repeat(r.ratingValue)}${"&#9734;".repeat(5 - r.ratingValue)}</b>
+            ${r.title ? `<span style="margin-left:8px; font-weight:600;">${r.title}</span>` : ""}
+            <div style="color:var(--text-muted); font-size:0.8rem; margin-top:2px;">${r.guest.name} &middot; ${new Date(r.createdAt).toLocaleDateString()}</div>
+          </div>
+          ${status === "PENDING" ? `
+            <div>
+              <button class="btn btn-sm btn-outline" onclick="moderateReviewRow('${r.id}', 'PUBLISHED')">Approve</button>
+              <button class="btn btn-sm btn-danger" onclick="moderateReviewRow('${r.id}', 'REJECTED')">Reject</button>
+            </div>` : ""}
+        </div>
+        ${r.body ? `<p style="margin-top:10px; font-size:0.88rem;">${r.body}</p>` : ""}
+        ${r.staffReplyBody ? `<div style="margin-top:10px; padding:10px 14px; background:var(--ivory); border-radius:6px; font-size:0.85rem;"><b>Your reply:</b> ${r.staffReplyBody}</div>` :
+          status === "PUBLISHED" ? `
+            <div style="margin-top:10px; display:flex; gap:8px;">
+              <input type="text" id="replyInput-${r.id}" placeholder="Write a reply…" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-size:0.85rem;">
+              <button class="btn btn-sm btn-primary" onclick="replyToReviewRow('${r.id}')">Reply</button>
+            </div>` : ""}
+      </div>
+    `).join("") : `<div class="empty-state">No ${status.toLowerCase()} reviews.</div>`;
+  } catch (err) { container.innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+async function moderateReviewRow(id, status) {
+  try { await managerApi.moderateReview(id, status); showNotice("reviewsNotice", "Updated.", "success"); refreshReviewsList(document.querySelector(".tab-btn.active").dataset.status); }
+  catch (err) { showNotice("reviewsNotice", err.message); }
+}
+async function replyToReviewRow(id) {
+  const input = document.getElementById(`replyInput-${id}`);
+  if (!input.value.trim()) return;
+  try { await managerApi.replyToReview(id, input.value.trim()); refreshReviewsList("PUBLISHED"); }
+  catch (err) { showNotice("reviewsNotice", err.message); }
+}
+
+/* ============================================================
+   PROMO CODES (manage_promos)
+   ============================================================ */
+async function loadPromoCodesPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Promo Codes", "Discount codes guests can apply at checkout.", `<button class="btn btn-primary" onclick="openPromoModal()">New code</button>`)}
+    <div id="promoNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Code</th><th>Discount</th><th>Uses</th><th>Expires</th><th>Status</th><th></th></tr></thead>
+        <tbody id="promoBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="modal-overlay" id="promoModal" style="display:none;">
+      <div class="modal">
+        <h3>New promo code</h3>
+        <form id="promoForm">
+          <div class="form-field"><label>Code</label><input type="text" id="pcCode" required style="text-transform:uppercase;" placeholder="SUMMER25"></div>
+          <div class="form-field"><label>Description</label><input type="text" id="pcDescription"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Discount type</label>
+              <select id="pcDiscountType"><option value="PERCENT">Percent off</option><option value="FIXED">Fixed amount off</option></select>
+            </div>
+            <div class="form-field"><label>Value</label><input type="number" id="pcDiscountValue" min="0" step="0.01" required></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Max uses <span style="color:var(--text-muted); font-weight:400;">(blank = unlimited)</span></label><input type="number" id="pcMaxUses" min="1"></div>
+            <div class="form-field"><label>Per-guest limit</label><input type="number" id="pcPerGuestLimit" min="1" value="1"></div>
+          </div>
+          <div class="form-field"><label>Expires <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="date" id="pcExpiresAt"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closePromoModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="pcSubmitBtn">Create code</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("promoForm").addEventListener("submit", submitPromoForm);
+  refreshPromoTable();
+}
+async function refreshPromoTable() {
+  try {
+    const { promoCodes } = await managerApi.listPromoCodes();
+    document.getElementById("promoBody").innerHTML = promoCodes.length ? promoCodes.map((p) => `
+      <tr>
+        <td><b>${p.code}</b>${p.branchId ? "" : ` <span class="badge badge-active" style="margin-left:6px;">Company-wide</span>`}</td>
+        <td>${p.discountType === "PERCENT" ? `${p.discountValue}%` : `&#8358;${Number(p.discountValue).toLocaleString()}`}</td>
+        <td>${p.usedCount}${p.maxUses ? ` / ${p.maxUses}` : ""}</td>
+        <td>${p.expiresAt ? new Date(p.expiresAt).toLocaleDateString() : "—"}</td>
+        <td><span class="badge ${p.isActive ? "badge-active" : "badge-inactive"}">${p.isActive ? "Active" : "Inactive"}</span></td>
+        <td><button class="btn btn-sm btn-outline" onclick="togglePromoActive('${p.id}', ${p.isActive})">${p.isActive ? "Deactivate" : "Activate"}</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No promo codes yet.</td></tr>`;
+  } catch (err) { document.getElementById("promoBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+function openPromoModal() { document.getElementById("promoForm").reset(); document.getElementById("promoModal").style.display = "flex"; }
+function closePromoModal() { document.getElementById("promoModal").style.display = "none"; }
+async function submitPromoForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("pcSubmitBtn"); btn.disabled = true;
+  try {
+    await managerApi.createPromoCode({
+      code: document.getElementById("pcCode").value,
+      description: document.getElementById("pcDescription").value || undefined,
+      discountType: document.getElementById("pcDiscountType").value,
+      discountValue: Number(document.getElementById("pcDiscountValue").value),
+      maxUses: document.getElementById("pcMaxUses").value ? Number(document.getElementById("pcMaxUses").value) : undefined,
+      perGuestLimit: Number(document.getElementById("pcPerGuestLimit").value) || 1,
+      expiresAt: document.getElementById("pcExpiresAt").value || undefined,
+    });
+    closePromoModal(); showNotice("promoNotice", "Code created.", "success"); refreshPromoTable();
+  } catch (err) { showNotice("promoNotice", err.message); } finally { btn.disabled = false; }
+}
+async function togglePromoActive(id, currentlyActive) {
+  try { await managerApi.updatePromoCode(id, { isActive: !currentlyActive }); refreshPromoTable(); } catch (err) { showNotice("promoNotice", err.message); }
+}
+
+/* ============================================================
+   GUEST LOOKUP (manage_security)
+   Front-desk / security tool: find a guest's active stay by name,
+   phone, or room number — e.g. to verify identity before handing
+   over a room key or discussing a reservation.
+   ============================================================ */
+async function loadGuestLookupPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Guest Lookup", "Verify an active or upcoming stay by name, phone, or room number.")}
+    <div id="guestLookupNotice"></div>
+    <div class="panel">
+      <div class="form-field" style="margin:0; max-width:420px;">
+        <input type="text" id="glQuery" placeholder="Search name, phone, or room…" oninput="debouncedGuestLookup()">
+      </div>
+    </div>
+    <div class="panel" id="guestLookupResults"><div class="empty-state">Start typing to search.</div></div>
+  `;
+}
+let _glTimer = null;
+function debouncedGuestLookup() {
+  clearTimeout(_glTimer);
+  _glTimer = setTimeout(runGuestLookup, 350);
+}
+async function runGuestLookup() {
+  const query = document.getElementById("glQuery").value.trim();
+  const results = document.getElementById("guestLookupResults");
+  if (query.length < 2) { results.innerHTML = `<div class="empty-state">Start typing to search.</div>`; return; }
+  results.innerHTML = `<div class="loading-state">Searching…</div>`;
+  try {
+    const { results: matches } = await managerApi.guestLookup(query);
+    window._glMatches = matches;
+    results.innerHTML = matches.length ? matches.map((m, i) => `
+      <div class="panel" style="margin-bottom:12px;">
+        <div style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+          <div>
+            <b>${m.guestName}</b>
+            <span class="badge" style="margin-left:8px;">${m.guestTier}</span>
+            <div class="muted" style="font-size:0.82rem;">${m.guestPhone || "—"} ${m.guestEmail ? `· ${m.guestEmail}` : ""}</div>
+          </div>
+          <div style="text-align:right;">
+            <span class="badge badge-${(m.status || "").toLowerCase()}">${m.status}</span>
+            <div class="muted" style="font-size:0.82rem;">Room ${m.roomNumber} · ${(m.checkIn||"").slice(0,10)} &rarr; ${(m.checkOut||"").slice(0,10)}</div>
+          </div>
+        </div>
+        ${(m.preferences && Object.keys(m.preferences).length) ? `
+          <div style="margin-top:10px;"><b style="font-size:0.82rem;">Preferences:</b> ${Object.entries(m.preferences).map(([k,v]) => `${k}: ${v}`).join(", ")}</div>
+        ` : ""}
+        ${m.dietaryNotes ? `<div style="margin-top:4px;"><b style="font-size:0.82rem;">Dietary:</b> ${m.dietaryNotes}</div>` : ""}
+        ${m.standingSpecialRequests ? `<div style="margin-top:4px;"><b style="font-size:0.82rem;">Standing notes:</b> ${m.standingSpecialRequests}</div>` : ""}
+        ${m.thisStayRequests ? `<div style="margin-top:4px;"><b style="font-size:0.82rem;">This stay:</b> ${m.thisStayRequests}</div>` : ""}
+        <div style="margin-top:10px; display:flex; align-items:center; gap:8px;">
+          <span class="muted" style="font-size:0.82rem;">${m.loyaltyPoints} points available</span>
+          <button class="btn btn-sm btn-outline" onclick="openLoyaltyAdjustModal(${i})">Adjust points</button>
+        </div>
+      </div>
+    `).join("") : `<div class="empty-state">No matching active or upcoming stays.</div>`;
+  } catch (err) { results.innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+
+function openLoyaltyAdjustModal(index) {
+  const m = window._glMatches[index];
+  const points = prompt(`Adjust loyalty points for ${m.guestName}\n\nCurrent balance: ${m.loyaltyPoints}\n\nEnter points to add (e.g. 500) or remove (e.g. -200):`);
+  if (points === null) return;
+  const amount = parseInt(points, 10);
+  if (!amount || Number.isNaN(amount)) { showNotice("guestLookupNotice", "Enter a non-zero whole number."); return; }
+  const reason = prompt("Reason for this adjustment (required, shown in the guest's loyalty history):");
+  if (!reason || !reason.trim()) { showNotice("guestLookupNotice", "A reason is required."); return; }
+
+  managerApi.adjustLoyalty({ guestId: m.guestId, points: amount, reason: reason.trim() })
+    .then(() => { showNotice("guestLookupNotice", "Loyalty balance updated.", "success"); runGuestLookup(); })
+    .catch((err) => showNotice("guestLookupNotice", err.message));
+}
+
+/* ============================================================
+   CONCIERGE REQUESTS — dinner reservations, transport, in-room
+   setup, and anything else a guest asks for beyond the standard
+   catalog (manage_concierge)
+   ============================================================ */
+const CONCIERGE_STATUS_OPTIONS = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+const CONCIERGE_TYPE_LABELS = {
+  dinner_reservation: "Dinner reservation", transport: "Transport", in_room_setup: "In-room setup",
+};
+
+async function loadConciergePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Concierge Requests", "Everything a guest has asked for, beyond the standard menu.")}
+    <div id="conciergeNotice"></div>
+    <div class="panel" style="display:flex; gap:14px; align-items:flex-end;">
+      <div class="form-field" style="margin:0; min-width:200px;">
+        <label>Status</label>
+        <select id="conciergeStatusFilter" onchange="refreshConciergeTable()">
+          <option value="">All open</option>
+          ${CONCIERGE_STATUS_OPTIONS.map((s) => `<option value="${s}">${s.replace("_", " ")}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Type</th><th>Details</th><th>Requested</th><th>Status</th><th></th></tr></thead>
+        <tbody id="conciergeBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  refreshConciergeTable();
+}
+
+async function refreshConciergeTable() {
+  const status = document.getElementById("conciergeStatusFilter").value;
+  const body = document.getElementById("conciergeBody");
+  try {
+    const { requests } = await managerApi.listConciergeRequests(status);
+    body.innerHTML = requests.length ? requests.map((r) => `
+      <tr>
+        <td>${r.guest?.name || "—"}${r.guest?.phone ? `<div class="muted" style="font-size:0.78rem;">${r.guest.phone}</div>` : ""}</td>
+        <td>${CONCIERGE_TYPE_LABELS[r.type] || r.type}</td>
+        <td>${r.details}</td>
+        <td>${new Date(r.createdAt).toLocaleString()}</td>
+        <td>
+          <select onchange="updateConciergeStatus('${r.id}', this.value)" ${r.status === "COMPLETED" || r.status === "CANCELLED" ? "" : ""}>
+            ${CONCIERGE_STATUS_OPTIONS.map((s) => `<option value="${s}" ${s === r.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
+          </select>
+        </td>
+        <td>${r.status === "PENDING" ? `<button class="btn btn-sm btn-outline" onclick="claimConciergeRequest('${r.id}')">Claim</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No requests${status ? ` with status ${status}` : ""} right now.</td></tr>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+async function updateConciergeStatus(id, status) {
+  try { await managerApi.updateConciergeRequest(id, { status }); showNotice("conciergeNotice", "Status updated.", "success"); refreshConciergeTable(); }
+  catch (err) { showNotice("conciergeNotice", err.message); }
+}
+
+async function claimConciergeRequest(id) {
+  try {
+    const me = getStaff();
+    await managerApi.updateConciergeRequest(id, { status: "IN_PROGRESS", assignedToStaffId: me.id });
+    showNotice("conciergeNotice", "Request claimed.", "success");
+    refreshConciergeTable();
+  } catch (err) { showNotice("conciergeNotice", err.message); }
+}
+
+/* ============================================================
+   ORDERS — room service / restaurant / bar / spa / laundry / event
+   tickets a guest has ordered (manage_bookings)
+   ============================================================ */
+const ORDER_TYPE_LABELS = { ROOM_SERVICE: "Room service", RESTAURANT: "Restaurant", BAR: "Bar", LAUNDRY: "Laundry", SPA: "Spa", EVENT_TICKET: "Event ticket", OTHER: "Other" };
+const ORDER_STATUS_OPTIONS = ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"];
+
+async function loadOrdersPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Orders", "Room service, restaurant, bar, spa, laundry, and event-ticket orders.")}
+    <div id="ordersNotice"></div>
+    <div class="panel" style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="form-field" style="margin:0; min-width:180px;"><label>Status</label>
+        <select id="orderStatusFilter" onchange="refreshOrdersTable()">
+          <option value="">All statuses</option>
+          ${ORDER_STATUS_OPTIONS.map((s) => `<option value="${s}">${s.replace("_", " ")}</option>`).join("")}
+        </select>
+      </div>
+      <div class="form-field" style="margin:0; min-width:180px;"><label>Type</label>
+        <select id="orderTypeFilter" onchange="refreshOrdersTable()">
+          <option value="">All types</option>
+          ${Object.entries(ORDER_TYPE_LABELS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Type</th><th>Items</th><th>Total</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ordersBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  refreshOrdersTable();
+}
+async function refreshOrdersTable() {
+  try {
+    const filters = {};
+    const statusEl = document.getElementById("orderStatusFilter");
+    const typeEl = document.getElementById("orderTypeFilter");
+    if (statusEl.value) filters.status = statusEl.value;
+    if (typeEl.value) filters.type = typeEl.value;
+    const { orders } = await managerApi.listOrders(filters);
+    document.getElementById("ordersBody").innerHTML = orders.length ? orders.map((o) => `
+      <tr>
+        <td>${o.guest?.name || "—"}${o.room ? ` <span style="color:var(--text-muted); font-size:0.78rem;">(Room ${o.room.roomNumber})</span>` : ""}</td>
+        <td>${ORDER_TYPE_LABELS[o.type] || o.type}</td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${(o.lines || []).map((l) => `${l.quantity}x ${l.itemName}`).join(", ") || (o.items ? JSON.stringify(o.items) : "—")}</td>
+        <td>${o.totalAmount ? `&#8358;${Number(o.totalAmount).toLocaleString()}` : "Free"}</td>
+        <td><span class="badge badge-${o.status.toLowerCase()}">${o.status.replace("_", " ")}</span></td>
+        <td>
+          <select onchange="updateOrderStatusRow('${o.id}', this.value)" style="padding:6px 8px; font-size:0.8rem;">
+            ${ORDER_STATUS_OPTIONS.map((s) => `<option value="${s}" ${s === o.status ? "selected" : ""}>${s.replace("_", " ")}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No orders yet.</td></tr>`;
+  } catch (err) { document.getElementById("ordersBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+async function updateOrderStatusRow(id, status) {
+  try { await managerApi.updateOrderStatus(id, status); showNotice("ordersNotice", "Order updated.", "success"); }
+  catch (err) { showNotice("ordersNotice", err.message); refreshOrdersTable(); }
+}
+
+/* ============================================================
+   GROUP BOOKINGS (manage_bookings)
+   ============================================================ */
+async function loadGroupBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Group Bookings", "Multi-room bookings for one contact — events, corporate stays, family blocks.",
+      `<button class="btn btn-primary" onclick="openGroupBookingModal()">New group booking</button>`)}
+    <div id="groupBookingsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Group</th><th>Contact</th><th>Rooms</th><th>Dates</th><th>Status</th></tr></thead>
+        <tbody id="groupBookingsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="groupBookingModal" style="display:none;">
+      <div class="modal">
+        <h3>New group booking</h3>
+        <p style="color:var(--text-muted); font-size:0.82rem; margin-bottom:14px;">Enter room IDs from the Rooms page (comma-separated) — a proper room picker is a quick follow-up if you'd like one.</p>
+        <form id="groupBookingForm">
+          <div class="form-field"><label>Group name</label><input type="text" id="gbGroupName" required placeholder="Smith family reunion"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Check-in</label><input type="date" id="gbCheckIn" required></div>
+            <div class="form-field"><label>Check-out</label><input type="date" id="gbCheckOut" required></div>
+          </div>
+          <div class="form-field"><label>Room IDs <span style="color:var(--text-muted); font-weight:400;">(comma-separated)</span></label><input type="text" id="gbRoomIds" required placeholder="room-id-1, room-id-2"></div>
+          <div class="form-row">
+            <div class="form-field"><label>Contact name</label><input type="text" id="gbGuestName" required></div>
+            <div class="form-field"><label>Contact email</label><input type="email" id="gbGuestEmail" required></div>
+          </div>
+          <div class="form-field"><label>Contact phone</label><input type="text" id="gbGuestPhone"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeGroupBookingModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="gbSubmitBtn">Create booking</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("groupBookingForm").addEventListener("submit", submitGroupBookingForm);
+  refreshGroupBookingsTable();
+}
+async function refreshGroupBookingsTable() {
+  try {
+    const { groupBookings } = await managerApi.listGroupBookings();
+    document.getElementById("groupBookingsBody").innerHTML = groupBookings.length ? groupBookings.map((g) => `
+      <tr>
+        <td>${g.groupName}</td>
+        <td>${g.contactGuest?.name || "—"}</td>
+        <td>${g.bookings.length} room${g.bookings.length === 1 ? "" : "s"}</td>
+        <td>${(g.checkIn || "").slice(0,10)} &rarr; ${(g.checkOut || "").slice(0,10)}</td>
+        <td><span class="badge badge-${g.status.toLowerCase()}">${g.status}</span></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No group bookings yet.</td></tr>`;
+  } catch (err) { document.getElementById("groupBookingsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openGroupBookingModal() { document.getElementById("groupBookingForm").reset(); document.getElementById("groupBookingModal").style.display = "flex"; }
+function closeGroupBookingModal() { document.getElementById("groupBookingModal").style.display = "none"; }
+async function submitGroupBookingForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("gbSubmitBtn"); btn.disabled = true;
+  try {
+    const roomIds = document.getElementById("gbRoomIds").value.split(",").map((s) => s.trim()).filter(Boolean);
+    await managerApi.createGroupBooking({
+      groupName: document.getElementById("gbGroupName").value,
+      checkIn: document.getElementById("gbCheckIn").value,
+      checkOut: document.getElementById("gbCheckOut").value,
+      rooms: roomIds.map((roomId) => ({ roomId })),
+      guest: {
+        name: document.getElementById("gbGuestName").value,
+        email: document.getElementById("gbGuestEmail").value,
+        phone: document.getElementById("gbGuestPhone").value || undefined,
+      },
+    });
+    closeGroupBookingModal(); showNotice("groupBookingsNotice", "Group booking created.", "success"); refreshGroupBookingsTable();
+  } catch (err) { showNotice("groupBookingsNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   SECURITY — 2FA enrollment, opened from the sidebar footer
+   ============================================================ */
+function renderSecurityModalShell() {
+  if (document.getElementById("securityModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="securityModal" style="display:none;">
+      <div class="modal">
+        <h3>Security</h3>
+        <div id="securityNotice"></div>
+        <div id="securityBody"></div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeSecurityModal()">Close</button></div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this with your authenticator app, then enter the code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); renderSecurityBody();">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function openSecurityModal() {
+  renderSecurityModalShell();
+  renderSecurityBody();
+  document.getElementById("securityModal").style.display = "flex";
+}
+function closeSecurityModal() { document.getElementById("securityModal").style.display = "none"; }
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+function renderSecurityBody() {
+  const staff = getStaff();
+  const enabled = !!staff.twoFactorEnabled;
+  document.getElementById("securityBody").innerHTML = enabled ? `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-active">Enabled</span> Your account requires a code from your authenticator app at every login.
+    </p>
+    <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+  ` : `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-inactive">Disabled</span> Add a second step at login using an authenticator app.
+    </p>
+    <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+  `;
+}
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await managerApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("securityNotice", err.message); }
+}
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await managerApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const staff = getStaff(); staff.twoFactorEnabled = true; setSession(getToken(), staff);
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await managerApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const staff = getStaff(); staff.twoFactorEnabled = false; setSession(getToken(), staff);
+    renderSecurityBody();
+    showNotice("securityNotice", "2FA turned off.", "success");
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   BLOG (manage_blog) — always this branch, no company-wide option
+   here (that's the Director's call, from the Director dashboard)
+   ============================================================ */
+async function loadBlogPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Blog", "Posts publish to the public site instantly. Newsletter emails for your posts need Director approval first.",
+      `<button class="btn btn-primary" onclick="openBlogModal()">Write a post</button>`)}
+    <div id="blogNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Title</th><th>Status</th><th>Published</th><th>Newsletter</th><th></th></tr></thead>
+        <tbody id="blogBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="blogModal" style="display:none;">
+      <div class="modal">
+        <h3 id="blogModalTitle">Write a post</h3>
+        <form id="blogForm">
+          <input type="hidden" id="bpId">
+          <div class="form-field"><label>Title</label><input type="text" id="bpTitle" required></div>
+          <div class="form-field"><label>Excerpt</label><textarea id="bpExcerpt" rows="2"></textarea></div>
+          <div class="form-field"><label>Content</label><textarea id="bpContent" rows="8" required></textarea></div>
+          <div class="form-field"><label>Cover image URL</label><input type="text" id="bpCoverImageUrl"></div>
+          <div class="form-field"><label>Tags <span style="color:var(--text-muted); font-weight:400;">(comma-separated)</span></label><input type="text" id="bpTags"></div>
+          <div class="form-field"><label class="checkbox-item"><input type="checkbox" id="bpAutoNewsletter" checked> Email this to newsletter subscribers when published</label></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeBlogModal()">Cancel</button>
+            <button type="button" class="btn btn-outline" id="bpDraftBtn" onclick="submitBlogForm(false)">Save draft</button>
+            <button type="button" class="btn btn-primary" id="bpPublishBtn" onclick="submitBlogForm(true)">Publish</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  refreshBlogTable();
+}
+async function refreshBlogTable() {
+  try {
+    const { posts } = await managerApi.listBlogPosts();
+    document.getElementById("blogBody").innerHTML = posts.length ? posts.map((p) => `
+      <tr>
+        <td>${p.title}</td>
+        <td><span class="badge ${p.status === "PUBLISHED" ? "badge-active" : "badge-pending"}">${p.status === "PUBLISHED" ? "Published" : "Draft"}</span></td>
+        <td>${p.publishedAt ? new Date(p.publishedAt).toLocaleDateString() : "—"}</td>
+        <td>${p.campaign ? NEWSLETTER_STATUS_LABELS[p.campaign.status] || p.campaign.status : (p.autoNewsletter ? "Will queue on publish" : "Off")}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openBlogModal(${JSON.stringify(p).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteBlogPostRow('${p.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No posts yet.</td></tr>`;
+  } catch (err) { document.getElementById("blogBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+function openBlogModal(post) {
+  document.getElementById("blogModalTitle").textContent = post ? "Edit post" : "Write a post";
+  document.getElementById("blogForm").reset();
+  document.getElementById("bpId").value = post ? post.id : "";
+  if (post) {
+    document.getElementById("bpTitle").value = post.title;
+    document.getElementById("bpExcerpt").value = post.excerpt || "";
+    document.getElementById("bpContent").value = post.content;
+    document.getElementById("bpCoverImageUrl").value = post.coverImageUrl || "";
+    document.getElementById("bpTags").value = (post.tags || []).join(", ");
+    document.getElementById("bpAutoNewsletter").checked = post.autoNewsletter;
+    const publishBtn = document.getElementById("bpPublishBtn");
+    if (post.status === "PUBLISHED") { publishBtn.textContent = "Save changes"; document.getElementById("bpDraftBtn").style.display = "none"; }
+    else { publishBtn.textContent = "Publish"; document.getElementById("bpDraftBtn").style.display = ""; }
+  } else {
+    document.getElementById("bpPublishBtn").textContent = "Publish";
+    document.getElementById("bpDraftBtn").style.display = "";
+  }
+  document.getElementById("blogModal").style.display = "flex";
+}
+function closeBlogModal() { document.getElementById("blogModal").style.display = "none"; }
+async function submitBlogForm(publish) {
+  const id = document.getElementById("bpId").value;
+  const tags = document.getElementById("bpTags").value.split(",").map((t) => t.trim()).filter(Boolean);
+  const payload = {
+    title: document.getElementById("bpTitle").value,
+    excerpt: document.getElementById("bpExcerpt").value || undefined,
+    content: document.getElementById("bpContent").value,
+    coverImageUrl: document.getElementById("bpCoverImageUrl").value || undefined,
+    tags,
+    autoNewsletter: document.getElementById("bpAutoNewsletter").checked,
+  };
+  const isEditingPublished = id && document.getElementById("bpPublishBtn").textContent === "Save changes";
+  if (publish || isEditingPublished) payload.status = "PUBLISHED";
+
+  const btn = publish ? document.getElementById("bpPublishBtn") : document.getElementById("bpDraftBtn");
+  btn.disabled = true;
+  try {
+    if (id) await managerApi.updateBlogPost(id, payload); else await managerApi.createBlogPost(payload);
+    closeBlogModal(); showNotice("blogNotice", publish ? "Published." : "Draft saved.", "success"); refreshBlogTable();
+  } catch (err) { showNotice("blogNotice", err.message); } finally { btn.disabled = false; }
+}
+async function deleteBlogPostRow(id) {
+  if (!confirm("Delete this post?")) return;
+  try { await managerApi.deleteBlogPost(id); refreshBlogTable(); } catch (err) { showNotice("blogNotice", err.message); }
+}
+
+/* ============================================================
+   NEWSLETTER — draft & submit only. Recipients are always the full
+   company subscriber list (not just this branch) — sending itself is a
+   Director action from the main admin dashboard once submitted.
+   ============================================================ */
+async function loadNewsletterPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Newsletter", "Draft a campaign for Director approval. It goes to every subscriber company-wide once sent, not just your branch.",
+      `<button class="btn btn-primary" onclick="openNewsletterModal()">New draft</button>`)}
+    <div id="newsletterNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Subject</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+        <tbody id="newsletterBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="newsletterModal" style="display:none;">
+      <div class="modal">
+        <h3 id="newsletterModalTitle">New draft</h3>
+        <div id="newsletterRejectedNotice"></div>
+        <form id="newsletterForm">
+          <input type="hidden" id="nlId">
+          <div class="form-field"><label>Subject</label><input type="text" id="nlSubject" required></div>
+          <div class="form-field"><label>Content (HTML)</label><textarea id="nlHtml" rows="10" required></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeNewsletterModal()">Cancel</button>
+            <button type="button" class="btn btn-outline" id="nlSaveBtn" onclick="submitNewsletterForm(false)">Save draft</button>
+            <button type="button" class="btn btn-primary" id="nlSubmitBtn" onclick="submitNewsletterForm(true)">Submit for approval</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  refreshNewsletterTable();
+}
+async function refreshNewsletterTable() {
+  try {
+    const { campaigns } = await managerApi.listNewsletterCampaigns();
+    window._newsletterCache = campaigns;
+    document.getElementById("newsletterBody").innerHTML = campaigns.length ? campaigns.map((c) => `
+      <tr>
+        <td>${c.subject}${c.rejectedReason ? `<br><span style="color:var(--danger); font-size:0.78rem;">Rejected: ${c.rejectedReason}</span>` : ""}</td>
+        <td><span class="badge ${c.status === "SENT" ? "badge-active" : c.status === "FAILED" ? "badge-inactive" : "badge-pending"}">${NEWSLETTER_STATUS_LABELS[c.status] || c.status}</span></td>
+        <td>${c.submittedForApprovalAt ? new Date(c.submittedForApprovalAt).toLocaleDateString() : "—"}</td>
+        <td>${c.status === "DRAFT" ? `
+          <button class="btn btn-sm btn-outline" onclick='openNewsletterModal(${JSON.stringify(c).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-primary" onclick="submitExistingCampaign('${c.id}')">Submit</button>
+        ` : `<span style="color:var(--text-muted); font-size:0.78rem;">—</span>`}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No campaigns yet. Blog posts you publish with "email to newsletter" checked also show up here once queued.</td></tr>`;
+  } catch (err) { document.getElementById("newsletterBody").innerHTML = `<tr><td colspan="4" class="empty-state">${err.message}</td></tr>`; }
+}
+function openNewsletterModal(campaign) {
+  document.getElementById("newsletterModalTitle").textContent = campaign ? "Edit draft" : "New draft";
+  document.getElementById("newsletterForm").reset();
+  document.getElementById("newsletterRejectedNotice").innerHTML = campaign?.rejectedReason
+    ? `<div class="notice error">Director feedback: ${campaign.rejectedReason}</div>` : "";
+  document.getElementById("nlId").value = campaign ? campaign.id : "";
+  document.getElementById("nlSubject").value = campaign ? campaign.subject : "";
+  document.getElementById("nlHtml").value = campaign ? campaign.html : "";
+  document.getElementById("newsletterModal").style.display = "flex";
+}
+function closeNewsletterModal() { document.getElementById("newsletterModal").style.display = "none"; }
+async function submitNewsletterForm(submit) {
+  const id = document.getElementById("nlId").value;
+  const payload = { subject: document.getElementById("nlSubject").value, html: document.getElementById("nlHtml").value };
+  const btn = submit ? document.getElementById("nlSubmitBtn") : document.getElementById("nlSaveBtn");
+  btn.disabled = true;
+  try {
+    const saved = id ? await managerApi.updateNewsletterCampaign(id, payload) : await managerApi.createNewsletterCampaign(payload);
+    const campaignId = id || saved.campaign.id;
+    if (submit) await managerApi.submitNewsletterCampaign(campaignId);
+    closeNewsletterModal();
+    showNotice("newsletterNotice", submit ? "Submitted for Director approval." : "Draft saved.", "success");
+    refreshNewsletterTable();
+  } catch (err) { showNotice("newsletterNotice", err.message); } finally { btn.disabled = false; }
+}
+async function submitExistingCampaign(id) {
+  try { await managerApi.submitNewsletterCampaign(id); showNotice("newsletterNotice", "Submitted for Director approval.", "success"); refreshNewsletterTable(); }
+  catch (err) { showNotice("newsletterNotice", err.message); }
+}
+
+/* ============================================================
+   SETTINGS — branch-level only (no site-wide/branding/SEO here)
+   ============================================================ */
+async function loadSettingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Branch Settings", "Contact info shown for your branch.")}
+    <div id="settingsNotice"></div>
+    <div class="panel" id="settingsFormPanel"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { settings } = await managerApi.getSettings();
+    document.getElementById("settingsFormPanel").innerHTML = `
+      <form id="settingsForm">
+        <div class="form-row">
+          <div class="form-field"><label>Email</label><input type="email" id="stEmail" value="${settings.email || ""}"></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="stPhone" value="${settings.phone || ""}"></div>
+        </div>
+        <div class="form-field"><label>Address</label><input type="text" id="stAddress" value="${settings.address || ""}"></div>
+        <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save settings</button>
+      </form>
+    `;
+    document.getElementById("settingsForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("stSubmitBtn"); btn.disabled = true;
+      try {
+        await managerApi.updateSettings({
+          email: document.getElementById("stEmail").value,
+          phone: document.getElementById("stPhone").value,
+          address: document.getElementById("stAddress").value,
+        });
+        showNotice("settingsNotice", "Settings saved.", "success");
+      } catch (err) { showNotice("settingsNotice", err.message); } finally { btn.disabled = false; }
+    });
+  } catch (err) { document.getElementById("settingsFormPanel").innerHTML = `<div class="empty-state">${err.message}</div>`; }
+}
+
+/* ============================================================
+   SHARED / LOGIN / BOOT
+   ============================================================ */
+function showNotice(containerId, message, type = "error") {
+  const el = document.getElementById(containerId); if (!el) return;
+  el.innerHTML = `<div class="notice ${type}">${message}</div>`;
+  setTimeout(() => { if (el) el.innerHTML = ""; }, 4000);
+}
+function showLogin() { document.getElementById("loginScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
+function showApp() {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  renderSidebar(); switchPage("dashboard"); refreshTicketsBadgeSilently();
+}
+async function refreshTicketsBadgeSilently() {
+  if (!hasPermission("handle_tickets")) return;
+  try {
+    const { tickets } = await managerApi.listTickets("OPEN");
+    const badge = document.getElementById("ticketsBellBadge");
+    if (badge) { badge.textContent = tickets.length; badge.style.display = tickets.length ? "flex" : "none"; }
+  } catch { /* silent — background badge refresh */ }
+}
+let _pendingTempToken = null;
+
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("loginBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Logging in…";
+  try {
+    const result = await managerApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (result.requires2FA) {
+      _pendingTempToken = result.tempToken;
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("twoFactorForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
+    }
+    setSession(result.token, result.staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+
+document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const result = await managerApi.verifyTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    _pendingTempToken = null;
+    setSession(result.token, result.staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Verify"; }
+});
+
+document.getElementById("twoFactorBackBtn").addEventListener("click", () => {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorForm").style.display = "none";
+  document.getElementById("twoFactorForm").reset();
+  document.getElementById("loginForm").style.display = "block";
+  document.getElementById("loginNotice").innerHTML = "";
+});
+
+document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showLogin(); });
+document.getElementById("hamburgerBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));
+document.getElementById("ticketsBellBtn").addEventListener("click", () => switchPage("tickets"));
+
+// Boot
+if (getToken() && getStaff()) { showApp(); } else { showLogin(); }
+</script>
+</body>
+</html>
