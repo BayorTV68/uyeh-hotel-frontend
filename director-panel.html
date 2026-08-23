@@ -190,6 +190,10 @@ a { color: inherit; }
 .search-bar i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; }
 
 .topbar-actions { display: flex; align-items: center; gap: 14px; }
+#topbarBranchSelector {
+  padding: 9px 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: #fff; font-family: var(--font-body); font-size: 0.85rem; color: var(--ink); max-width: 220px;
+}
 .topbar-btn {
   width: 40px; height: 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
   display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; color: var(--ink);
@@ -386,6 +390,7 @@ tr:last-child td { border-bottom: none; }
         <i class="fas fa-search"></i>
         <input type="text" placeholder="Search…" id="globalSearch">
       </div>
+      <div id="topbarBranchSelectorWrap"></div>
       <div class="topbar-actions">
         <div class="topbar-btn" id="ticketsBellBtn" title="Open guest tickets">
           <i class="fas fa-bell"></i>
@@ -437,11 +442,29 @@ function hasPermission(key) {
   if (staff.type === "director") return true;
   return (staff.permissions || []).includes(key);
 }
+// Director-wide "acting as branch" selector. Everything that goes
+// through branchPath() below was silently missing a branchId for every
+// Director-initiated write (and returning EVERY branch mixed together
+// for reads) — this was the root cause behind Offerings, Stock, and
+// Events all 400ing when a Director tried to create anything, and
+// Settings failing outright. Persisted so it survives a refresh/relogin.
+let _directorBranchId = localStorage.getItem("adm_branchId") || "";
+function setDirectorBranch(id) {
+  _directorBranchId = id || "";
+  localStorage.setItem("adm_branchId", _directorBranchId);
+  if (_currentPage) switchPage(_currentPage);
+}
 function branchPath(path) {
   // Manager/Staff: branch comes from the JWT server-side, nothing to add.
-  // Director: no branchId on their account — omitting it means "all
-  // branches" for GET/list routes. Creates/updates still require a branch,
-  // which the Director-side UI doesn't yet let you pick (known gap).
+  // Director: no branchId on their account — append the one they picked
+  // in the topbar selector. Works for both GET (query string) and
+  // POST/PATCH (the backend's resolveBranchScope reads req.query.branchId
+  // OR req.body.branchId, so having it in the query string covers both —
+  // no need to inject it into every individual form's payload too).
+  if (isDirector() && _directorBranchId) {
+    const sep = path.includes("?") ? "&" : "?";
+    return `/manager${path}${sep}branchId=${_directorBranchId}`;
+  }
   return `/manager${path}`;
 }
 
@@ -559,8 +582,8 @@ const adminApi = {
   },
 
   // Branch-level settings (a branch's own operational settings)
-  getSettings: () => adminRequest("/manager/branch-settings"),
-  updateSettings: (payload) => adminRequest("/manager/branch-settings", { method: "PATCH", body: JSON.stringify(payload) }),
+  getSettings: () => adminRequest(branchPath("/branch-settings")),
+  updateSettings: (payload) => adminRequest(branchPath("/branch-settings"), { method: "PATCH", body: JSON.stringify(payload) }),
 
   // Branches — Director only
   listBranches: () => adminRequest("/director/branches"),
@@ -628,6 +651,14 @@ const adminApi = {
   createStockItem: (payload) => adminRequest(branchPath("/stock"), { method: "POST", body: JSON.stringify(payload) }),
   updateStockItem: (id, payload) => adminRequest(branchPath(`/stock/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
   deleteStockItem: (id) => adminRequest(branchPath(`/stock/${id}`), { method: "DELETE" }),
+  listStockMovements: (id) => adminRequest(branchPath(`/stock/${id}/movements`)),
+  recordStockMovement: (id, payload) => adminRequest(branchPath(`/stock/${id}/movements`), { method: "POST", body: JSON.stringify(payload) }),
+
+  // Tags — small managed per-branch/per-service picklist. Read is open;
+  // create/delete require Director or Manager (enforced server-side too).
+  listTags: (service) => adminRequest(branchPath(`/tags${service ? `?service=${service}` : ""}`)),
+  createTag: (name, service) => adminRequest(branchPath("/tags"), { method: "POST", body: JSON.stringify({ name, service }) }),
+  deleteTag: (id) => adminRequest(branchPath(`/tags/${id}`), { method: "DELETE" }),
 
   listEventsAdmin: () => adminRequest(branchPath("/events")),
   createEvent: (payload) => adminRequest(branchPath("/events"), { method: "POST", body: JSON.stringify(payload) }),
@@ -760,6 +791,7 @@ const NAV_GROUPS = [
       { page: "groupbookings", label: "Group Bookings", icon: "fa-people-group", permission: "manage_bookings" },
       { page: "orders", label: "Orders", icon: "fa-bell-concierge", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
+      { page: "tags", label: "Tags", icon: "fa-tags" },
       { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
       { page: "upcomingevents", label: "Upcoming Events", icon: "fa-calendar-star" },
     ],
@@ -880,6 +912,7 @@ const PAGE_LOADERS = {
   groupbookings: loadGroupBookingsPage,
   orders: loadOrdersPage,
   stock: loadStockPage,
+  tags: loadTagsPage,
   events: loadEventsPage,
   upcomingevents: loadUpcomingEventsPage,
   staff: loadStaffPage,
@@ -896,7 +929,9 @@ const PAGE_LOADERS = {
   newsletter: loadNewsletterPage,
 };
 
+let _currentPage = null;
 function switchPage(page) {
+  _currentPage = page;
   setActiveNav(page);
   const loader = PAGE_LOADERS[page];
   const container = document.getElementById("pageContent");
@@ -1346,6 +1381,10 @@ async function loadRoomsPage() {
           <div class="form-field"><label>Description</label><textarea id="rDescription" rows="2"></textarea></div>
           <div class="form-field"><label>Amenities (comma-separated)</label><input type="text" id="rAmenities" placeholder="Wi-Fi, AC, Ocean view"></div>
           <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list on the Tags page)</span></label>
+            <div id="rTagsPicker" class="checkbox-grid"></div>
+          </div>
+          <div class="form-field">
             <label>Status</label>
             <select id="rStatus">
               <option value="ACTIVE">Active (sellable)</option>
@@ -1420,6 +1459,7 @@ function openRoomModal(room) {
     document.getElementById("rAmenities").value = (room.amenities || []).join(", ");
     document.getElementById("rStatus").value = room.status;
   }
+  renderTagPicker("rTagsPicker", "room", room ? (room.tags || []) : []);
   document.getElementById("roomModal").style.display = "flex";
 }
 function closeRoomModal() { document.getElementById("roomModal").style.display = "none"; }
@@ -1451,6 +1491,7 @@ async function submitRoomForm(e) {
       description: document.getElementById("rDescription").value || undefined,
       amenities: document.getElementById("rAmenities").value.split(",").map((s) => s.trim()).filter(Boolean),
       status: document.getElementById("rStatus").value,
+      tags: getCheckedTags("rTagsPicker"),
     };
     let savedId = id;
     if (id) { await adminApi.updateRoom(id, _roomsSelectedBranchId, payload); showNotice("roomsNotice", "Room updated.", "success"); }
@@ -1480,12 +1521,15 @@ async function deleteRoomConfirm(id) {
 }
 
 /* ============================================================
-   STOCK — per-branch inventory with low-stock flags
+   STOCK — per-branch inventory with low-stock flags. Quantity is no
+   longer directly editable after creation — every change goes through a
+   logged movement (Entry/Adjustment/Closing count) via the ledger modal,
+   so the running total always has a real audit trail behind it.
    ============================================================ */
 async function loadStockPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Stock", "Inventory per branch, with low-stock flags.",
+    ${pageHeader("Stock", "Inventory per branch — every quantity change is logged, not just overwritten.",
       `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
     <div id="stockNotice"></div>
     <div class="panel">
@@ -1502,9 +1546,12 @@ async function loadStockPage() {
           <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
           <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
           <div class="form-row">
-            <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
+            <div class="form-field" id="stQuantityField"><label>Starting quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
             <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stReorderLevel" min="0" step="1" value="5" required></div>
           </div>
+          <p id="stQuantityNote" style="display:none; color:var(--text-muted); font-size:0.82rem; margin:-6px 0 12px;">
+            Quantity isn't edited here anymore — use "Ledger" on the item's row to record an entry, adjustment, or closing count.
+          </p>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save item</button>
@@ -1512,8 +1559,36 @@ async function loadStockPage() {
         </form>
       </div>
     </div>
+
+    <div class="modal-overlay" id="ledgerModal" style="display:none;">
+      <div class="modal" style="max-width:560px;">
+        <h3 id="ledgerModalTitle">Ledger</h3>
+        <div id="ledgerNotice"></div>
+        <form id="ledgerForm" style="border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px;">
+          <input type="hidden" id="lgStockItemId">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Movement type</label>
+              <select id="lgType" onchange="toggleLedgerFields()">
+                <option value="ENTRY">Entry (stock received)</option>
+                <option value="ADJUSTMENT">Adjustment (breakage, correction)</option>
+                <option value="CLOSING_COUNT">Closing count (physical count)</option>
+              </select>
+            </div>
+            <div class="form-field" id="lgDeltaField"><label>Quantity <span id="lgDeltaHint" style="color:var(--text-muted); font-weight:400;"></span></label><input type="number" id="lgDelta" step="1" required></div>
+            <div class="form-field" id="lgCountedField" style="display:none;"><label>Counted quantity</label><input type="number" id="lgCounted" min="0" step="1"></div>
+          </div>
+          <div class="form-field"><label>Note <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="lgNote" placeholder="e.g. delivery from supplier, 2 bottles broken"></div>
+          <button type="submit" class="btn btn-primary btn-sm" id="lgSubmitBtn">Record movement</button>
+        </form>
+        <h4 style="margin-bottom:10px; font-size:0.9rem;">Recent history</h4>
+        <div id="ledgerHistory" style="max-height:280px; overflow-y:auto;"><div class="loading-state">Loading…</div></div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeLedgerModal()">Close</button></div>
+      </div>
+    </div>
   `;
   document.getElementById("stockForm").addEventListener("submit", submitStockForm);
+  document.getElementById("ledgerForm").addEventListener("submit", submitLedgerForm);
   await refreshStock();
 }
 
@@ -1524,14 +1599,15 @@ async function refreshStock() {
       <tr>
         <td>${s.name}</td>
         <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
-        <td>${s.unit}</td>
+        <td>${s.unit || "unit"}</td>
         <td>${s.lowStockThreshold}</td>
         <td>
+          <button class="btn btn-sm btn-primary" onclick='openLedgerModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Ledger</button>
           <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-outline" onclick="deleteStockItemConfirm('${s.id}')">Delete</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No stock items yet — add one above.</td></tr>`;
+    `).join("") : `<tr><td colspan="5" class="empty-state">No stock items yet — add one above, or link stock when creating a Food/Drink item.</td></tr>`;
   } catch (err) {
     showNotice("stockNotice", err.message);
   }
@@ -1541,12 +1617,12 @@ function openStockModal(item) {
   document.getElementById("stockModalTitle").textContent = item ? "Edit item" : "Add item";
   document.getElementById("stockForm").reset();
   document.getElementById("stId").value = item ? item.id : "";
+  document.getElementById("stQuantityField").style.display = item ? "none" : "";
+  document.getElementById("stQuantityNote").style.display = item ? "" : "none";
   if (item) {
     document.getElementById("stName").value = item.name;
-    document.getElementById("stCategory").value = item.category || "";
-    document.getElementById("stUnit").value = item.unit;
-    document.getElementById("stQuantity").value = item.quantity;
-    document.getElementById("stReorderLevel").value = item.reorderLevel;
+    document.getElementById("stUnit").value = item.unit || "unit";
+    document.getElementById("stReorderLevel").value = item.lowStockThreshold;
   }
   document.getElementById("stockModal").style.display = "flex";
 }
@@ -1561,11 +1637,16 @@ async function submitStockForm(e) {
     const payload = {
       name: document.getElementById("stName").value,
       unit: document.getElementById("stUnit").value || "unit",
-      quantity: Number(document.getElementById("stQuantity").value),
       lowStockThreshold: Number(document.getElementById("stReorderLevel").value),
     };
-    if (id) { await adminApi.updateStockItem(id, payload); showNotice("stockNotice", "Item updated.", "success"); }
-    else { await adminApi.createStockItem(payload); showNotice("stockNotice", "Item added.", "success"); }
+    if (id) {
+      await adminApi.updateStockItem(id, payload);
+      showNotice("stockNotice", "Item updated.", "success");
+    } else {
+      payload.quantity = Number(document.getElementById("stQuantity").value);
+      await adminApi.createStockItem(payload);
+      showNotice("stockNotice", "Item added.", "success");
+    }
     closeStockModal();
     refreshStock();
   } catch (err) {
@@ -1582,6 +1663,157 @@ async function deleteStockItemConfirm(id) {
     refreshStock();
   } catch (err) {
     showNotice("stockNotice", err.message);
+  }
+}
+
+function toggleLedgerFields() {
+  const type = document.getElementById("lgType").value;
+  document.getElementById("lgDeltaField").style.display = type === "CLOSING_COUNT" ? "none" : "";
+  document.getElementById("lgCountedField").style.display = type === "CLOSING_COUNT" ? "" : "none";
+  document.getElementById("lgDelta").required = type !== "CLOSING_COUNT";
+  document.getElementById("lgCounted").required = type === "CLOSING_COUNT";
+  document.getElementById("lgDeltaHint").textContent = type === "ENTRY" ? "(positive)" : "(+ or -)";
+}
+
+async function openLedgerModal(item) {
+  document.getElementById("ledgerModalTitle").textContent = `Ledger — ${item.name}`;
+  document.getElementById("lgStockItemId").value = item.id;
+  document.getElementById("ledgerForm").reset();
+  toggleLedgerFields();
+  document.getElementById("ledgerModal").style.display = "flex";
+  await refreshLedgerHistory(item.id);
+}
+function closeLedgerModal() { document.getElementById("ledgerModal").style.display = "none"; }
+
+async function refreshLedgerHistory(stockItemId) {
+  const el = document.getElementById("ledgerHistory");
+  el.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { stockItem, movements } = await adminApi.listStockMovements(stockItemId);
+    el.innerHTML = movements.length ? movements.map((m) => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--border); font-size:0.85rem;">
+        <div>
+          <b>${m.type.replace("_", " ")}</b> — ${m.quantityDelta > 0 ? "+" : ""}${m.quantityDelta} ${stockItem.unit || ""}
+          ${m.note ? `<div style="color:var(--text-muted); font-size:0.78rem;">${m.note}</div>` : ""}
+          <div style="color:var(--text-muted); font-size:0.76rem;">${new Date(m.createdAt).toLocaleString()} &middot; ${m.recordedByType}${m.orderId ? ` &middot; order ${m.orderId.slice(0,8)}` : ""}</div>
+        </div>
+        <div style="font-weight:600;">= ${m.balanceAfter}</div>
+      </div>
+    `).join("") : `<div class="empty-state">No movements logged yet.</div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+async function submitLedgerForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("lgSubmitBtn");
+  btn.disabled = true;
+  try {
+    const stockItemId = document.getElementById("lgStockItemId").value;
+    const type = document.getElementById("lgType").value;
+    const payload = { type, note: document.getElementById("lgNote").value || undefined };
+    if (type === "CLOSING_COUNT") payload.countedQuantity = Number(document.getElementById("lgCounted").value);
+    else payload.quantityDelta = Number(document.getElementById("lgDelta").value);
+
+    await adminApi.recordStockMovement(stockItemId, payload);
+    document.getElementById("ledgerForm").reset();
+    toggleLedgerFields();
+    await refreshLedgerHistory(stockItemId);
+    refreshStock();
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   TAGS — small, managed, per-branch/per-service picklist. This is what
+   every "Tags" picker on Offerings/Rooms/Events/Upcoming Events reads
+   from. Deleting a tag here only removes it from future pickers — it
+   does NOT retroactively strip it from items that already used it (see
+   the schema notes on why tags are a snapshot, not a live relation).
+   ============================================================ */
+const TAG_SERVICE_LABELS = {
+  restaurant: "Restaurant", bar: "Bar", laundry: "Laundry",
+  room: "Rooms", spa: "Spa", events: "Events", upcoming_events: "Upcoming Events",
+};
+
+async function loadTagsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Tags", "A small, curated list per service — pick from these when creating an item, so guests can browse by category.")}
+    <div id="tagsNotice"></div>
+    <div class="panel">
+      <form id="tagAddForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+        <div class="form-field" style="margin:0;">
+          <label>Service</label>
+          <select id="tgService">
+            ${Object.entries(TAG_SERVICE_LABELS).map(([val, label]) => `<option value="${val}">${label}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-field" style="margin:0;">
+          <label>New tag name</label>
+          <input type="text" id="tgName" placeholder="e.g. breakfast, intercontinental" required>
+        </div>
+        <button type="submit" class="btn btn-primary">Add tag</button>
+      </form>
+    </div>
+    <div id="tagsGroups"></div>
+  `;
+  document.getElementById("tagAddForm").addEventListener("submit", submitTagForm);
+  await refreshTagsPage();
+}
+
+async function refreshTagsPage() {
+  const el = document.getElementById("tagsGroups");
+  el.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { tags } = await adminApi.listTags();
+    const byService = {};
+    tags.forEach((t) => { (byService[t.service] ||= []).push(t); });
+
+    el.innerHTML = Object.keys(TAG_SERVICE_LABELS).map((service) => `
+      <div class="panel">
+        <h3 style="margin-bottom:12px;">${TAG_SERVICE_LABELS[service]}</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          ${(byService[service] || []).map((t) => `
+            <span class="badge" style="display:inline-flex; align-items:center; gap:6px; padding:6px 10px;">
+              ${t.name}
+              <button onclick="deleteTagConfirm('${t.id}')" title="Delete" style="background:none; border:none; cursor:pointer; color:var(--danger); font-size:0.9rem; line-height:1;">&times;</button>
+            </span>
+          `).join("") || `<span style="color:var(--text-muted); font-size:0.85rem;">No tags yet for this service.</span>`}
+        </div>
+      </div>
+    `).join("");
+  } catch (err) {
+    el.innerHTML = "";
+    showNotice("tagsNotice", err.message);
+  }
+}
+
+async function submitTagForm(e) {
+  e.preventDefault();
+  try {
+    const name = document.getElementById("tgName").value.trim();
+    const service = document.getElementById("tgService").value;
+    if (!name) return;
+    await adminApi.createTag(name, service);
+    document.getElementById("tgName").value = "";
+    refreshTagsPage();
+  } catch (err) {
+    showNotice("tagsNotice", err.message);
+  }
+}
+
+async function deleteTagConfirm(id) {
+  if (!confirm("Delete this tag? Items that already used it keep it — this only removes it from future pickers.")) return;
+  try {
+    await adminApi.deleteTag(id);
+    refreshTagsPage();
+  } catch (err) {
+    showNotice("tagsNotice", err.message);
   }
 }
 
@@ -1614,6 +1846,10 @@ async function loadEventsPage() {
           <div class="form-row">
             <div class="form-field"><label>Capacity</label><input type="number" id="evCapacity" min="0" step="1"></div>
             <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="evPrice" min="0" step="1"></div>
+          </div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list on the Tags page)</span></label>
+            <div id="evTagsPicker" class="checkbox-grid"></div>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
@@ -1660,6 +1896,7 @@ function openEventModal(ev) {
     document.getElementById("evCapacity").value = ev.capacity ?? "";
     document.getElementById("evPrice").value = ev.price ?? "";
   }
+  renderTagPicker("evTagsPicker", "events", ev ? (ev.tags || []) : []);
   document.getElementById("eventModal").style.display = "flex";
 }
 function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
@@ -1683,6 +1920,7 @@ async function submitEventForm(e) {
       endsAt: document.getElementById("evEndsAt").value ? new Date(document.getElementById("evEndsAt").value).toISOString() : undefined,
       capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
       price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : undefined,
+      tags: getCheckedTags("evTagsPicker"),
     };
     if (id) { await adminApi.updateEvent(id, payload); showNotice("eventsNotice", "Event updated.", "success"); }
     else { await adminApi.createEvent(payload); showNotice("eventsNotice", "Event added.", "success"); }
@@ -1849,6 +2087,30 @@ async function loadOfferingsPage() {
             <label>Dietary tags <span style="color:var(--text-muted); font-weight:400;">(comma-separated — vegan, halal, gluten-free…)</span></label>
             <input type="text" id="ofDietaryTags" placeholder="vegan, halal">
           </div>
+          <div class="form-field" id="ofStockField" style="display:none;">
+            <label>Stock tracking</label>
+            <select id="ofStockMode" onchange="toggleStockModeFields()">
+              <option value="none">Not tracked — unlimited</option>
+              <option value="new">Track a new stock item</option>
+              <option value="existing">Link to an existing stock item</option>
+            </select>
+          </div>
+          <div class="form-row" id="ofNewStockFields" style="display:none;">
+            <div class="form-field"><label>Starting quantity</label><input type="number" id="ofStockQuantity" min="0" step="1" value="0"></div>
+            <div class="form-field"><label>Unit</label><input type="text" id="ofStockUnit" placeholder="bottles, kg, plates…"></div>
+          </div>
+          <div class="form-field" id="ofExistingStockField" style="display:none;">
+            <label>Existing stock item</label>
+            <select id="ofExistingStockId"></select>
+          </div>
+          <div class="form-field" id="ofStockQtyPerUnitField" style="display:none;">
+            <label>Consumed per sale <span style="color:var(--text-muted); font-weight:400;">(e.g. 1 bottle per drink ordered)</span></label>
+            <input type="number" id="ofStockQtyPerUnit" min="1" step="1" value="1">
+          </div>
+          <div class="form-field" id="ofTagsField" style="display:none;">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(helps guests browse — manage the list on the Tags page)</span></label>
+            <div id="ofTagsPicker" class="checkbox-grid"></div>
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeOfferingModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="ofSubmitBtn">Save item</button>
@@ -1862,6 +2124,8 @@ async function loadOfferingsPage() {
   refreshOfferingsTable();
 }
 
+const TAG_SERVICE_BY_OFFERING_CATEGORY = { food: "restaurant", drink: "bar", laundry: "laundry", spa: "spa" };
+
 function toggleOfferingFields() {
   const cat = document.getElementById("ofCategory").value;
   document.getElementById("ofDescriptionField").style.display = cat === "spa" || cat === "food" || cat === "drink" ? "" : "none";
@@ -1870,6 +2134,51 @@ function toggleOfferingFields() {
   const isFoodOrDrink = cat === "food" || cat === "drink";
   document.getElementById("ofRoomServiceField").style.display = isFoodOrDrink ? "" : "none";
   document.getElementById("ofDietaryField").style.display = isFoodOrDrink ? "" : "none";
+  // Stock only makes sense for physical, countable goods — food/drink.
+  // Laundry and spa are capacity/time-based, not stock (see the Stock
+  // page's own note on this).
+  document.getElementById("ofStockField").style.display = isFoodOrDrink ? "" : "none";
+  if (!isFoodOrDrink) {
+    document.getElementById("ofNewStockFields").style.display = "none";
+    document.getElementById("ofExistingStockField").style.display = "none";
+    document.getElementById("ofStockQtyPerUnitField").style.display = "none";
+  }
+  document.getElementById("ofTagsField").style.display = "";
+  renderTagPicker("ofTagsPicker", TAG_SERVICE_BY_OFFERING_CATEGORY[cat], window._ofSelectedTags || []);
+}
+
+async function toggleStockModeFields() {
+  const mode = document.getElementById("ofStockMode").value;
+  document.getElementById("ofNewStockFields").style.display = mode === "new" ? "" : "none";
+  document.getElementById("ofExistingStockField").style.display = mode === "existing" ? "" : "none";
+  document.getElementById("ofStockQtyPerUnitField").style.display = mode === "none" ? "none" : "";
+  if (mode === "existing") {
+    const select = document.getElementById("ofExistingStockId");
+    select.innerHTML = `<option>Loading…</option>`;
+    try {
+      const { stockItems } = await adminApi.listStockItems();
+      select.innerHTML = stockItems.map((s) => `<option value="${s.id}" ${s.id === window._ofExistingStockPreselect ? "selected" : ""}>${s.name} (${s.quantity} ${s.unit || "unit"} left)</option>`).join("") || `<option value="">No stock items yet</option>`;
+    } catch { select.innerHTML = `<option value="">Couldn't load stock items</option>`; }
+  }
+}
+
+/** Populates the tag checkbox grid for a given service — shared by
+ * Offerings, Rooms, Events, and Upcoming Events modals. */
+async function renderTagPicker(containerId, service, selectedTags = []) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Loading tags…</span>`;
+  try {
+    const { tags } = await adminApi.listTags(service);
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${selectedTags.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet for this service — add some on the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags</a> page.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
+function getCheckedTags(containerId) {
+  return Array.from(document.querySelectorAll(`#${containerId} input:checked`)).map((el) => el.value);
 }
 
 async function refreshOfferingsTable() {
@@ -1925,6 +2234,8 @@ function openOfferingModal(o) {
   document.getElementById("offeringForm").reset();
   document.getElementById("ofId").value = o ? o.id : "";
   document.getElementById("ofCategory").disabled = !!o; // category can't change after creation — different table
+  window._ofSelectedTags = o ? (o.tags || []) : [];
+  window._ofExistingStockPreselect = o ? (o.stockItemId || null) : null;
   if (o) {
     document.getElementById("ofCategory").value = o._category;
     document.getElementById("ofName").value = o.name;
@@ -1935,9 +2246,14 @@ function openOfferingModal(o) {
     if (o._category === "food" || o._category === "drink") {
       document.getElementById("ofRoomService").checked = !!o.availableForRoomService;
       document.getElementById("ofDietaryTags").value = (o.dietaryTags || []).join(", ");
+      document.getElementById("ofStockMode").value = o.stockItemId ? "existing" : "none";
+      if (o.stockQtyPerUnit) document.getElementById("ofStockQtyPerUnit").value = o.stockQtyPerUnit;
     }
+  } else {
+    document.getElementById("ofStockMode").value = "none";
   }
   toggleOfferingFields();
+  toggleStockModeFields();
   document.getElementById("offeringModal").style.display = "flex";
 }
 function closeOfferingModal() { document.getElementById("offeringModal").style.display = "none"; }
@@ -1959,14 +2275,29 @@ async function submitOfferingForm(e) {
       base.category = category.toUpperCase();
       base.description = document.getElementById("ofDescription").value || undefined;
       base.availableForRoomService = document.getElementById("ofRoomService").checked;
-      const tags = document.getElementById("ofDietaryTags").value.split(",").map((t) => t.trim()).filter(Boolean);
-      if (tags.length) base.dietaryTags = tags;
+      const dtags = document.getElementById("ofDietaryTags").value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (dtags.length) base.dietaryTags = dtags;
+
+      const stockMode = document.getElementById("ofStockMode").value;
+      if (stockMode === "new") {
+        base.trackStock = true;
+        base.stockQuantity = Number(document.getElementById("ofStockQuantity").value) || 0;
+        base.stockUnit = document.getElementById("ofStockUnit").value || undefined;
+        base.stockQtyPerUnit = Number(document.getElementById("ofStockQtyPerUnit").value) || 1;
+      } else if (stockMode === "existing") {
+        base.stockItemId = document.getElementById("ofExistingStockId").value;
+        base.stockQtyPerUnit = Number(document.getElementById("ofStockQtyPerUnit").value) || 1;
+      } else if (id) {
+        // Editing an item down to "not tracked" explicitly unlinks it.
+        base.stockItemId = "";
+      }
     } else if (category === "laundry") {
       base.turnaroundHours = Number(document.getElementById("ofTurnaround").value) || 24;
     } else if (category === "spa") {
       base.description = document.getElementById("ofDescription").value || undefined;
       base.durationMinutes = Number(document.getElementById("ofDuration").value) || 60;
     }
+    base.tags = getCheckedTags("ofTagsPicker");
 
     if (id) { await cfg.update(id, base); showNotice("offeringsNotice", "Item updated.", "success"); }
     else { await cfg.create(base); showNotice("offeringsNotice", "Item added.", "success"); }
@@ -2815,25 +3146,38 @@ async function refreshAuditLogTable() {
 async function loadSettingsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Settings", "Hotel info shown on the public website.")}
+    ${pageHeader("Branch Settings", "Contact details and enabled services for this branch.")}
     <div id="settingsNotice"></div>
     <div class="panel" id="settingsFormPanel"><div class="loading-state">Loading…</div></div>
   `;
 
+  if (isDirector() && !_directorBranchId) {
+    document.getElementById("settingsFormPanel").innerHTML = `<div class="empty-state">Pick a branch from the selector at the top of the page first — branch settings only make sense for one branch at a time.</div>`;
+    return;
+  }
+
   try {
-    const { settings } = await adminApi.getSettings();
+    const { branch } = await adminApi.getSettings();
     document.getElementById("settingsFormPanel").innerHTML = `
       <form id="settingsForm">
+        <p style="color:var(--text-muted); font-size:0.85rem; margin-bottom:16px;"><b>${branch.name}</b> (${branch.slug})</p>
         <div class="form-row">
-          <div class="form-field"><label>Name</label><input type="text" id="stName" value="${settings.name || ""}"></div>
-          <div class="form-field"><label>Tagline</label><input type="text" id="stTagline" value="${settings.tagline || ""}"></div>
+          <div class="form-field"><label>Email</label><input type="email" id="stEmail" value="${branch.email || ""}"></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="stPhone" value="${branch.phone || ""}"></div>
         </div>
-        <div class="form-field"><label>Description</label><textarea id="stDescription" rows="3">${settings.description || ""}</textarea></div>
+        <div class="form-field"><label>Address</label><input type="text" id="stAddress" value="${branch.address || ""}"></div>
         <div class="form-row">
-          <div class="form-field"><label>Email</label><input type="email" id="stEmail" value="${settings.email || ""}"></div>
-          <div class="form-field"><label>Phone</label><input type="text" id="stPhone" value="${settings.phone || ""}"></div>
+          <div class="form-field"><label>City</label><input type="text" id="stCity" value="${branch.city || ""}"></div>
+          <div class="form-field"><label>State</label><input type="text" id="stState" value="${branch.state || ""}"></div>
         </div>
-        <div class="form-field"><label>Address</label><input type="text" id="stAddress" value="${settings.address || ""}"></div>
+        <div class="form-field">
+          <label>Services enabled at this branch</label>
+          <div class="checkbox-grid">
+            ${Object.entries(SERVICE_LABELS).map(([val, label]) => `
+              <label class="checkbox-item"><input type="checkbox" value="${val}" ${(branch.services || []).includes(val) ? "checked" : ""}> ${label}</label>
+            `).join("")}
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save settings</button>
       </form>
     `;
@@ -2843,12 +3187,12 @@ async function loadSettingsPage() {
       btn.disabled = true;
       try {
         await adminApi.updateSettings({
-          name: document.getElementById("stName").value,
-          tagline: document.getElementById("stTagline").value,
-          description: document.getElementById("stDescription").value,
           email: document.getElementById("stEmail").value,
           phone: document.getElementById("stPhone").value,
           address: document.getElementById("stAddress").value,
+          city: document.getElementById("stCity").value,
+          state: document.getElementById("stState").value,
+          services: Array.from(document.querySelectorAll("#settingsForm .checkbox-grid input:checked")).map((el) => el.value),
         });
         showNotice("settingsNotice", "Settings saved.", "success");
       } catch (err) {
@@ -3872,8 +4216,23 @@ function showApp() {
   document.getElementById("loginScreen").style.display = "none";
   document.getElementById("appShell").style.display = "block";
   renderSidebar();
+  renderTopbarBranchSelector();
   switchPage("dashboard");
   refreshTicketsBadgeSilently();
+}
+async function renderTopbarBranchSelector() {
+  const wrap = document.getElementById("topbarBranchSelectorWrap");
+  if (!isDirector()) { wrap.innerHTML = ""; return; }
+  try {
+    const { branches } = await adminApi.listBranches();
+    if (_directorBranchId && !branches.some((b) => b.id === _directorBranchId)) _directorBranchId = "";
+    wrap.innerHTML = `
+      <select id="topbarBranchSelector" onchange="setDirectorBranch(this.value)" title="Everything you create or view here applies to this branch">
+        <option value="">All branches (view only)</option>
+        ${branches.map((b) => `<option value="${b.id}" ${b.id === _directorBranchId ? "selected" : ""}>${b.name}</option>`).join("")}
+      </select>
+    `;
+  } catch { wrap.innerHTML = ""; }
 }
 async function refreshTicketsBadgeSilently() {
   if (!hasPermission("handle_tickets")) return;
