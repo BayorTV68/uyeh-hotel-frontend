@@ -162,6 +162,12 @@ tr:last-child td { border-bottom: none; }
 .tab-btn:hover { color: var(--ink); }
 .tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
 
+.badge-clean { background: #e6f7ee; color: #0a7a3f; }
+.badge-dirty { background: #fdeaea; color: #b3261e; }
+.badge-cleaning { background: #fff4e0; color: #9a6300; }
+.badge-inspected { background: #e8f0fe; color: #1a56db; }
+.badge-out_of_order { background: #f0f0f0; color: #5f5f5f; }
+
 @media (max-width: 900px) {
   .sidebar { transform: translateX(-100%); }
   .sidebar.open { transform: translateX(0); }
@@ -295,13 +301,26 @@ const managerApi = {
 
   getReports: () => adminRequest("/manager/reports"),
 
-  listRoomTypes: () => adminRequest("/manager/room-types"),
-  createRoomType: (payload) => adminRequest("/manager/room-types", { method: "POST", body: JSON.stringify(payload) }),
-  updateRoomType: (id, payload) => adminRequest(`/manager/room-types/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  // Rooms — Manager can only view and update status/housekeeping now.
+  // Creating, editing, deleting a room, or touching its photos, is
+  // Director-only (see admin-panel.html) — none of those routes are
+  // reachable from this panel anymore, on purpose.
   listRooms: () => adminRequest("/manager/rooms"),
-  createRoom: (payload) => adminRequest("/manager/rooms", { method: "POST", body: JSON.stringify(payload) }),
-  updateRoom: (id, payload) => adminRequest(`/manager/rooms/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   updateRoomStatus: (id, status) => adminRequest(`/manager/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Housekeeping — separate from room status above. Tracks whether a
+  // room is actually ready to hand to a guest right now, not whether
+  // it's bookable at all.
+  listHousekeeping: (status) => adminRequest(`/manager/housekeeping${status ? `?status=${status}` : ""}`),
+  updateHousekeepingStatus: (roomId, housekeepingStatus) => adminRequest(`/manager/housekeeping/${roomId}`, { method: "PATCH", body: JSON.stringify({ housekeepingStatus }) }),
+
+  // Upcoming Events — draft/submit side. Director approves/rejects from
+  // their own panel.
+  listUpcomingEvents: (status) => adminRequest(`/manager/upcoming-events${status ? `?status=${status}` : ""}`),
+  createUpcomingEvent: (payload) => adminRequest("/manager/upcoming-events", { method: "POST", body: JSON.stringify(payload) }),
+  updateUpcomingEvent: (id, payload) => adminRequest(`/manager/upcoming-events/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  submitUpcomingEvent: (id) => adminRequest(`/manager/upcoming-events/${id}/submit`, { method: "POST" }),
+  deleteUpcomingEvent: (id) => adminRequest(`/manager/upcoming-events/${id}`, { method: "DELETE" }),
 
   listMenuItems: (category) => adminRequest(`/manager/menu${category ? `?category=${category}` : ""}`),
   createMenuItem: (payload) => adminRequest("/manager/menu", { method: "POST", body: JSON.stringify(payload) }),
@@ -320,11 +339,19 @@ const managerApi = {
   replyToTicket: (id, message) => adminRequest(`/manager/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
   resolveTicket: (id) => adminRequest(`/manager/tickets/${id}/resolve`, { method: "PATCH" }),
 
-  // Stock
+  // Stock — quantity is edited only through movements now (see below);
+  // updateStockItem no longer accepts quantity, the backend ignores it.
   listStockItems: () => adminRequest("/manager/stock"),
   createStockItem: (payload) => adminRequest("/manager/stock", { method: "POST", body: JSON.stringify(payload) }),
   updateStockItem: (id, payload) => adminRequest(`/manager/stock/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteStockItem: (id) => adminRequest(`/manager/stock/${id}`, { method: "DELETE" }),
+  listStockMovements: (id) => adminRequest(`/manager/stock/${id}/movements`),
+  recordStockMovement: (id, payload) => adminRequest(`/manager/stock/${id}/movements`, { method: "POST", body: JSON.stringify(payload) }),
+
+  // Tags — the managed per-branch, per-service picklist.
+  listTags: (service) => adminRequest(`/manager/tags${service ? `?service=${service}` : ""}`),
+  createTag: (name, service) => adminRequest("/manager/tags", { method: "POST", body: JSON.stringify({ name, service }) }),
+  deleteTag: (id) => adminRequest(`/manager/tags/${id}`, { method: "DELETE" }),
 
   // Events
   listEvents: () => adminRequest("/manager/events"),
@@ -354,13 +381,6 @@ const managerApi = {
     const formData = new FormData(); formData.append("image", file);
     return fetch(`${API_BASE}/manager/spa-treatments/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
   },
-
-  // Room type gallery
-  uploadRoomTypeImage: (id, file) => {
-    const formData = new FormData(); formData.append("image", file);
-    return fetch(`${API_BASE}/manager/room-types/${id}/images`, { method: "POST", headers: { Authorization: `Bearer ${getToken()}` }, body: formData }).then((r) => r.json());
-  },
-  deleteRoomTypeImage: (id, url) => adminRequest(`/manager/room-types/${id}/images`, { method: "DELETE", body: JSON.stringify({ url }) }),
 
   // Branch Profile — READ ONLY. See patch-01 backend section 4.
   getBranchProfile: () => adminRequest("/manager/branch-profile"),
@@ -433,6 +453,7 @@ const NAV_GROUPS = [
     id: "operations", label: "Operations", icon: "fa-th-large",
     items: [
       { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
+      { page: "housekeeping", label: "Housekeeping", icon: "fa-broom", permission: "manage_rooms" },
       { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
       { page: "laundry", label: "Laundry", icon: "fa-shirt", permission: "manage_laundry" },
       { page: "spa", label: "Spa", icon: "fa-spa", permission: "manage_spa" },
@@ -441,6 +462,8 @@ const NAV_GROUPS = [
       { page: "orders", label: "Orders", icon: "fa-bell-concierge", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
       { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
+      { page: "upcomingevents", label: "Upcoming Events", icon: "fa-calendar-star" },
+      { page: "tags", label: "Tags", icon: "fa-tags" },
     ],
   },
   {
@@ -537,6 +560,7 @@ const PAGE_LOADERS = {
   dashboard: loadDashboardPage,
   branchprofile: loadBranchProfilePage,
   rooms: loadRoomsPage,
+  housekeeping: loadHousekeepingPage,
   menu: loadMenuPage,
   laundry: loadLaundryPage,
   spa: loadSpaPage,
@@ -545,6 +569,8 @@ const PAGE_LOADERS = {
   orders: loadOrdersPage,
   stock: loadStockPage,
   events: loadEventsPage,
+  upcomingevents: loadUpcomingEventsPage,
+  tags: loadTagsPage,
   transactions: loadTransactionsPage,
   blog: loadBlogPage,
   newsletter: loadNewsletterPage,
@@ -596,7 +622,7 @@ async function loadDashboardPage() {
           <div class="panel"><h3>Recent bookings</h3>
             <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
               <tbody>${bookings.slice(0, 6).map((b) => `
-                <tr><td>${b.guest.name}</td><td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+                <tr><td>${b.guest.name}</td><td>${b.room.name} — ${b.room.roomNumber}</td>
                 <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
                 <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td></tr>
               `).join("")}</tbody>
@@ -646,171 +672,121 @@ async function loadDashboardPage() {
 }
 
 /* ============================================================
-   ROOMS
+   ROOMS — read-only for Manager now. A Director builds and prices every
+   room (name, price, photos, room number, floor) in their own panel;
+   Manager can only see the list and flip status (Active/Maintenance/
+   Inactive). Housekeeping status is handled on its own page below —
+   see loadHousekeepingPage.
    ============================================================ */
-let _cachedRoomTypes = [];
-
 async function loadRoomsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Rooms", "Room types and individual rooms for your branch.",
-      `<button class="btn btn-outline" onclick="openRoomTypeModal()">Add room type</button>
-       <button class="btn btn-primary" onclick="openRoomModal()">Add room</button>`)}
+    ${pageHeader("Rooms", "Rooms are built and priced by your Director. You can view them and change status here.")}
     <div id="roomsNotice"></div>
-    <div class="panel"><h3>Room types</h3>
-      <table><thead><tr><th>Name</th><th>Base price</th><th>Max occupancy</th><th>Rooms</th><th></th></tr></thead>
-        <tbody id="roomTypesBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+    <div class="panel">
+      <table><thead><tr><th></th><th>Room #</th><th>Name</th><th>Price</th><th>Floor</th><th>Status</th></tr></thead>
+        <tbody id="roomsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
-    </div>
-    <div class="panel"><h3>All rooms</h3>
-      <table><thead><tr><th>Room #</th><th>Type</th><th>Floor</th><th>Status</th><th></th></tr></thead>
-        <tbody id="roomsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="modal-overlay" id="roomTypeModal" style="display:none;">
-      <div class="modal">
-        <h3 id="roomTypeModalTitle">Add room type</h3>
-        <form id="roomTypeForm">
-          <input type="hidden" id="rtId">
-          <div class="form-field"><label>Name</label><input type="text" id="rtName" placeholder="e.g. Deluxe King" required></div>
-          <div class="form-row">
-            <div class="form-field"><label>Base price (&#8358;)</label><input type="number" id="rtPrice" min="0" step="1" required></div>
-            <div class="form-field"><label>Max occupancy</label><input type="number" id="rtOccupancy" min="1" step="1" required></div>
-          </div>
-          <div class="form-field"><label>Description</label><textarea id="rtDescription" rows="2"></textarea></div>
-          <div class="form-field" id="rtGalleryField" style="display:none;">
-            <label>Gallery</label>
-            <div id="rtGalleryPreview" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
-            <input type="file" id="rtImageInput" accept="image/*">
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeRoomTypeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="rtSubmitBtn">Save room type</button>
-          </div>
-        </form>
-      </div>
-    </div>
-    <div class="modal-overlay" id="roomModal" style="display:none;">
-      <div class="modal">
-        <h3 id="roomModalTitle">Add room</h3>
-        <form id="roomForm">
-          <input type="hidden" id="rId">
-          <div class="form-field"><label>Room type</label><select id="rRoomTypeId" required></select></div>
-          <div class="form-row">
-            <div class="form-field"><label>Room number</label><input type="text" id="rNumber" required></div>
-            <div class="form-field"><label>Floor</label><input type="text" id="rFloor"></div>
-          </div>
-          <div class="form-field">
-            <label>Status</label>
-            <select id="rStatus">
-              <option value="ACTIVE">Active</option>
-              <option value="MAINTENANCE">Maintenance</option>
-              <option value="INACTIVE">Inactive</option>
-            </select>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeRoomModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="rSubmitBtn">Save room</button>
-          </div>
-        </form>
-      </div>
     </div>
   `;
-  document.getElementById("roomTypeForm").addEventListener("submit", submitRoomTypeForm);
-  document.getElementById("roomForm").addEventListener("submit", submitRoomForm);
-  await refreshRoomsAndTypes();
+  await refreshRooms();
 }
 
-async function refreshRoomsAndTypes() {
+async function refreshRooms() {
   try {
-    const [{ roomTypes }, { rooms }] = await Promise.all([managerApi.listRoomTypes(), managerApi.listRooms()]);
-    _cachedRoomTypes = roomTypes;
-    document.getElementById("roomTypesBody").innerHTML = roomTypes.length ? roomTypes.map((rt) => `
-      <tr><td>${rt.name}</td><td>&#8358;${Number(rt.basePrice).toLocaleString()}</td><td>${rt.maxOccupancy}</td><td>${(rt.rooms || []).length}</td>
-      <td><button class="btn btn-sm btn-outline" onclick='openRoomTypeModal(${JSON.stringify(rt).replace(/'/g, "&#39;")})'>Edit</button></td></tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No room types yet — add one above.</td></tr>`;
-
+    const { rooms } = await managerApi.listRooms();
     document.getElementById("roomsBody").innerHTML = rooms.length ? rooms.map((r) => `
-      <tr><td>${r.roomNumber}</td><td>${r.roomType.name}</td><td>${r.floor || "—"}</td>
-      <td><span class="badge badge-${r.status.toLowerCase()}">${r.status}</span></td>
-      <td><button class="btn btn-sm btn-outline" onclick='openRoomModal(${JSON.stringify(r).replace(/'/g, "&#39;")})'>Edit</button></td></tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms yet.</td></tr>`;
+      <tr>
+        <td>${r.images && r.images[0] ? `<img src="${r.images[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;">` : ""}</td>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>&#8358;${Number(r.basePrice).toLocaleString()}</td>
+        <td>${r.floor || "—"}</td>
+        <td>
+          <select onchange="changeRoomStatus('${r.id}', this.value)">
+            <option value="ACTIVE" ${r.status === "ACTIVE" ? "selected" : ""}>Active</option>
+            <option value="MAINTENANCE" ${r.status === "MAINTENANCE" ? "selected" : ""}>Maintenance</option>
+            <option value="INACTIVE" ${r.status === "INACTIVE" ? "selected" : ""}>Inactive</option>
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No rooms yet — ask your Director to add some.</td></tr>`;
   } catch (err) { showNotice("roomsNotice", err.message); }
 }
 
-let _rtEditingId = null;
-function openRoomTypeModal(rt) {
-  document.getElementById("roomTypeModalTitle").textContent = rt ? "Edit room type" : "Add room type";
-  document.getElementById("roomTypeForm").reset();
-  _rtEditingId = rt ? (rt.id || rt._id) : null;
-  document.getElementById("rtGalleryField").style.display = rt ? "block" : "none";
-  document.getElementById("rtGalleryPreview").innerHTML = (rt && rt.images || []).map((url) => `
-    <div style="position:relative;">
-      <img src="${url}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;">
-      <button type="button" onclick="removeRoomTypeImage('${url}')" style="position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;">&times;</button>
+async function changeRoomStatus(id, status) {
+  try {
+    await managerApi.updateRoomStatus(id, status);
+    showNotice("roomsNotice", "Room status updated.", "success");
+  } catch (err) {
+    showNotice("roomsNotice", err.message);
+    refreshRooms();
+  }
+}
+
+/* ============================================================
+   HOUSEKEEPING — Clean/Dirty/Cleaning/Inspected/Out of Order per
+   room. Separate from the Rooms page's ACTIVE/MAINTENANCE/INACTIVE
+   status. Filterable by status; each row updates inline.
+   ============================================================ */
+const HOUSEKEEPING_STATUSES = ["CLEAN", "DIRTY", "CLEANING", "INSPECTED", "OUT_OF_ORDER"];
+const HOUSEKEEPING_LABELS = { CLEAN: "Clean", DIRTY: "Dirty", CLEANING: "Cleaning", INSPECTED: "Inspected", OUT_OF_ORDER: "Out of order" };
+
+async function loadHousekeepingPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Housekeeping", "Track which rooms are ready to hand to a guest right now.")}
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="form-field" style="max-width:260px;">
+        <label>Filter by status</label>
+        <select id="hkStatusFilter" onchange="refreshHousekeeping()">
+          <option value="">All rooms</option>
+          ${HOUSEKEEPING_STATUSES.map((s) => `<option value="${s}">${HOUSEKEEPING_LABELS[s]}</option>`).join("")}
+        </select>
+      </div>
     </div>
-  `).join("");
-  document.getElementById("rtId").value = rt ? rt.id : "";
-  if (rt) {
-    document.getElementById("rtName").value = rt.name;
-    document.getElementById("rtPrice").value = rt.basePrice;
-    document.getElementById("rtOccupancy").value = rt.maxOccupancy;
-    document.getElementById("rtDescription").value = rt.description || "";
-  }
-  document.getElementById("roomTypeModal").style.display = "flex";
-}
-function closeRoomTypeModal() { document.getElementById("roomTypeModal").style.display = "none"; }
-
-async function removeRoomTypeImage(url) {
-  if (!_rtEditingId) return;
-  try { await managerApi.deleteRoomTypeImage(_rtEditingId, url); refreshRoomsAndTypes(); openRoomTypeModal({ ..._cachedRoomTypes.find((r) => r.id === _rtEditingId), images: (_cachedRoomTypes.find((r) => r.id === _rtEditingId)?.images || []).filter((u) => u !== url) }); }
-  catch (err) { showNotice("roomsNotice", err.message); }
+    <div id="housekeepingNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Room #</th><th>Name</th><th>Floor</th><th>Last updated</th><th>Housekeeping status</th></tr></thead>
+        <tbody id="housekeepingBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshHousekeeping();
 }
 
-async function submitRoomTypeForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("rtSubmitBtn"); btn.disabled = true;
+async function refreshHousekeeping() {
+  const statusFilter = document.getElementById("hkStatusFilter")?.value || "";
   try {
-    const id = document.getElementById("rtId").value;
-    const payload = { name: document.getElementById("rtName").value, basePrice: Number(document.getElementById("rtPrice").value),
-      maxOccupancy: Number(document.getElementById("rtOccupancy").value), description: document.getElementById("rtDescription").value || undefined };
-    let savedId = id;
-    if (id) { await managerApi.updateRoomType(id, payload); showNotice("roomsNotice", "Room type updated.", "success"); }
-    else { const { roomType } = await managerApi.createRoomType(payload); savedId = roomType.id; showNotice("roomsNotice", "Room type added.", "success"); }
-
-    const file = document.getElementById("rtImageInput").files[0];
-    if (file && savedId) await managerApi.uploadRoomTypeImage(savedId, file);
-
-    closeRoomTypeModal(); refreshRoomsAndTypes();
-  } catch (err) { showNotice("roomsNotice", err.message); } finally { btn.disabled = false; }
+    const { rooms } = await managerApi.listHousekeeping(statusFilter);
+    document.getElementById("housekeepingBody").innerHTML = rooms.length ? rooms.map((r) => `
+      <tr>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>${r.floor || "—"}</td>
+        <td>${r.housekeepingUpdatedAt ? new Date(r.housekeepingUpdatedAt).toLocaleString() : "—"}</td>
+        <td>
+          <span class="badge badge-${r.housekeepingStatus.toLowerCase()}" style="margin-right:8px;">${HOUSEKEEPING_LABELS[r.housekeepingStatus]}</span>
+          <select onchange="changeHousekeepingStatus('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
+            <option value="">Change…</option>
+            ${HOUSEKEEPING_STATUSES.filter((s) => s !== r.housekeepingStatus).map((s) => `<option value="${s}">${HOUSEKEEPING_LABELS[s]}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms match this filter.</td></tr>`;
+  } catch (err) { showNotice("housekeepingNotice", err.message); }
 }
 
-function openRoomModal(room) {
-  document.getElementById("roomModalTitle").textContent = room ? "Edit room" : "Add room";
-  document.getElementById("roomForm").reset();
-  document.getElementById("rId").value = room ? room.id : "";
-  const select = document.getElementById("rRoomTypeId");
-  select.innerHTML = _cachedRoomTypes.map((rt) => `<option value="${rt.id}">${rt.name}</option>`).join("");
-  if (room) {
-    select.value = room.roomType.id || room.roomType._id;
-    document.getElementById("rNumber").value = room.roomNumber;
-    document.getElementById("rFloor").value = room.floor || "";
-    document.getElementById("rStatus").value = room.status;
-  }
-  document.getElementById("roomModal").style.display = "flex";
-}
-function closeRoomModal() { document.getElementById("roomModal").style.display = "none"; }
-async function submitRoomForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("rSubmitBtn"); btn.disabled = true;
+async function changeHousekeepingStatus(roomId, housekeepingStatus) {
+  if (!housekeepingStatus) return;
   try {
-    const id = document.getElementById("rId").value;
-    const payload = { roomTypeId: document.getElementById("rRoomTypeId").value, roomNumber: document.getElementById("rNumber").value,
-      floor: document.getElementById("rFloor").value || undefined, status: document.getElementById("rStatus").value };
-    if (id) { await managerApi.updateRoom(id, payload); showNotice("roomsNotice", "Room updated.", "success"); }
-    else { await managerApi.createRoom(payload); showNotice("roomsNotice", "Room added.", "success"); }
-    closeRoomModal(); refreshRoomsAndTypes();
-  } catch (err) { showNotice("roomsNotice", err.message); } finally { btn.disabled = false; }
+    await managerApi.updateHousekeepingStatus(roomId, housekeepingStatus);
+    showNotice("housekeepingNotice", "Housekeeping status updated.", "success");
+    refreshHousekeeping();
+  } catch (err) {
+    showNotice("housekeepingNotice", err.message);
+    refreshHousekeeping();
+  }
 }
 
 /* ============================================================
@@ -877,8 +853,8 @@ async function loadMenuPage() {
     ${pageHeader("Menu", "Food & drink priced for your branch.", `<button class="btn btn-primary" onclick="openMenuItemModal()">Add item</button>`)}
     <div id="menuNotice"></div>
     <div class="panel">
-      <table><thead><tr><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
-        <tbody id="menuBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      <table><thead><tr><th>Item</th><th>Category</th><th>Tags</th><th>Price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="menuBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="menuItemModal" style="display:none;">
@@ -886,14 +862,30 @@ async function loadMenuPage() {
         <h3 id="menuItemModalTitle">Add item</h3>
         <form id="menuItemForm">
           <input type="hidden" id="miId">
+          <input type="hidden" id="miStockItemId">
           <div class="form-field"><label>Name</label><input type="text" id="miName" required></div>
           <div class="form-row">
             <div class="form-field"><label>Category</label>
-              <select id="miCategory" required><option value="FOOD">Food</option><option value="DRINK">Drink</option></select>
+              <select id="miCategory" required onchange="refreshMenuTagOptions()"><option value="FOOD">Food</option><option value="DRINK">Drink</option></select>
             </div>
             <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="miPrice" min="0" step="1" required></div>
           </div>
           <div class="form-field"><label>Description</label><textarea id="miDescription" rows="2"></textarea></div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="miTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
+          </div>
+          <div class="form-field" id="miStockLinkedNote" style="display:none; color:var(--text-muted); font-size:0.85rem;">
+            This item's stock is tracked. Manage its quantity from the <a href="#" onclick="switchPage('stock'); return false;" style="color:var(--brass-dark); font-weight:600;">Stock page</a> — quantity can't be edited here.
+          </div>
+          <div class="form-field" id="miStockNewFields">
+            <label class="checkbox-item"><input type="checkbox" id="miTrackStock" onchange="toggleMenuStockFields()"> Track stock for this item</label>
+            <div class="form-row" id="miStockQtyRow" style="display:none; margin-top:8px;">
+              <div class="form-field"><label>Starting quantity</label><input type="number" id="miStockQuantity" min="0" step="1" value="0"></div>
+              <div class="form-field"><label>Unit</label><input type="text" id="miStockUnit" placeholder="bottles, plates, kg…"></div>
+              <div class="form-field"><label>Low-stock alert below</label><input type="number" id="miStockLowThreshold" min="0" step="1" value="5"></div>
+            </div>
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeMenuItemModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="miSubmitBtn">Save item</button>
@@ -905,25 +897,51 @@ async function loadMenuPage() {
   document.getElementById("menuItemForm").addEventListener("submit", submitMenuItemForm);
   refreshMenuTable();
 }
+async function refreshMenuTagOptions(selectedTags) {
+  const cat = document.getElementById("miCategory").value;
+  const service = cat === "DRINK" ? "bar" : "restaurant";
+  const container = document.getElementById("miTagsOptions");
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await managerApi.listTags(service);
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
+function toggleMenuStockFields() {
+  document.getElementById("miStockQtyRow").style.display = document.getElementById("miTrackStock").checked ? "" : "none";
+}
 async function refreshMenuTable() {
   try {
     const { menuItems } = await managerApi.listMenuItems();
     document.getElementById("menuBody").innerHTML = menuItems.length ? menuItems.map((m) => `
-      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td><td>&#8358;${Number(m.price).toLocaleString()}</td>
+      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td>
+      <td>${(m.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+      <td>&#8358;${Number(m.price).toLocaleString()}</td>
       <td><span class="badge badge-${m.isAvailable ? "active" : "inactive"}">${m.isAvailable ? "Available" : "Unavailable"}</span></td>
       <td><button class="btn btn-sm btn-outline" onclick='openMenuItemModal(${JSON.stringify(m).replace(/'/g, "&#39;")})'>Edit</button>
       <button class="btn btn-sm btn-outline" onclick="toggleMenuItemAvailable('${m.id}', ${m.isAvailable})">${m.isAvailable ? "Deactivate" : "Activate"}</button></td></tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No items yet.</td></tr>`;
-  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+    `).join("") : `<tr><td colspan="6" class="empty-state">No items yet.</td></tr>`;
+  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
 }
 function openMenuItemModal(m) {
   document.getElementById("menuItemModalTitle").textContent = m ? "Edit item" : "Add item";
   document.getElementById("menuItemForm").reset();
   document.getElementById("miId").value = m ? m.id : "";
+  document.getElementById("miStockItemId").value = (m && m.stockItemId) || "";
   if (m) {
     document.getElementById("miName").value = m.name; document.getElementById("miCategory").value = m.category;
     document.getElementById("miPrice").value = m.price; document.getElementById("miDescription").value = m.description || "";
   }
+  const alreadyTracked = !!(m && m.stockItemId);
+  document.getElementById("miStockLinkedNote").style.display = alreadyTracked ? "" : "none";
+  document.getElementById("miStockNewFields").style.display = alreadyTracked ? "none" : "";
+  document.getElementById("miTrackStock").checked = false;
+  toggleMenuStockFields();
+  refreshMenuTagOptions(m ? (m.tags || []) : []);
   document.getElementById("menuItemModal").style.display = "flex";
 }
 function closeMenuItemModal() { document.getElementById("menuItemModal").style.display = "none"; }
@@ -933,7 +951,14 @@ async function submitMenuItemForm(e) {
   try {
     const id = document.getElementById("miId").value;
     const payload = { name: document.getElementById("miName").value, category: document.getElementById("miCategory").value,
-      price: Number(document.getElementById("miPrice").value), description: document.getElementById("miDescription").value || undefined };
+      price: Number(document.getElementById("miPrice").value), description: document.getElementById("miDescription").value || undefined,
+      tags: Array.from(document.getElementById("miTagsOptions").querySelectorAll("input:checked")).map((el) => el.value) };
+    if (!id && document.getElementById("miTrackStock").checked) {
+      payload.trackStock = true;
+      payload.stockQuantity = Number(document.getElementById("miStockQuantity").value) || 0;
+      payload.stockUnit = document.getElementById("miStockUnit").value || "unit";
+      payload.stockLowStockThreshold = Number(document.getElementById("miStockLowThreshold").value) || 5;
+    }
     if (id) { await managerApi.updateMenuItem(id, payload); showNotice("menuNotice", "Item updated.", "success"); }
     else { await managerApi.createMenuItem(payload); showNotice("menuNotice", "Item added.", "success"); }
     closeMenuItemModal(); refreshMenuTable();
@@ -945,211 +970,91 @@ async function toggleMenuItemAvailable(id, currentlyAvailable) {
 }
 
 /* ============================================================
-   LAUNDRY
+   TAGS — a small, managed picklist for your branch. Every item form
+   (Menu, Laundry, Spa, Events, Upcoming Events) picks from this instead
+   of free-typing, so guests can browse by a consistent category.
    ============================================================ */
-async function loadLaundryPage() {
+const TAG_SERVICE_LABELS = {
+  restaurant: "Restaurant", bar: "Bar", laundry: "Laundry",
+  room: "Rooms", spa: "Spa", events: "Events", upcoming_events: "Upcoming Events",
+};
+
+async function loadTagsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Laundry", "Wash, press, and dry-clean price list for your branch.", `<button class="btn btn-primary" onclick="openLaundryItemModal()">Add item</button>`)}
-    <div id="laundryNotice"></div>
+    ${pageHeader("Tags", "Pick from these when creating an item so guests can browse by category.")}
+    <div id="tagsNotice"></div>
     <div class="panel">
-      <table><thead><tr><th>Photo</th><th>Item</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
-        <tbody id="laundryBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="modal-overlay" id="laundryItemModal" style="display:none;">
-      <div class="modal">
-        <h3 id="laundryItemModalTitle">Add item</h3>
-        <form id="laundryItemForm">
-          <input type="hidden" id="lId">
-          <div class="form-field"><label>Item name</label><input type="text" id="lName" placeholder="e.g. Shirt — wash & press" required></div>
-          <div class="form-field"><label>Description</label><textarea id="lDescription" rows="2"></textarea></div>
-          <div class="form-row">
-            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="lPrice" min="0" step="1" required></div>
-            <div class="form-field"><label>Turnaround (hours)</label><input type="number" id="lTurnaround" min="1" step="1" value="24"></div>
-          </div>
-          <div class="form-field" id="lImageField" style="display:none;">
-            <label>Photo</label>
-            <input type="file" id="lImageInput" accept="image/*">
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeLaundryItemModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="lSubmitBtn">Save item</button>
-          </div>
-        </form>
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-field" style="max-width:280px;">
+          <label>New tag name</label>
+          <input type="text" id="newTagName" placeholder="e.g. Breakfast, Traditional wear">
+        </div>
+        <div class="form-field" style="max-width:220px;">
+          <label>Service</label>
+          <select id="newTagService">
+            ${Object.entries(TAG_SERVICE_LABELS).map(([val, label]) => `<option value="${val}">${label}</option>`).join("")}
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="createTagConfirm()" style="height:42px;">Add tag</button>
       </div>
     </div>
+    <div id="tagsGroups"><div class="loading-state">Loading…</div></div>
   `;
-  document.getElementById("laundryItemForm").addEventListener("submit", submitLaundryItemForm);
-  refreshLaundryTable();
+  await refreshTagsPage();
 }
 
-async function refreshLaundryTable() {
+async function refreshTagsPage() {
+  const container = document.getElementById("tagsGroups");
   try {
-    const { laundryItems } = await managerApi.listLaundryItems();
-    document.getElementById("laundryBody").innerHTML = laundryItems.length ? laundryItems.map((l) => `
-      <tr>
-        <td>${l.image ? `<img src="${l.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
-        <td>${l.name}${l.description ? `<div class="muted" style="font-size:0.78rem;">${l.description}</div>` : ""}</td>
-        <td>&#8358;${Number(l.price).toLocaleString()}</td>
-        <td>${l.turnaroundHours}h</td>
-        <td><span class="badge badge-${l.isAvailable ? "active" : "inactive"}">${l.isAvailable ? "Available" : "Hidden"}</span></td>
-        <td>
-          <button class="btn btn-sm btn-outline" onclick='openLaundryItemModal(${JSON.stringify(l).replace(/'/g, "&#39;")})'>Edit</button>
-          <button class="btn btn-sm btn-outline" onclick="toggleLaundryAvailable('${l.id}', ${l.isAvailable})">${l.isAvailable ? "Hide" : "Show"}</button>
-        </td>
-      </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No laundry items yet — add your price list above.</td></tr>`;
+    const { tags } = await managerApi.listTags();
+    if (!tags.length) { container.innerHTML = `<div class="empty-state">No tags yet — add one above.</div>`; return; }
+
+    const byService = {};
+    tags.forEach((t) => { (byService[t.service] = byService[t.service] || []).push(t); });
+
+    container.innerHTML = Object.entries(TAG_SERVICE_LABELS)
+      .filter(([service]) => byService[service])
+      .map(([service, label]) => `
+        <div class="panel">
+          <h3>${label}</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            ${byService[service].map((t) => `
+              <span class="badge" style="display:inline-flex; align-items:center; gap:6px;">
+                ${t.name}
+                <button onclick="deleteTagConfirm('${t.id}')" style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.6;padding:0;" title="Delete tag">&times;</button>
+              </span>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
   } catch (err) {
-    document.getElementById("laundryBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+    showNotice("tagsNotice", err.message);
   }
 }
 
-function openLaundryItemModal(item) {
-  document.getElementById("laundryItemModalTitle").textContent = item ? "Edit item" : "Add item";
-  document.getElementById("laundryItemForm").reset();
-  document.getElementById("lId").value = item ? item.id : "";
-  document.getElementById("lImageField").style.display = item ? "block" : "none";
-  if (item) {
-    document.getElementById("lName").value = item.name;
-    document.getElementById("lDescription").value = item.description || "";
-    document.getElementById("lPrice").value = item.price;
-    document.getElementById("lTurnaround").value = item.turnaroundHours;
-  }
-  document.getElementById("laundryItemModal").style.display = "flex";
-}
-function closeLaundryItemModal() { document.getElementById("laundryItemModal").style.display = "none"; }
-
-async function submitLaundryItemForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("lSubmitBtn");
-  btn.disabled = true;
+async function createTagConfirm() {
+  const name = document.getElementById("newTagName").value.trim();
+  const service = document.getElementById("newTagService").value;
+  if (!name) return showNotice("tagsNotice", "Enter a tag name first.");
   try {
-    const id = document.getElementById("lId").value;
-    const payload = {
-      name: document.getElementById("lName").value,
-      description: document.getElementById("lDescription").value || undefined,
-      price: Number(document.getElementById("lPrice").value),
-      turnaroundHours: Number(document.getElementById("lTurnaround").value) || 24,
-    };
-    let savedId = id;
-    if (id) { await managerApi.updateLaundryItem(id, payload); showNotice("laundryNotice", "Item updated.", "success"); }
-    else { const { laundryItem } = await managerApi.createLaundryItem(payload); savedId = laundryItem.id; showNotice("laundryNotice", "Item added.", "success"); }
-
-    const file = document.getElementById("lImageInput").files[0];
-    if (file && savedId) await managerApi.uploadLaundryItemImage(savedId, file);
-
-    closeLaundryItemModal(); refreshLaundryTable();
-  } catch (err) { showNotice("laundryNotice", err.message); } finally { btn.disabled = false; }
-}
-
-async function toggleLaundryAvailable(id, currentlyAvailable) {
-  try { await managerApi.updateLaundryItem(id, { isAvailable: !currentlyAvailable }); refreshLaundryTable(); }
-  catch (err) { showNotice("laundryNotice", err.message); }
-}
-
-/* ============================================================
-   SPA
-   ============================================================ */
-async function loadSpaPage() {
-  const container = document.getElementById("pageContent");
-  container.innerHTML = `
-    ${pageHeader("Spa", "Treatments guests can book for their stay.", `<button class="btn btn-primary" onclick="openSpaTreatmentModal()">Add treatment</button>`)}
-    <div id="spaNotice"></div>
-    <div class="panel">
-      <table><thead><tr><th>Photo</th><th>Treatment</th><th>Duration</th><th>Price</th><th>Status</th><th></th></tr></thead>
-        <tbody id="spaBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="modal-overlay" id="spaTreatmentModal" style="display:none;">
-      <div class="modal">
-        <h3 id="spaTreatmentModalTitle">Add treatment</h3>
-        <form id="spaTreatmentForm">
-          <input type="hidden" id="spId">
-          <div class="form-field"><label>Treatment name</label><input type="text" id="spName" placeholder="e.g. Deep Tissue Massage" required></div>
-          <div class="form-field"><label>Description</label><textarea id="spDescription" rows="2"></textarea></div>
-          <div class="form-row">
-            <div class="form-field"><label>Duration (minutes)</label><input type="number" id="spDuration" min="5" step="5" required></div>
-            <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="spPrice" min="0" step="1" required></div>
-          </div>
-          <div class="form-field" id="spImageField" style="display:none;">
-            <label>Photo</label>
-            <input type="file" id="spImageInput" accept="image/*">
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeSpaTreatmentModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="spSubmitBtn">Save treatment</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  `;
-  document.getElementById("spaTreatmentForm").addEventListener("submit", submitSpaTreatmentForm);
-  refreshSpaTable();
-}
-
-async function refreshSpaTable() {
-  try {
-    const { spaTreatments } = await managerApi.listSpaTreatments();
-    document.getElementById("spaBody").innerHTML = spaTreatments.length ? spaTreatments.map((t) => `
-      <tr>
-        <td>${t.image ? `<img src="${t.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
-        <td>${t.name}${t.description ? `<div class="muted" style="font-size:0.78rem;">${t.description}</div>` : ""}</td>
-        <td>${t.durationMinutes} min</td>
-        <td>&#8358;${Number(t.price).toLocaleString()}</td>
-        <td><span class="badge badge-${t.isAvailable ? "active" : "inactive"}">${t.isAvailable ? "Available" : "Hidden"}</span></td>
-        <td>
-          <button class="btn btn-sm btn-outline" onclick='openSpaTreatmentModal(${JSON.stringify(t).replace(/'/g, "&#39;")})'>Edit</button>
-          <button class="btn btn-sm btn-outline" onclick="toggleSpaAvailable('${t.id}', ${t.isAvailable})">${t.isAvailable ? "Hide" : "Show"}</button>
-        </td>
-      </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No spa treatments yet — add your first one above.</td></tr>`;
+    await managerApi.createTag(name, service);
+    document.getElementById("newTagName").value = "";
+    showNotice("tagsNotice", "Tag added.", "success");
+    refreshTagsPage();
   } catch (err) {
-    document.getElementById("spaBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+    showNotice("tagsNotice", err.message);
   }
 }
 
-function openSpaTreatmentModal(t) {
-  document.getElementById("spaTreatmentModalTitle").textContent = t ? "Edit treatment" : "Add treatment";
-  document.getElementById("spaTreatmentForm").reset();
-  document.getElementById("spId").value = t ? t.id : "";
-  document.getElementById("spImageField").style.display = t ? "block" : "none";
-  if (t) {
-    document.getElementById("spName").value = t.name;
-    document.getElementById("spDescription").value = t.description || "";
-    document.getElementById("spDuration").value = t.durationMinutes;
-    document.getElementById("spPrice").value = t.price;
-  }
-  document.getElementById("spaTreatmentModal").style.display = "flex";
-}
-function closeSpaTreatmentModal() { document.getElementById("spaTreatmentModal").style.display = "none"; }
-
-async function submitSpaTreatmentForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("spSubmitBtn");
-  btn.disabled = true;
+async function deleteTagConfirm(id) {
+  if (!confirm("Delete this tag? Items that already used it keep the label — this only removes it from the picker for new ones.")) return;
   try {
-    const id = document.getElementById("spId").value;
-    const payload = {
-      name: document.getElementById("spName").value,
-      description: document.getElementById("spDescription").value || undefined,
-      durationMinutes: Number(document.getElementById("spDuration").value),
-      price: Number(document.getElementById("spPrice").value),
-    };
-    let savedId = id;
-    if (id) { await managerApi.updateSpaTreatment(id, payload); showNotice("spaNotice", "Treatment updated.", "success"); }
-    else { const { spaTreatment } = await managerApi.createSpaTreatment(payload); savedId = spaTreatment.id; showNotice("spaNotice", "Treatment added.", "success"); }
-
-    const file = document.getElementById("spImageInput").files[0];
-    if (file && savedId) await managerApi.uploadSpaTreatmentImage(savedId, file);
-
-    closeSpaTreatmentModal(); refreshSpaTable();
-  } catch (err) { showNotice("spaNotice", err.message); } finally { btn.disabled = false; }
-}
-
-async function toggleSpaAvailable(id, currentlyAvailable) {
-  try { await managerApi.updateSpaTreatment(id, { isAvailable: !currentlyAvailable }); refreshSpaTable(); }
-  catch (err) { showNotice("spaNotice", err.message); }
+    await managerApi.deleteTag(id);
+    refreshTagsPage();
+  } catch (err) {
+    showNotice("tagsNotice", err.message);
+  }
 }
 
 /* ============================================================
@@ -1174,7 +1079,7 @@ async function refreshBookingsTable() {
     const { bookings } = await managerApi.listBookings();
     document.getElementById("bookingsBody").innerHTML = bookings.length ? bookings.map((b) => `
       <tr><td>${b.guest.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${b.guest.email}</span></td>
-      <td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+      <td>${b.room.name} — ${b.room.roomNumber}</td>
       <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
       <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
       <td>${NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
@@ -1509,7 +1414,7 @@ async function submitPaymentForm(e) {
 async function loadStockPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Stock", "Inventory for your branch, with low-stock flags.",
+    ${pageHeader("Stock", "Inventory for your branch — entries, sales, adjustments, and closing counts, all logged.",
       `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
     <div id="stockNotice"></div>
     <div class="panel">
@@ -1524,10 +1429,13 @@ async function loadStockPage() {
           <input type="hidden" id="stId">
           <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
           <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
-          <div class="form-row">
-            <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
+          <div class="form-row" id="stQuantityRow">
+            <div class="form-field"><label>Starting quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
             <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stThreshold" min="0" step="1" value="5" required></div>
           </div>
+          <p id="stQuantityEditNote" style="display:none; color:var(--text-muted); font-size:0.82rem; margin:-6px 0 12px;">
+            Quantity isn't edited here anymore — use "Ledger" from the list below (entry, adjustment, or closing count).
+          </p>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save item</button>
@@ -1535,8 +1443,40 @@ async function loadStockPage() {
         </form>
       </div>
     </div>
+
+    <div class="modal-overlay" id="ledgerModal" style="display:none;">
+      <div class="modal" style="max-width:640px;">
+        <h3 id="ledgerModalTitle">Ledger</h3>
+        <div id="ledgerNotice"></div>
+        <form id="movementForm" style="border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px;">
+          <input type="hidden" id="mvStockItemId">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Movement type</label>
+              <select id="mvType" onchange="toggleMovementFields()">
+                <option value="ENTRY">Entry (stock received)</option>
+                <option value="ADJUSTMENT">Adjustment (breakage, correction)</option>
+                <option value="CLOSING_COUNT">Closing count (physical count)</option>
+              </select>
+            </div>
+            <div class="form-field" id="mvDeltaField"><label>Quantity</label><input type="number" id="mvQuantityDelta" step="1"></div>
+            <div class="form-field" id="mvCountedField" style="display:none;"><label>Counted quantity</label><input type="number" id="mvCountedQuantity" min="0" step="1"></div>
+          </div>
+          <div class="form-field"><label>Note <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="mvNote" placeholder="e.g. delivery from supplier, 2 bottles broken"></div>
+          <button type="submit" class="btn btn-primary btn-sm" id="mvSubmitBtn">Record</button>
+        </form>
+        <div style="max-height:320px; overflow-y:auto;">
+          <table><thead><tr><th>When</th><th>Type</th><th>Change</th><th>Balance</th><th>Note</th><th>By</th></tr></thead>
+            <tbody id="ledgerBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeLedgerModal()">Close</button></div>
+      </div>
+    </div>
   `;
   document.getElementById("stockForm").addEventListener("submit", submitStockForm);
+  document.getElementById("movementForm").addEventListener("submit", submitMovementForm);
+  toggleMovementFields();
   refreshStockTable();
 }
 async function refreshStockTable() {
@@ -1549,6 +1489,7 @@ async function refreshStockTable() {
         <td>${s.unit}</td>
         <td>${s.lowStockThreshold}</td>
         <td>
+          <button class="btn btn-sm btn-primary" onclick='openLedgerModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Ledger</button>
           <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-danger" onclick="deleteStockRow('${s.id}')">Delete</button>
         </td>
@@ -1560,11 +1501,11 @@ function openStockModal(item) {
   document.getElementById("stockModalTitle").textContent = item ? "Edit item" : "Add item";
   document.getElementById("stockForm").reset();
   document.getElementById("stId").value = item ? item.id : "";
+  document.getElementById("stQuantityRow").style.display = item ? "none" : "";
+  document.getElementById("stQuantityEditNote").style.display = item ? "" : "none";
   if (item) {
     document.getElementById("stName").value = item.name;
     document.getElementById("stUnit").value = item.unit;
-    document.getElementById("stQuantity").value = item.quantity;
-    document.getElementById("stThreshold").value = item.lowStockThreshold;
   }
   document.getElementById("stockModal").style.display = "flex";
 }
@@ -1574,19 +1515,69 @@ async function submitStockForm(e) {
   const btn = document.getElementById("stSubmitBtn"); btn.disabled = true;
   try {
     const id = document.getElementById("stId").value;
-    const payload = {
-      name: document.getElementById("stName").value,
-      unit: document.getElementById("stUnit").value || "unit",
-      quantity: Number(document.getElementById("stQuantity").value),
-      lowStockThreshold: Number(document.getElementById("stThreshold").value),
-    };
-    if (id) await managerApi.updateStockItem(id, payload); else await managerApi.createStockItem(payload);
+    if (id) {
+      await managerApi.updateStockItem(id, { name: document.getElementById("stName").value, unit: document.getElementById("stUnit").value || "unit" });
+    } else {
+      const payload = {
+        name: document.getElementById("stName").value,
+        unit: document.getElementById("stUnit").value || "unit",
+        quantity: Number(document.getElementById("stQuantity").value),
+        lowStockThreshold: Number(document.getElementById("stThreshold").value),
+      };
+      await managerApi.createStockItem(payload);
+    }
     closeStockModal(); showNotice("stockNotice", "Saved.", "success"); refreshStockTable();
   } catch (err) { showNotice("stockNotice", err.message); } finally { btn.disabled = false; }
 }
 async function deleteStockRow(id) {
-  if (!confirm("Delete this stock item?")) return;
+  if (!confirm("Delete this stock item? Its ledger history goes with it.")) return;
   try { await managerApi.deleteStockItem(id); refreshStockTable(); } catch (err) { showNotice("stockNotice", err.message); }
+}
+function toggleMovementFields() {
+  const isClosing = document.getElementById("mvType").value === "CLOSING_COUNT";
+  document.getElementById("mvDeltaField").style.display = isClosing ? "none" : "";
+  document.getElementById("mvCountedField").style.display = isClosing ? "" : "none";
+}
+let _ledgerCurrentItem = null;
+async function openLedgerModal(item) {
+  _ledgerCurrentItem = item;
+  document.getElementById("ledgerModalTitle").textContent = `Ledger — ${item.name}`;
+  document.getElementById("mvStockItemId").value = item.id;
+  document.getElementById("movementForm").reset();
+  toggleMovementFields();
+  document.getElementById("ledgerModal").style.display = "flex";
+  await refreshLedger();
+}
+function closeLedgerModal() { document.getElementById("ledgerModal").style.display = "none"; }
+async function refreshLedger() {
+  try {
+    const { movements } = await managerApi.listStockMovements(_ledgerCurrentItem.id);
+    document.getElementById("ledgerBody").innerHTML = movements.length ? movements.map((m) => `
+      <tr>
+        <td style="font-size:0.78rem;">${new Date(m.createdAt).toLocaleString()}</td>
+        <td>${m.type}</td>
+        <td style="color:${m.quantityDelta < 0 ? "var(--danger)" : "var(--brass-dark)"};">${m.quantityDelta > 0 ? "+" : ""}${m.quantityDelta}</td>
+        <td>${m.balanceAfter}</td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${m.note || "—"}</td>
+        <td style="font-size:0.78rem;">${m.recordedByType}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No movements yet.</td></tr>`;
+  } catch (err) { showNotice("ledgerNotice", err.message); }
+}
+async function submitMovementForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("mvSubmitBtn"); btn.disabled = true;
+  try {
+    const type = document.getElementById("mvType").value;
+    const payload = { type, note: document.getElementById("mvNote").value || undefined };
+    if (type === "CLOSING_COUNT") payload.countedQuantity = Number(document.getElementById("mvCountedQuantity").value);
+    else payload.quantityDelta = Number(document.getElementById("mvQuantityDelta").value);
+    await managerApi.recordStockMovement(document.getElementById("mvStockItemId").value, payload);
+    document.getElementById("movementForm").reset();
+    toggleMovementFields();
+    await refreshLedger();
+    refreshStockTable();
+  } catch (err) { showNotice("ledgerNotice", err.message); } finally { btn.disabled = false; }
 }
 
 /* ============================================================
@@ -1623,6 +1614,10 @@ async function loadEventsPage() {
             <input type="file" id="evImageFile" accept="image/*">
             <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;" onclick="uploadEventImageNow()">Upload</button>
             <div id="evImagePreview" style="margin-top:10px;"></div>
+          </div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="evTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
@@ -1673,9 +1668,22 @@ function openEventModal(ev) {
       ).join("");
     }
   }
+  refreshManagerEventTagOptions(ev ? (ev.tags || []) : []);
   document.getElementById("eventModal").style.display = "flex";
 }
 function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
+async function refreshManagerEventTagOptions(selectedTags) {
+  const container = document.getElementById("evTagsOptions");
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await managerApi.listTags("events");
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
 async function submitEventForm(e) {
   e.preventDefault();
   const btn = document.getElementById("evSubmitBtn"); btn.disabled = true;
@@ -1688,6 +1696,7 @@ async function submitEventForm(e) {
       endsAt: document.getElementById("evEndsAt").value || undefined,
       capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
       price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : undefined,
+      tags: Array.from(document.getElementById("evTagsOptions").querySelectorAll("input:checked")).map((el) => el.value),
     };
     let savedId = id;
     if (id) await managerApi.updateEvent(id, payload);
@@ -1720,6 +1729,163 @@ async function deleteEventRow(id) {
 }
 
 /* ============================================================
+   UPCOMING EVENTS — hotel-hosted, ticketed events. Distinct from Events
+   above (a guest renting the hall for their OWN function). You draft
+   these here; your Director approves or rejects them from their panel.
+   Once published, guests can buy tickets. You can only edit while a
+   draft is DRAFT or REJECTED — once submitted it's locked until your
+   Director acts on it.
+   ============================================================ */
+const UPCOMING_EVENT_STATUS_LABELS = {
+  DRAFT: "Draft", PENDING_APPROVAL: "Pending approval", PUBLISHED: "Published",
+  REJECTED: "Rejected", CANCELLED: "Cancelled", COMPLETED: "Completed",
+};
+let _cachedUpcomingEvents = [];
+
+async function loadUpcomingEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Upcoming Events", "Hotel-hosted, ticketed events. Draft here, submit for approval, and your Director publishes it.",
+      `<button class="btn btn-primary" onclick="openUpcomingEventModal()">New event</button>`)}
+    <div id="upcomingEventsNotice"></div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Title</th><th>When</th><th>Capacity</th><th>Ticket price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="upcomingEventsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="upcomingEventModal" style="display:none;">
+      <div class="modal">
+        <h3 id="ueModalTitle">New event</h3>
+        <form id="upcomingEventForm">
+          <input type="hidden" id="ueId">
+          <div class="form-field"><label>Title</label><input type="text" id="ueTitle" required></div>
+          <div class="form-field"><label>Description</label><textarea id="ueDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Starts</label><input type="datetime-local" id="ueStartsAt" required></div>
+            <div class="form-field"><label>Ends <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="datetime-local" id="ueEndsAt"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Capacity <span style="color:var(--text-muted); font-weight:400;">(blank = unlimited)</span></label><input type="number" id="ueCapacity" min="1" step="1"></div>
+            <div class="form-field"><label>Ticket price (&#8358;) <span style="color:var(--text-muted); font-weight:400;">(blank = free)</span></label><input type="number" id="ueTicketPrice" min="0" step="1"></div>
+          </div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="ueTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeUpcomingEventModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="ueSubmitBtn">Save draft</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("upcomingEventForm").addEventListener("submit", submitUpcomingEventForm);
+  await refreshUpcomingEvents();
+}
+
+async function refreshUpcomingEvents() {
+  try {
+    const { upcomingEvents } = await managerApi.listUpcomingEvents();
+    _cachedUpcomingEvents = upcomingEvents;
+    document.getElementById("upcomingEventsBody").innerHTML = upcomingEvents.length ? upcomingEvents.map((ue) => `
+      <tr>
+        <td>${ue.title}${ue.rejectionReason ? `<div style="color:var(--text-muted); font-size:0.78rem;">Rejected: ${ue.rejectionReason}</div>` : ""}</td>
+        <td>${new Date(ue.startsAt).toLocaleString()}</td>
+        <td>${ue.capacity ?? "Unlimited"}</td>
+        <td>${ue.ticketPrice ? `&#8358;${Number(ue.ticketPrice).toLocaleString()}` : "Free"}</td>
+        <td><span class="badge badge-${ue.status.toLowerCase()}">${UPCOMING_EVENT_STATUS_LABELS[ue.status] || ue.status}</span></td>
+        <td>
+          ${["DRAFT", "REJECTED"].includes(ue.status) ? `
+            <button class="btn btn-sm btn-outline" onclick='openUpcomingEventModal(${JSON.stringify(ue).replace(/'/g, "&#39;")})'>Edit</button>
+            <button class="btn btn-sm btn-primary" onclick="submitUpcomingEventConfirm('${ue.id}')">Submit</button>
+            <button class="btn btn-sm btn-outline" onclick="deleteUpcomingEventConfirm('${ue.id}')">Delete</button>
+          ` : ""}
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No upcoming events yet — create one above.</td></tr>`;
+  } catch (err) { showNotice("upcomingEventsNotice", err.message); }
+}
+
+function openUpcomingEventModal(ue) {
+  document.getElementById("ueModalTitle").textContent = ue ? "Edit event" : "New event";
+  document.getElementById("upcomingEventForm").reset();
+  document.getElementById("ueId").value = ue ? ue.id : "";
+  if (ue) {
+    document.getElementById("ueTitle").value = ue.title;
+    document.getElementById("ueDescription").value = ue.description || "";
+    document.getElementById("ueStartsAt").value = ue.startsAt ? ue.startsAt.slice(0, 16) : "";
+    document.getElementById("ueEndsAt").value = ue.endsAt ? ue.endsAt.slice(0, 16) : "";
+    document.getElementById("ueCapacity").value = ue.capacity ?? "";
+    document.getElementById("ueTicketPrice").value = ue.ticketPrice ?? "";
+  }
+  refreshUpcomingEventTagOptions(ue ? (ue.tags || []) : []);
+  document.getElementById("upcomingEventModal").style.display = "flex";
+}
+function closeUpcomingEventModal() { document.getElementById("upcomingEventModal").style.display = "none"; }
+async function refreshUpcomingEventTagOptions(selectedTags) {
+  const container = document.getElementById("ueTagsOptions");
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await managerApi.listTags("upcoming_events");
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
+
+async function submitUpcomingEventForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("ueSubmitBtn");
+  btn.disabled = true;
+  try {
+    const id = document.getElementById("ueId").value;
+    const payload = {
+      title: document.getElementById("ueTitle").value,
+      description: document.getElementById("ueDescription").value || undefined,
+      startsAt: document.getElementById("ueStartsAt").value,
+      endsAt: document.getElementById("ueEndsAt").value || undefined,
+      capacity: document.getElementById("ueCapacity").value ? Number(document.getElementById("ueCapacity").value) : undefined,
+      ticketPrice: document.getElementById("ueTicketPrice").value ? Number(document.getElementById("ueTicketPrice").value) : undefined,
+      tags: Array.from(document.getElementById("ueTagsOptions").querySelectorAll("input:checked")).map((el) => el.value),
+    };
+    if (id) { await managerApi.updateUpcomingEvent(id, payload); showNotice("upcomingEventsNotice", "Draft updated.", "success"); }
+    else { await managerApi.createUpcomingEvent(payload); showNotice("upcomingEventsNotice", "Draft created.", "success"); }
+    closeUpcomingEventModal();
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitUpcomingEventConfirm(id) {
+  if (!confirm("Submit this event for Director approval? You won't be able to edit it until they act on it.")) return;
+  try {
+    await managerApi.submitUpcomingEvent(id);
+    showNotice("upcomingEventsNotice", "Submitted for approval.", "success");
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+async function deleteUpcomingEventConfirm(id) {
+  if (!confirm("Delete this draft?")) return;
+  try {
+    await managerApi.deleteUpcomingEvent(id);
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+/* ============================================================
    LAUNDRY (manage_laundry)
    ============================================================ */
 async function loadLaundryPage() {
@@ -1728,8 +1894,8 @@ async function loadLaundryPage() {
     ${pageHeader("Laundry", "Services and pricing for your branch.", `<button class="btn btn-primary" onclick="openLaundryModal()">Add item</button>`)}
     <div id="laundryNotice"></div>
     <div class="panel">
-      <table><thead><tr><th>Name</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
-        <tbody id="laundryBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      <table><thead><tr><th>Photo</th><th>Name</th><th>Tags</th><th>Price</th><th>Turnaround</th><th>Status</th><th></th></tr></thead>
+        <tbody id="laundryBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="laundryModal" style="display:none;">
@@ -1742,6 +1908,14 @@ async function loadLaundryPage() {
             <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="lnPrice" min="0" step="1" required></div>
             <div class="form-field"><label>Turnaround (hours)</label><input type="number" id="lnTurnaround" min="1" value="24"></div>
           </div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="lnTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
+          </div>
+          <div class="form-field" id="lnImageField" style="display:none;">
+            <label>Photo</label>
+            <input type="file" id="lnImageInput" accept="image/*">
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeLaundryModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="lnSubmitBtn">Save item</button>
@@ -1753,26 +1927,43 @@ async function loadLaundryPage() {
   document.getElementById("laundryForm").addEventListener("submit", submitLaundryForm);
   refreshLaundryTable();
 }
+async function refreshLaundryTagOptions(selectedTags) {
+  const container = document.getElementById("lnTagsOptions");
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await managerApi.listTags("laundry");
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
 async function refreshLaundryTable() {
   try {
     const { laundryItems } = await managerApi.listLaundryItems();
     document.getElementById("laundryBody").innerHTML = laundryItems.length ? laundryItems.map((l) => `
       <tr>
-        <td>${l.name}</td><td>&#8358;${Number(l.price).toLocaleString()}</td><td>${l.turnaroundHours || 24}h</td>
+        <td>${l.image ? `<img src="${l.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
+        <td>${l.name}</td>
+        <td>${(l.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+        <td>&#8358;${Number(l.price).toLocaleString()}</td><td>${l.turnaroundHours || 24}h</td>
         <td><span class="badge ${l.isAvailable ? "badge-active" : "badge-inactive"}">${l.isAvailable ? "Active" : "Inactive"}</span></td>
         <td>
           <button class="btn btn-sm btn-outline" onclick='openLaundryModal(${JSON.stringify(l).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-outline" onclick="toggleLaundryActive('${l.id}', ${l.isAvailable})">${l.isAvailable ? "Deactivate" : "Activate"}</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No laundry items yet.</td></tr>`;
-  } catch (err) { document.getElementById("laundryBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+    `).join("") : `<tr><td colspan="7" class="empty-state">No laundry items yet.</td></tr>`;
+  } catch (err) { document.getElementById("laundryBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
 }
 function openLaundryModal(item) {
   document.getElementById("laundryModalTitle").textContent = item ? "Edit item" : "Add item";
   document.getElementById("laundryForm").reset();
   document.getElementById("lnId").value = item ? item.id : "";
+  document.getElementById("lnImageField").style.display = item ? "block" : "none";
   if (item) { document.getElementById("lnName").value = item.name; document.getElementById("lnPrice").value = item.price; document.getElementById("lnTurnaround").value = item.turnaroundHours || 24; }
+  refreshLaundryTagOptions(item ? (item.tags || []) : []);
   document.getElementById("laundryModal").style.display = "flex";
 }
 function closeLaundryModal() { document.getElementById("laundryModal").style.display = "none"; }
@@ -1781,8 +1972,15 @@ async function submitLaundryForm(e) {
   const btn = document.getElementById("lnSubmitBtn"); btn.disabled = true;
   try {
     const id = document.getElementById("lnId").value;
-    const payload = { name: document.getElementById("lnName").value, price: Number(document.getElementById("lnPrice").value), turnaroundHours: Number(document.getElementById("lnTurnaround").value) || 24 };
-    if (id) await managerApi.updateLaundryItem(id, payload); else await managerApi.createLaundryItem(payload);
+    const payload = { name: document.getElementById("lnName").value, price: Number(document.getElementById("lnPrice").value), turnaroundHours: Number(document.getElementById("lnTurnaround").value) || 24,
+      tags: Array.from(document.getElementById("lnTagsOptions").querySelectorAll("input:checked")).map((el) => el.value) };
+    let savedId = id;
+    if (id) { await managerApi.updateLaundryItem(id, payload); }
+    else { const { laundryItem } = await managerApi.createLaundryItem(payload); savedId = laundryItem.id; }
+
+    const file = document.getElementById("lnImageInput").files[0];
+    if (file && savedId) await managerApi.uploadLaundryItemImage(savedId, file);
+
     closeLaundryModal(); showNotice("laundryNotice", "Saved.", "success"); refreshLaundryTable();
   } catch (err) { showNotice("laundryNotice", err.message); } finally { btn.disabled = false; }
 }
@@ -1799,8 +1997,8 @@ async function loadSpaPage() {
     ${pageHeader("Spa", "Treatments and pricing for your branch.", `<button class="btn btn-primary" onclick="openSpaModal()">Add treatment</button>`)}
     <div id="spaNotice"></div>
     <div class="panel">
-      <table><thead><tr><th>Name</th><th>Price</th><th>Duration</th><th>Status</th><th></th></tr></thead>
-        <tbody id="spaBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      <table><thead><tr><th>Photo</th><th>Name</th><th>Tags</th><th>Price</th><th>Duration</th><th>Status</th><th></th></tr></thead>
+        <tbody id="spaBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="spaModal" style="display:none;">
@@ -1814,6 +2012,14 @@ async function loadSpaPage() {
             <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="spPrice" min="0" step="1" required></div>
             <div class="form-field"><label>Duration (minutes)</label><input type="number" id="spDuration" min="1" value="60"></div>
           </div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="spTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
+          </div>
+          <div class="form-field" id="spImageField" style="display:none;">
+            <label>Photo</label>
+            <input type="file" id="spImageInput" accept="image/*">
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeSpaModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="spSubmitBtn">Save treatment</button>
@@ -1825,26 +2031,43 @@ async function loadSpaPage() {
   document.getElementById("spaForm").addEventListener("submit", submitSpaForm);
   refreshSpaTable();
 }
+async function refreshSpaTagOptions(selectedTags) {
+  const container = document.getElementById("spTagsOptions");
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await managerApi.listTags("spa");
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
 async function refreshSpaTable() {
   try {
     const { spaTreatments } = await managerApi.listSpaTreatments();
     document.getElementById("spaBody").innerHTML = spaTreatments.length ? spaTreatments.map((s) => `
       <tr>
-        <td>${s.name}</td><td>&#8358;${Number(s.price).toLocaleString()}</td><td>${s.durationMinutes || 60} min</td>
+        <td>${s.image ? `<img src="${s.image}" style="width:44px;height:44px;object-fit:cover;border-radius:6px;">` : `<span class="muted">—</span>`}</td>
+        <td>${s.name}</td>
+        <td>${(s.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+        <td>&#8358;${Number(s.price).toLocaleString()}</td><td>${s.durationMinutes || 60} min</td>
         <td><span class="badge ${s.isAvailable ? "badge-active" : "badge-inactive"}">${s.isAvailable ? "Active" : "Inactive"}</span></td>
         <td>
           <button class="btn btn-sm btn-outline" onclick='openSpaModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-outline" onclick="toggleSpaActive('${s.id}', ${s.isAvailable})">${s.isAvailable ? "Deactivate" : "Activate"}</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No treatments yet.</td></tr>`;
-  } catch (err) { document.getElementById("spaBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+    `).join("") : `<tr><td colspan="7" class="empty-state">No treatments yet.</td></tr>`;
+  } catch (err) { document.getElementById("spaBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
 }
 function openSpaModal(item) {
   document.getElementById("spaModalTitle").textContent = item ? "Edit treatment" : "Add treatment";
   document.getElementById("spaForm").reset();
   document.getElementById("spId").value = item ? item.id : "";
+  document.getElementById("spImageField").style.display = item ? "block" : "none";
   if (item) { document.getElementById("spName").value = item.name; document.getElementById("spDescription").value = item.description || ""; document.getElementById("spPrice").value = item.price; document.getElementById("spDuration").value = item.durationMinutes || 60; }
+  refreshSpaTagOptions(item ? (item.tags || []) : []);
   document.getElementById("spaModal").style.display = "flex";
 }
 function closeSpaModal() { document.getElementById("spaModal").style.display = "none"; }
@@ -1853,8 +2076,15 @@ async function submitSpaForm(e) {
   const btn = document.getElementById("spSubmitBtn"); btn.disabled = true;
   try {
     const id = document.getElementById("spId").value;
-    const payload = { name: document.getElementById("spName").value, description: document.getElementById("spDescription").value || undefined, price: Number(document.getElementById("spPrice").value), durationMinutes: Number(document.getElementById("spDuration").value) || 60 };
-    if (id) await managerApi.updateSpaTreatment(id, payload); else await managerApi.createSpaTreatment(payload);
+    const payload = { name: document.getElementById("spName").value, description: document.getElementById("spDescription").value || undefined, price: Number(document.getElementById("spPrice").value), durationMinutes: Number(document.getElementById("spDuration").value) || 60,
+      tags: Array.from(document.getElementById("spTagsOptions").querySelectorAll("input:checked")).map((el) => el.value) };
+    let savedId = id;
+    if (id) { await managerApi.updateSpaTreatment(id, payload); }
+    else { const { spaTreatment } = await managerApi.createSpaTreatment(payload); savedId = spaTreatment.id; }
+
+    const file = document.getElementById("spImageInput").files[0];
+    if (file && savedId) await managerApi.uploadSpaTreatmentImage(savedId, file);
+
     closeSpaModal(); showNotice("spaNotice", "Saved.", "success"); refreshSpaTable();
   } catch (err) { showNotice("spaNotice", err.message); } finally { btn.disabled = false; }
 }

@@ -277,6 +277,7 @@ const guestApi = {
   initiateBookingPayment: (branchId, bookingId, callbackUrl) =>
     guestRequest(`/branches/${branchId}/bookings/${bookingId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
   listMyBookings: () => guestRequest("/guest/bookings"),
+  getFolio: (bookingId) => guestRequest(`/guest/bookings/${bookingId}/folio`),
   cancelBooking: (branchId, id) => guestRequest(`/branches/${branchId}/bookings/${id}/cancel`, { method: "PATCH" }),
   // No invoice route exists on the backend yet — intentionally not offered
   // in this panel rather than linking to something that 404s.
@@ -323,6 +324,14 @@ const guestApi = {
   createOrder: (branchId, payload) => guestRequest(`/branches/${branchId}/orders`, { method: "POST", body: JSON.stringify(payload) }),
   initiateOrderPayment: (branchId, orderId, callbackUrl) =>
     guestRequest(`/branches/${branchId}/orders/${orderId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
+
+  // Verify-on-return — called the moment the guest lands back on this
+  // page after Paystack checkout, instead of only waiting on the webhook.
+  // Not branch-scoped or auth-gated on the backend (the reference alone
+  // proves nothing without Paystack independently confirming it), so a
+  // plain top-level path, not one of the /branches/:branchId/... routes
+  // above.
+  verifyPaystackPayment: (reference) => guestRequest(`/payments/paystack/verify`, { method: "POST", body: JSON.stringify({ reference }) }),
 };
 
 /* ============================================================
@@ -623,6 +632,7 @@ async function loadMyBookingsPage() {
         </div>
         <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap;">
           ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.branchId}','${b.id}')">Cancel booking</button>` : ""}
+          ${b.status === "CHECKED_IN" ? `<button class="btn btn-sm btn-outline" onclick="openFolioModal('${b.id}','${b.room.roomNumber}')">Room charges</button>` : ""}
           ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.name.replace(/'/g, "&#39;")}')">Leave a review</button>` : ""}
         </div>
       </div>
@@ -636,6 +646,36 @@ async function cancelMyBooking(branchId, id) {
   if (!confirm("Cancel this booking? This can't be undone.")) return;
   try { await guestApi.cancelBooking(branchId, id); loadMyBookingsPage(); }
   catch (err) { showNotice("myBookingsNotice", err.message); }
+}
+
+/* ============================================================
+   ROOM CHARGES (folio) — read-only. Settling the balance is a
+   front-desk action at checkout, not something a guest does here.
+   ============================================================ */
+async function openFolioModal(bookingId, roomNumber) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "folioModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <h3>Room ${roomNumber} — charges this stay</h3>
+      <div id="folioModalContent"><div class="loading-state">Loading…</div></div>
+      <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  try {
+    const { charges, balance, currency } = await guestApi.getFolio(bookingId);
+    document.getElementById("folioModalContent").innerHTML = charges.length ? `
+      ${charges.map((c) => `
+        <div class="summary-line">
+          <span>${c.type.replace(/_/g, " ")} — ${new Date(c.createdAt).toLocaleDateString()}</span>
+          <span>&#8358;${Number(c.totalAmount).toLocaleString()}</span>
+        </div>
+      `).join("")}
+      <div class="summary-line total"><span>Balance due at checkout</span><span>&#8358;${Number(balance).toLocaleString()}</span></div>
+    ` : `<div class="empty-state">No charges on this room yet.</div>`;
+  } catch (err) {
+    document.getElementById("folioModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
 }
 
 function openReviewModal(bookingId, roomTypeName) {
@@ -1013,6 +1053,7 @@ async function loadOrderCatalog() {
   const type = document.getElementById("orType").value;
   const catalogEl = document.getElementById("orderCatalog");
   if (!branchId) return;
+  renderOrderPaymentChoice();
   catalogEl.innerHTML = `<div class="loading-state">Loading…</div>`;
   _orderCart = [];
   renderOrderCartSummary();
@@ -1084,11 +1125,14 @@ function renderOrderCartSummary() {
       <button class="btn btn-primary btn-block" style="margin-top:10px;" id="orSubmitBtn" onclick="submitOrder()">Place order &amp; pay</button>
     </div>
   `;
+  updateOrderSubmitLabel();
 }
 
 async function submitOrder() {
   const branchId = document.getElementById("orBranch").value;
   const type = document.getElementById("orType").value;
+  const chargeCheckbox = document.getElementById("orChargeToRoom");
+  const chargeToRoom = !!(chargeCheckbox && chargeCheckbox.checked);
   const btn = document.getElementById("orSubmitBtn");
   if (btn) { btn.disabled = true; btn.textContent = "Processing…"; }
   try {
@@ -1096,8 +1140,17 @@ async function submitOrder() {
     const lines = _orderCart.map((l) => ({ [lineField]: l.id, quantity: l.quantity }));
     const { order } = await guestApi.createOrder(branchId, {
       type, lines,
+      ...(chargeToRoom ? { chargeToRoom: true, bookingId: chargeCheckbox.value } : {}),
       guest: getGuest() ? undefined : undefined, // logged-in guest — backend uses the token
     });
+
+    if (chargeToRoom) {
+      _orderCart = [];
+      showNotice("orderNotice", "Charged to your room — check \"My Bookings → Room charges\" for your running balance.", "success");
+      renderOrderCartSummary();
+      return;
+    }
+
     const { authorizationUrl } = await guestApi.initiateOrderPayment(branchId, order.id, window.location.origin + window.location.pathname);
     if (authorizationUrl) {
       window.location.href = authorizationUrl;
@@ -1108,7 +1161,7 @@ async function submitOrder() {
     }
   } catch (err) {
     showNotice("orderNotice", err.message);
-    if (btn) { btn.disabled = false; btn.textContent = "Place order & pay"; }
+    if (btn) { btn.disabled = false; btn.textContent = chargeToRoom ? "Charge to room" : "Place order & pay"; }
   }
 }
 
@@ -1116,6 +1169,8 @@ function bookSpaTreatment(treatment) {
   const overlay = document.createElement("div");
   overlay.className = "modal-overlay"; overlay.id = "spaModal";
   const now = new Date(); now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  const branchId = document.getElementById("orBranch").value;
+  const matchingBooking = _myActiveBookings.find((b) => b.branchId === branchId);
   overlay.innerHTML = `
     <div class="modal">
       <h3>Book — ${treatment.name}</h3>
@@ -1123,6 +1178,14 @@ function bookSpaTreatment(treatment) {
       <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">${treatment.durationMinutes} minutes &middot; &#8358;${Number(treatment.price).toLocaleString()}</p>
       <form id="spaForm">
         <div class="form-field"><label>Date &amp; time</label><input type="datetime-local" id="spTime" min="${now.toISOString().slice(0,16)}" required></div>
+        ${matchingBooking ? `
+          <div class="form-field">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
+              <input type="checkbox" id="spChargeToRoom" value="${matchingBooking.id}" onchange="document.getElementById('spSubmitBtn').textContent = this.checked ? 'Charge to room' : 'Book & pay'">
+              Charge this to Room ${matchingBooking.room.roomNumber} instead of paying now
+            </label>
+          </div>
+        ` : ""}
         <div class="modal-actions">
           <button type="button" class="btn btn-outline" onclick="document.getElementById('spaModal').remove()">Cancel</button>
           <button type="submit" class="btn btn-primary" id="spSubmitBtn">Book &amp; pay</button>
@@ -1133,11 +1196,21 @@ function bookSpaTreatment(treatment) {
   document.getElementById("spaForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const branchId = document.getElementById("orBranch").value;
+    const chargeCheckbox = document.getElementById("spChargeToRoom");
+    const chargeToRoom = !!(chargeCheckbox && chargeCheckbox.checked);
     const btn = document.getElementById("spSubmitBtn"); btn.disabled = true;
     try {
       const { order } = await guestApi.createOrder(branchId, {
         type: "SPA", treatmentId: treatment.id, scheduledAt: new Date(document.getElementById("spTime").value).toISOString(),
+        ...(chargeToRoom ? { chargeToRoom: true, bookingId: chargeCheckbox.value } : {}),
       });
+
+      if (chargeToRoom) {
+        overlay.remove();
+        showNotice("orderNotice", "Spa appointment booked and charged to your room.", "success");
+        return;
+      }
+
       const { authorizationUrl } = await guestApi.initiateOrderPayment(branchId, order.id, window.location.origin + window.location.pathname);
       overlay.remove();
       if (authorizationUrl) window.location.href = authorizationUrl;
@@ -1447,10 +1520,59 @@ function showNotice(containerId, message, type = "error") {
   setTimeout(() => { if (el) el.innerHTML = ""; }, 4500);
 }
 function showAuth() { document.getElementById("authScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
-function showApp() {
+
+/** Page-independent — deliberately not tied to any page's own notice
+ * container, since switchPage()'s loader() runs async and the container
+ * this needs to appear in may not exist yet the instant we know whether
+ * the payment succeeded. Floats above everything instead. */
+function showPaymentBanner(message, type) {
+  const el = document.createElement("div");
+  el.className = `notice ${type}`;
+  el.style.cssText = "position:fixed; top:16px; left:50%; transform:translateX(-50%); z-index:9999; max-width:520px; box-shadow:0 4px 18px rgba(0,0,0,0.18);";
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 7000);
+}
+
+/** Runs once at boot. If the guest just landed back from Paystack, the
+ * callback URL carries ?reference= (or Paystack's own ?trxref=) — this
+ * verifies DIRECTLY with Paystack rather than trusting that redirect
+ * alone (a redirect proves nothing by itself; the query string could be
+ * anything), then routes to a page that actually shows the result. Was
+ * previously nothing — the guest was silently dropped on the Search page
+ * with zero confirmation either way, which is the whole reason "I paid
+ * and nothing happened" complaints existed. */
+async function checkForPaymentReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const reference = params.get("reference") || params.get("trxref");
+  if (!reference) return null;
+
+  // Strip it from the URL immediately so a page refresh doesn't
+  // re-trigger verification (harmless since it's idempotent, but noisy).
+  window.history.replaceState({}, "", window.location.pathname);
+
+  const isBooking = reference.startsWith("booking_");
+  try {
+    const result = await guestApi.verifyPaystackPayment(reference);
+    if (result.confirmed) {
+      return { page: isBooking ? "bookings" : "search", message: isBooking ? "Payment confirmed — your booking is now confirmed." : "Payment confirmed — thank you!", type: "success" };
+    }
+    return { page: "search", message: `Payment ${result.status === "abandoned" ? "wasn't completed" : "is still processing"} — if you were charged, it will confirm shortly. Contact support if it doesn't within a few minutes.`, type: "error" };
+  } catch (err) {
+    return { page: "search", message: `Couldn't confirm your payment automatically (${err.message}). If you were charged, contact support with your reference: ${reference}`, type: "error" };
+  }
+}
+
+async function showApp() {
   document.getElementById("authScreen").style.display = "none";
   document.getElementById("appShell").style.display = "block";
-  renderNav(); switchPage("search"); refreshSupportBadgeSilently();
+  renderNav();
+
+  const paymentReturn = await checkForPaymentReturn();
+  switchPage(paymentReturn ? paymentReturn.page : "search");
+  if (paymentReturn) showPaymentBanner(paymentReturn.message, paymentReturn.type);
+
+  refreshSupportBadgeSilently();
 }
 async function refreshSupportBadgeSilently() {
   try {

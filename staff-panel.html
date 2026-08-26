@@ -269,11 +269,24 @@ const staffApi = {
     return { token: data.token, refreshToken: data.refreshToken, staff: data.staff };
   },
 
-  listRoomTypes: () => adminRequest("/manager/room-types"),
+  // Rooms — status change only. Creating/editing/deleting a room, or its
+  // photos, is Director-only (see admin-panel.html); this account never
+  // reaches those routes.
   listRooms: () => adminRequest("/manager/rooms"),
   updateRoomStatus: (id, status) => adminRequest(`/manager/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
+  listHousekeeping: (status) => adminRequest(`/manager/housekeeping${status ? `?status=${status}` : ""}`),
+  updateHousekeepingStatus: (roomId, housekeepingStatus) => adminRequest(`/manager/housekeeping/${roomId}`, { method: "PATCH", body: JSON.stringify({ housekeepingStatus }) }),
+
   listMenuItems: (category) => adminRequest(`/manager/menu${category ? `?category=${category}` : ""}`),
+
+  // Stock — a Staff account with manage_stock can view items and record
+  // movements (entries, adjustments, closing counts). Creating/editing/
+  // deleting the StockItem itself (name, unit, threshold) stays a
+  // Manager/Director action — not exposed in this panel.
+  listStockItems: () => adminRequest("/manager/stock"),
+  listStockMovements: (id) => adminRequest(`/manager/stock/${id}/movements`),
+  recordStockMovement: (id, payload) => adminRequest(`/manager/stock/${id}/movements`, { method: "POST", body: JSON.stringify(payload) }),
 
   listBookings: (status) => adminRequest(`/manager/bookings${status ? `?status=${status}` : ""}`),
   updateBookingStatus: (id, status) => adminRequest(`/manager/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
@@ -281,6 +294,11 @@ const staffApi = {
   listTickets: (status) => adminRequest(`/manager/tickets${status ? `?status=${status}` : ""}`),
   assignTicket: (id) => adminRequest(`/manager/tickets/${id}/assign`, { method: "PATCH" }),
   resolveTicket: (id) => adminRequest(`/manager/tickets/${id}/resolve`, { method: "PATCH" }),
+
+  // Was referenced by the Dashboard's "recorded this month" card but
+  // never actually defined — any manage_payments account crashed the
+  // whole Dashboard on load. The route existed on the backend all along.
+  listTransactions: () => adminRequest("/manager/transactions"),
 
   getReports: () => adminRequest("/manager/reports"),
 };
@@ -295,6 +313,7 @@ const NAV_GROUPS = [
     id: "operations", label: "Operations", icon: "fa-th-large",
     items: [
       { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
+      { page: "housekeeping", label: "Housekeeping", icon: "fa-broom", permission: "manage_rooms" },
       { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
       { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
@@ -359,9 +378,10 @@ function setActiveNav(page) { document.querySelectorAll(".nav-item, .nav-item-st
 const PAGE_LOADERS = {
   dashboard: loadDashboardPage,
   rooms: loadRoomsPage,
+  housekeeping: loadHousekeepingPage,
   menu: loadMenuPage,
   bookings: loadBookingsPage,
-  stock: () => loadComingSoon("Stock", "Track inventory for your branch with low-stock flags."),
+  stock: loadStockPage,
   events: () => loadComingSoon("Events", "Publish upcoming events guests can book into."),
   tickets: loadTicketsPage,
   reports: loadReportsPage,
@@ -418,7 +438,7 @@ async function loadDashboardPage() {
           <div class="panel"><h3>Recent bookings</h3>
             <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
               <tbody>${bookings.slice(0, 6).map((b) => `
-                <tr><td>${b.guest.name}</td><td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+                <tr><td>${b.guest.name}</td><td>${b.room.name} — ${b.room.roomNumber}</td>
                 <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
                 <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td></tr>
               `).join("")}</tbody>
@@ -464,51 +484,243 @@ async function loadDashboardPage() {
 }
 
 /* ============================================================
-   ROOMS — VIEW + status update only. No add/edit room type,
-   no add/edit room, no pricing control. Staff can flag a room's
-   housekeeping/maintenance status, nothing else.
+   ROOMS — VIEW + status update only. No add/edit, no pricing control,
+   no photos. Every room is now its own complete listing (RoomType was
+   merged into Room) — there's no separate "room types" table anymore.
+   Staff can flag a room's status, nothing else.
    ============================================================ */
 async function loadRoomsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
-    ${pageHeader("Rooms", "View room types and update room status.")}
-    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding room types, rooms, or changing prices is limited to Managers and Directors. You can update a room's status below.</span></div>
+    ${pageHeader("Rooms", "View rooms and update status.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding, editing, or pricing rooms is limited to Directors. You can update a room's status below.</span></div>
     <div id="roomsNotice"></div>
-    <div class="panel"><h3>Room types</h3>
-      <table><thead><tr><th>Name</th><th>Base price</th><th>Max occupancy</th><th>Rooms</th></tr></thead>
-        <tbody id="roomTypesBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="panel"><h3>All rooms</h3>
-      <table><thead><tr><th>Room #</th><th>Type</th><th>Floor</th><th>Status</th><th></th></tr></thead>
-        <tbody id="roomsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+    <div class="panel">
+      <table><thead><tr><th></th><th>Room #</th><th>Name</th><th>Tags</th><th>Price</th><th>Floor</th><th>Status</th></tr></thead>
+        <tbody id="roomsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
   `;
   try {
-    const [{ roomTypes }, { rooms }] = await Promise.all([staffApi.listRoomTypes(), staffApi.listRooms()]);
-    document.getElementById("roomTypesBody").innerHTML = roomTypes.length ? roomTypes.map((rt) => `
-      <tr><td>${rt.name}</td><td>&#8358;${Number(rt.basePrice).toLocaleString()}</td><td>${rt.maxOccupancy}</td><td>${(rt.rooms || []).length}</td></tr>
-    `).join("") : `<tr><td colspan="4" class="empty-state">No room types yet.</td></tr>`;
-
+    const { rooms } = await staffApi.listRooms();
     document.getElementById("roomsBody").innerHTML = rooms.length ? rooms.map((r) => `
-      <tr><td>${r.roomNumber}</td><td>${r.roomType.name}</td><td>${r.floor || "—"}</td>
-      <td><span class="badge badge-${r.status.toLowerCase()}">${r.status}</span></td>
-      <td>
-        <select onchange="updateRoomStatusInline('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
-          <option value="">Change status…</option>
-          <option value="ACTIVE">Active</option>
-          <option value="MAINTENANCE">Maintenance</option>
-          <option value="INACTIVE">Inactive</option>
-        </select>
-      </td></tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms yet.</td></tr>`;
+      <tr>
+        <td>${r.images && r.images[0] ? `<img src="${r.images[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;">` : ""}</td>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>${(r.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+        <td>&#8358;${Number(r.basePrice).toLocaleString()}</td>
+        <td>${r.floor || "—"}</td>
+        <td>
+          <select onchange="updateRoomStatusInline('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
+            <option value="">${r.status}</option>
+            <option value="ACTIVE">Active</option>
+            <option value="MAINTENANCE">Maintenance</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="7" class="empty-state">No rooms yet.</td></tr>`;
   } catch (err) { showNotice("roomsNotice", err.message); }
 }
 async function updateRoomStatusInline(id, status) {
   if (!status) return;
   try { await staffApi.updateRoomStatus(id, status); loadRoomsPage(); }
   catch (err) { showNotice("roomsNotice", err.message); }
+}
+
+/* ============================================================
+   HOUSEKEEPING — Clean/Dirty/Cleaning/Inspected/Out of Order per
+   room. Separate from the Rooms page's ACTIVE/MAINTENANCE/INACTIVE
+   status above.
+   ============================================================ */
+const HOUSEKEEPING_STATUSES = ["CLEAN", "DIRTY", "CLEANING", "INSPECTED", "OUT_OF_ORDER"];
+const HOUSEKEEPING_LABELS = { CLEAN: "Clean", DIRTY: "Dirty", CLEANING: "Cleaning", INSPECTED: "Inspected", OUT_OF_ORDER: "Out of order" };
+
+async function loadHousekeepingPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Housekeeping", "Track which rooms are ready to hand to a guest right now.")}
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="form-field" style="max-width:260px;">
+        <label>Filter by status</label>
+        <select id="hkStatusFilter" onchange="refreshHousekeeping()">
+          <option value="">All rooms</option>
+          ${HOUSEKEEPING_STATUSES.map((s) => `<option value="${s}">${HOUSEKEEPING_LABELS[s]}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div id="housekeepingNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Room #</th><th>Name</th><th>Floor</th><th>Last updated</th><th>Housekeeping status</th></tr></thead>
+        <tbody id="housekeepingBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshHousekeeping();
+}
+
+async function refreshHousekeeping() {
+  const statusFilter = document.getElementById("hkStatusFilter")?.value || "";
+  try {
+    const { rooms } = await staffApi.listHousekeeping(statusFilter);
+    document.getElementById("housekeepingBody").innerHTML = rooms.length ? rooms.map((r) => `
+      <tr>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>${r.floor || "—"}</td>
+        <td>${r.housekeepingUpdatedAt ? new Date(r.housekeepingUpdatedAt).toLocaleString() : "—"}</td>
+        <td>
+          <span class="badge badge-${r.housekeepingStatus.toLowerCase()}" style="margin-right:8px;">${HOUSEKEEPING_LABELS[r.housekeepingStatus]}</span>
+          <select onchange="changeHousekeepingStatus('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
+            <option value="">Change…</option>
+            ${HOUSEKEEPING_STATUSES.filter((s) => s !== r.housekeepingStatus).map((s) => `<option value="${s}">${HOUSEKEEPING_LABELS[s]}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms match this filter.</td></tr>`;
+  } catch (err) { showNotice("housekeepingNotice", err.message); }
+}
+
+async function changeHousekeepingStatus(roomId, housekeepingStatus) {
+  if (!housekeepingStatus) return;
+  try {
+    await staffApi.updateHousekeepingStatus(roomId, housekeepingStatus);
+    showNotice("housekeepingNotice", "Housekeeping status updated.", "success");
+    refreshHousekeeping();
+  } catch (err) {
+    showNotice("housekeepingNotice", err.message);
+    refreshHousekeeping();
+  }
+}
+
+/* ============================================================
+   STOCK — view the branch's inventory and record movements (entries,
+   adjustments, closing counts). Creating/renaming a stock item, or
+   deleting one, stays a Manager/Director action — not exposed here.
+   Sales are logged automatically by the backend when a linked item
+   sells; nothing to do for those.
+   ============================================================ */
+async function loadStockPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Stock", "View inventory and record entries, adjustments, or a closing count.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding or removing a stock item is limited to Managers and Directors. You can record movements below.</span></div>
+    <div id="stockNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Quantity</th><th>Unit</th><th>Low-stock threshold</th><th></th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="ledgerModal" style="display:none;">
+      <div class="modal" style="max-width:640px;">
+        <h3 id="ledgerModalTitle">Ledger</h3>
+        <div id="ledgerNotice"></div>
+        <form id="movementForm" style="border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px;">
+          <input type="hidden" id="mvStockItemId">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Movement type</label>
+              <select id="mvType" onchange="toggleMovementFields()">
+                <option value="ENTRY">Entry (stock received)</option>
+                <option value="ADJUSTMENT">Adjustment (breakage, correction)</option>
+                <option value="CLOSING_COUNT">Closing count (physical count)</option>
+              </select>
+            </div>
+            <div class="form-field" id="mvDeltaField"><label>Quantity</label><input type="number" id="mvQuantityDelta" step="1"></div>
+            <div class="form-field" id="mvCountedField" style="display:none;"><label>Counted quantity</label><input type="number" id="mvCountedQuantity" min="0" step="1"></div>
+          </div>
+          <div class="form-field"><label>Note <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="mvNote" placeholder="e.g. delivery from supplier, 2 bottles broken"></div>
+          <button type="submit" class="btn btn-primary btn-sm" id="mvSubmitBtn">Record</button>
+        </form>
+        <div style="max-height:320px; overflow-y:auto;">
+          <table><thead><tr><th>When</th><th>Type</th><th>Change</th><th>Balance</th><th>Note</th><th>By</th></tr></thead>
+            <tbody id="ledgerBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeLedgerModal()">Close</button></div>
+      </div>
+    </div>
+  `;
+  document.getElementById("movementForm").addEventListener("submit", submitMovementForm);
+  toggleMovementFields();
+  await refreshStock();
+}
+
+async function refreshStock() {
+  try {
+    const { stockItems } = await staffApi.listStockItems();
+    document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
+      <tr>
+        <td>${s.name}</td>
+        <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
+        <td>${s.unit || "—"}</td>
+        <td>${s.lowStockThreshold}</td>
+        <td><button class="btn btn-sm btn-primary" onclick='openLedgerModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Ledger</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No stock items yet.</td></tr>`;
+  } catch (err) {
+    showNotice("stockNotice", err.message);
+  }
+}
+
+function toggleMovementFields() {
+  const isClosing = document.getElementById("mvType").value === "CLOSING_COUNT";
+  document.getElementById("mvDeltaField").style.display = isClosing ? "none" : "";
+  document.getElementById("mvCountedField").style.display = isClosing ? "" : "none";
+}
+
+let _ledgerCurrentItem = null;
+async function openLedgerModal(item) {
+  _ledgerCurrentItem = item;
+  document.getElementById("ledgerModalTitle").textContent = `Ledger — ${item.name}`;
+  document.getElementById("mvStockItemId").value = item.id;
+  document.getElementById("movementForm").reset();
+  toggleMovementFields();
+  document.getElementById("ledgerModal").style.display = "flex";
+  await refreshLedger();
+}
+function closeLedgerModal() { document.getElementById("ledgerModal").style.display = "none"; }
+
+async function refreshLedger() {
+  try {
+    const { movements } = await staffApi.listStockMovements(_ledgerCurrentItem.id);
+    document.getElementById("ledgerBody").innerHTML = movements.length ? movements.map((m) => `
+      <tr>
+        <td style="font-size:0.78rem;">${new Date(m.createdAt).toLocaleString()}</td>
+        <td>${m.type}</td>
+        <td style="color:${m.quantityDelta < 0 ? "var(--danger)" : "var(--brass-dark)"};">${m.quantityDelta > 0 ? "+" : ""}${m.quantityDelta}</td>
+        <td>${m.balanceAfter}</td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${m.note || "—"}</td>
+        <td style="font-size:0.78rem;">${m.recordedByType}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No movements yet.</td></tr>`;
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  }
+}
+
+async function submitMovementForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("mvSubmitBtn");
+  btn.disabled = true;
+  try {
+    const type = document.getElementById("mvType").value;
+    const payload = { type, note: document.getElementById("mvNote").value || undefined };
+    if (type === "CLOSING_COUNT") payload.countedQuantity = Number(document.getElementById("mvCountedQuantity").value);
+    else payload.quantityDelta = Number(document.getElementById("mvQuantityDelta").value);
+
+    await staffApi.recordStockMovement(document.getElementById("mvStockItemId").value, payload);
+    document.getElementById("movementForm").reset();
+    toggleMovementFields();
+    await refreshLedger();
+    refreshStock();
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ============================================================
@@ -522,17 +734,19 @@ async function loadMenuPage() {
     ${pageHeader("Menu", "Food & drink items currently offered at your branch.")}
     <div class="locked-note"><i class="fas fa-lock"></i><span>Adding items or changing prices is limited to Managers and Directors.</span></div>
     <div class="panel">
-      <table><thead><tr><th>Item</th><th>Category</th><th>Price</th></tr></thead>
-        <tbody id="menuBody"><tr><td colspan="3" class="loading-state">Loading…</td></tr></tbody>
+      <table><thead><tr><th>Item</th><th>Category</th><th>Tags</th><th>Price</th></tr></thead>
+        <tbody id="menuBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
   `;
   try {
     const { menuItems } = await staffApi.listMenuItems();
     document.getElementById("menuBody").innerHTML = menuItems.length ? menuItems.map((m) => `
-      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td><td>&#8358;${Number(m.price).toLocaleString()}</td></tr>
-    `).join("") : `<tr><td colspan="3" class="empty-state">No menu items yet.</td></tr>`;
-  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="3" class="empty-state">${err.message}</td></tr>`; }
+      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td>
+      <td>${(m.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+      <td>&#8358;${Number(m.price).toLocaleString()}</td></tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No menu items yet.</td></tr>`;
+  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="4" class="empty-state">${err.message}</td></tr>`; }
 }
 
 /* ============================================================
@@ -557,7 +771,7 @@ async function refreshBookingsTable() {
     const { bookings } = await staffApi.listBookings();
     document.getElementById("bookingsBody").innerHTML = bookings.length ? bookings.map((b) => `
       <tr><td>${b.guest.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${b.guest.email}</span></td>
-      <td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+      <td>${b.room.name} — ${b.room.roomNumber}</td>
       <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
       <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
       <td>${NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
