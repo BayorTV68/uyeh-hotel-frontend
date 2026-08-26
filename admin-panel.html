@@ -439,9 +439,9 @@ function hasPermission(key) {
 }
 function branchPath(path) {
   // Manager/Staff: branch comes from the JWT server-side, nothing to add.
-  // Director: no branchId on their account — omitting it means "all
-  // branches" for GET/list routes. Creates/updates still require a branch,
-  // which the Director-side UI doesn't yet let you pick (known gap).
+  // Director: no branchId on their account — the caller must supply one
+  // explicitly (see the branch-scoped methods below, which append
+  // ?branchId= themselves rather than relying on this helper for writes).
   return `/manager${path}`;
 }
 
@@ -559,8 +559,11 @@ const adminApi = {
   },
 
   // Branch-level settings (a branch's own operational settings)
-  getSettings: () => adminRequest("/manager/branch-settings"),
-  updateSettings: (payload) => adminRequest("/manager/branch-settings", { method: "PATCH", body: JSON.stringify(payload) }),
+  // Branch operational settings — address/city/state/phone/email/services.
+  // Always branch-scoped; a Director must pass one explicitly since
+  // there's no "all branches" concept for this.
+  getSettings: (branchId) => adminRequest(`/manager/branch-settings?branchId=${branchId}`),
+  updateSettings: (branchId, payload) => adminRequest(`/manager/branch-settings?branchId=${branchId}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
   // Branches — Director only
   listBranches: () => adminRequest("/director/branches"),
@@ -571,61 +574,88 @@ const adminApi = {
   listPaystackBanks: () => adminRequest("/director/paystack/banks"),
   verifyPayoutAccount: (payload) => adminRequest("/director/paystack/verify-account", { method: "POST", body: JSON.stringify(payload) }),
   setBranchPayoutAccount: (branchId, payload) => adminRequest(`/director/branches/${branchId}/payout-account`, { method: "POST", body: JSON.stringify(payload) }),
+  // Stripe Connect — same "how does this branch get paid" concept as the
+  // Paystack payout account above, but a separate provider entirely:
+  // onboarding happens on Stripe's own hosted page, not a form here.
+  connectStripeAccount: (branchId, payload) => adminRequest(`/director/branches/${branchId}/stripe-account`, { method: "POST", body: JSON.stringify(payload) }),
+  getStripeAccountStatus: (branchId) => adminRequest(`/director/branches/${branchId}/stripe-account/status`),
 
   // Company-wide rollup — Director dashboard
   getCompanyOverview: () => adminRequest("/director/company/overview"),
 
-  listRoomTypes: () => adminRequest(branchPath("/room-types")),
-  createRoomType: (payload) => adminRequest(branchPath("/room-types"), { method: "POST", body: JSON.stringify(payload) }),
-  updateRoomType: (id, payload) => adminRequest(branchPath(`/room-types/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
-  listRooms: () => adminRequest(branchPath("/rooms")),
-  createRoom: (payload) => adminRequest(branchPath("/rooms"), { method: "POST", body: JSON.stringify(payload) }),
-  // No generic PATCH /rooms/:id on the backend — status is the only
-  // editable field via a dedicated route. Kept as an alias so existing
-  // call sites that only ever pass { status } keep working.
-  updateRoom: (id, payload) => adminRequest(branchPath(`/rooms/${id}/status`), { method: "PATCH", body: JSON.stringify({ status: payload.status }) }),
+  // Rooms — full structural CRUD is Director-only, so these hit
+  // /director/rooms directly (NOT branchPath's /manager prefix). A
+  // branchId is required for every write; GET without one returns rooms
+  // across every branch, which the Rooms page below uses a branch
+  // selector to avoid.
+  listRooms: (branchId) => adminRequest(`/director/rooms${branchId ? `?branchId=${branchId}` : ""}`),
+  createRoom: (branchId, payload) => adminRequest("/director/rooms", { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
+  updateRoom: (id, branchId, payload) => adminRequest(`/director/rooms/${id}`, { method: "PATCH", body: JSON.stringify({ ...payload, branchId }) }),
+  deleteRoom: (id, branchId) => adminRequest(`/director/rooms/${id}?branchId=${branchId}`, { method: "DELETE" }),
+  uploadRoomImage: (id, file) => adminUpload(`/director/rooms/${id}/images`, file),
+  deleteRoomImage: (id, url) => adminRequest(`/director/rooms/${id}/images`, { method: "DELETE", body: JSON.stringify({ url }) }),
+  // Status/housekeeping stay on the Manager-reachable routes — a Director
+  // can toggle those too via the same branch-scoped /manager path.
   updateRoomStatus: (id, status) => adminRequest(branchPath(`/rooms/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Upcoming Events — Director side (approval queue). Manager drafts
+  // these; Director lists/approves/rejects.
+  listUpcomingEvents: (branchId, status) => adminRequest(`/director/upcoming-events${branchId || status ? `?${new URLSearchParams({ ...(branchId ? { branchId } : {}), ...(status ? { status } : {}) })}` : ""}`),
+  approveUpcomingEvent: (id) => adminRequest(`/director/upcoming-events/${id}/approve`, { method: "PATCH" }),
+  rejectUpcomingEvent: (id, reason) => adminRequest(`/director/upcoming-events/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Offerings — split across the real per-category endpoints. The
   // Offerings page (below) is rewritten to call these three sets directly
   // rather than a single generic "offering" — the real schema has no
-  // unified table.
-  listMenuItems: (category) => adminRequest(branchPath(`/menu${category ? `?category=${category}` : ""}`)),
-  createMenuItem: (payload) => adminRequest(branchPath("/menu"), { method: "POST", body: JSON.stringify(payload) }),
-  updateMenuItem: (id, payload) => adminRequest(branchPath(`/menu/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteMenuItem: (id) => adminRequest(branchPath(`/menu/${id}`), { method: "DELETE" }),
-  uploadMenuItemImage: (id, file) => adminUpload(branchPath(`/menu/${id}/images`), file),
-  deleteMenuItemImage: (id) => adminRequest(branchPath(`/menu/${id}/images`), { method: "DELETE" }),
+  // unified table. Every write now takes an explicit branchId — branchPath()
+  // alone never sent one, which is why offering creation always 400'd
+  // with "branchId is required" from this panel.
+  listMenuItems: (branchId, category) => adminRequest(`/manager/menu?${new URLSearchParams({ ...(branchId ? { branchId } : {}), ...(category ? { category } : {}) })}`),
+  createMenuItem: (branchId, payload) => adminRequest("/manager/menu", { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
+  updateMenuItem: (id, branchId, payload) => adminRequest(`/manager/menu/${id}`, { method: "PATCH", body: JSON.stringify({ ...payload, branchId }) }),
+  deleteMenuItem: (id) => adminRequest(`/manager/menu/${id}`, { method: "DELETE" }),
+  uploadMenuItemImage: (id, file) => adminUpload(`/manager/menu/${id}/images`, file),
+  deleteMenuItemImage: (id) => adminRequest(`/manager/menu/${id}/images`, { method: "DELETE" }),
 
-  listLaundryItems: () => adminRequest(branchPath("/laundry-items")),
-  createLaundryItem: (payload) => adminRequest(branchPath("/laundry-items"), { method: "POST", body: JSON.stringify(payload) }),
-  updateLaundryItem: (id, payload) => adminRequest(branchPath(`/laundry-items/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteLaundryItem: (id) => adminRequest(branchPath(`/laundry-items/${id}`), { method: "DELETE" }),
-  uploadLaundryItemImage: (id, file) => adminUpload(branchPath(`/laundry-items/${id}/images`), file),
-  deleteLaundryItemImage: (id) => adminRequest(branchPath(`/laundry-items/${id}/images`), { method: "DELETE" }),
+  listLaundryItems: (branchId) => adminRequest(`/manager/laundry-items${branchId ? `?branchId=${branchId}` : ""}`),
+  createLaundryItem: (branchId, payload) => adminRequest("/manager/laundry-items", { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
+  updateLaundryItem: (id, branchId, payload) => adminRequest(`/manager/laundry-items/${id}`, { method: "PATCH", body: JSON.stringify({ ...payload, branchId }) }),
+  deleteLaundryItem: (id) => adminRequest(`/manager/laundry-items/${id}`, { method: "DELETE" }),
+  uploadLaundryItemImage: (id, file) => adminUpload(`/manager/laundry-items/${id}/images`, file),
+  deleteLaundryItemImage: (id) => adminRequest(`/manager/laundry-items/${id}/images`, { method: "DELETE" }),
 
-  listSpaTreatments: () => adminRequest(branchPath("/spa-treatments")),
-  createSpaTreatment: (payload) => adminRequest(branchPath("/spa-treatments"), { method: "POST", body: JSON.stringify(payload) }),
-  updateSpaTreatment: (id, payload) => adminRequest(branchPath(`/spa-treatments/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteSpaTreatment: (id) => adminRequest(branchPath(`/spa-treatments/${id}`), { method: "DELETE" }),
-  uploadSpaTreatmentImage: (id, file) => adminUpload(branchPath(`/spa-treatments/${id}/images`), file),
-  deleteSpaTreatmentImage: (id) => adminRequest(branchPath(`/spa-treatments/${id}/images`), { method: "DELETE" }),
+  listSpaTreatments: (branchId) => adminRequest(`/manager/spa-treatments${branchId ? `?branchId=${branchId}` : ""}`),
+  createSpaTreatment: (branchId, payload) => adminRequest("/manager/spa-treatments", { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
+  updateSpaTreatment: (id, branchId, payload) => adminRequest(`/manager/spa-treatments/${id}`, { method: "PATCH", body: JSON.stringify({ ...payload, branchId }) }),
+  deleteSpaTreatment: (id) => adminRequest(`/manager/spa-treatments/${id}`, { method: "DELETE" }),
+  uploadSpaTreatmentImage: (id, file) => adminUpload(`/manager/spa-treatments/${id}/images`, file),
+  deleteSpaTreatmentImage: (id) => adminRequest(`/manager/spa-treatments/${id}/images`, { method: "DELETE" }),
 
   listBookings: (status) => adminRequest(branchPath(`/bookings${status ? `?status=${status}` : ""}`)),
   updateBookingStatus: (id, status) => adminRequest(branchPath(`/bookings/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
 
-  listStockItems: () => adminRequest(branchPath("/stock")),
-  createStockItem: (payload) => adminRequest(branchPath("/stock"), { method: "POST", body: JSON.stringify(payload) }),
-  updateStockItem: (id, payload) => adminRequest(branchPath(`/stock/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteStockItem: (id) => adminRequest(branchPath(`/stock/${id}`), { method: "DELETE" }),
+  // Stock — same branchId fix, plus the new ledger endpoints. quantity is
+  // no longer sent on update (the backend ignores it there on purpose —
+  // see recordStockMovement).
+  listStockItems: (branchId) => adminRequest(`/manager/stock${branchId ? `?branchId=${branchId}` : ""}`),
+  createStockItem: (branchId, payload) => adminRequest("/manager/stock", { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
+  updateStockItem: (id, branchId, payload) => adminRequest(`/manager/stock/${id}`, { method: "PATCH", body: JSON.stringify({ ...payload, branchId }) }),
+  deleteStockItem: (id) => adminRequest(`/manager/stock/${id}`, { method: "DELETE" }),
+  listStockMovements: (id, branchId) => adminRequest(`/manager/stock/${id}/movements${branchId ? `?branchId=${branchId}` : ""}`),
+  recordStockMovement: (id, branchId, payload) => adminRequest(`/manager/stock/${id}/movements`, { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
 
-  listEventsAdmin: () => adminRequest(branchPath("/events")),
-  createEvent: (payload) => adminRequest(branchPath("/events"), { method: "POST", body: JSON.stringify(payload) }),
-  updateEvent: (id, payload) => adminRequest(branchPath(`/events/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteEvent: (id) => adminRequest(branchPath(`/events/${id}`), { method: "DELETE" }),
+  listEventsAdmin: (branchId) => adminRequest(`/manager/events${branchId ? `?branchId=${branchId}` : ""}`),
+  createEvent: (branchId, payload) => adminRequest("/manager/events", { method: "POST", body: JSON.stringify({ ...payload, branchId }) }),
+  updateEvent: (id, branchId, payload) => adminRequest(`/manager/events/${id}`, { method: "PATCH", body: JSON.stringify({ ...payload, branchId }) }),
+  deleteEvent: (id) => adminRequest(`/manager/events/${id}`, { method: "DELETE" }),
+
+  // Tags — the managed per-branch, per-service picklist.
+  listTags: (branchId, service) => adminRequest(`/manager/tags?${new URLSearchParams({ ...(branchId ? { branchId } : {}), ...(service ? { service } : {}) })}`),
+  createTag: (branchId, name, service) => adminRequest("/manager/tags", { method: "POST", body: JSON.stringify({ branchId, name, service }) }),
+  deleteTag: (id, branchId) => adminRequest(`/manager/tags/${id}?branchId=${branchId}`, { method: "DELETE" }),
 
   listDepartments: () => adminRequest(branchPath("/departments")),
-  listStaff: () => adminRequest(branchPath("/staff")),
+  listStaff: (branchId) => adminRequest(`/manager/staff${branchId ? `?branchId=${branchId}` : ""}`),
   createStaff: (payload) => adminRequest(branchPath("/staff"), { method: "POST", body: JSON.stringify(payload) }),
   updateStaff: (id, payload) => adminRequest(branchPath(`/staff/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
 
@@ -704,10 +734,9 @@ const adminApi = {
     return adminRequest(`/director/audit-log${qs ? `?${qs}` : ""}`);
   },
 
-  // Analytics — not built on the backend yet. Left pointing at a
-  // not-yet-real endpoint on purpose so the page shows a clear "couldn't
-  // load" error instead of silently looking broken like before.
-  getAnalytics: () => adminRequest("/admin/analytics"),
+  // Analytics — real 30-day trend + branch comparison, computed
+  // server-side from Transaction/Booking/Ticket records.
+  getAnalytics: () => adminRequest("/director/analytics"),
 
   // Site-wide settings — Director only (company branding, feature flags, etc.)
   getSiteSettings: () => adminRequest("/director/settings"),
@@ -751,6 +780,8 @@ const NAV_GROUPS = [
       { page: "orders", label: "Orders", icon: "fa-bell-concierge", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
       { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
+      { page: "upcomingevents", label: "Upcoming Events", icon: "fa-calendar-star" },
+      { page: "tags", label: "Tags", icon: "fa-tags" },
     ],
   },
   {
@@ -870,6 +901,8 @@ const PAGE_LOADERS = {
   orders: loadOrdersPage,
   stock: loadStockPage,
   events: loadEventsPage,
+  upcomingevents: loadUpcomingEventsPage,
+  tags: loadTagsPage,
   staff: loadStaffPage,
   tickets: loadTicketsPage,
   reviews: loadReviewsPage,
@@ -975,7 +1008,7 @@ async function loadBranchDashboard() {
           <div class="panel"><h3>Recent bookings</h3>
             <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
               <tbody>${bookings.slice(0, 6).map((b) => `
-                <tr><td>${b.guest.name}</td><td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+                <tr><td>${b.guest.name}</td><td>${b.room.name} — ${b.room.roomNumber}</td>
                 <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
                 <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td></tr>
               `).join("")}</tbody>
@@ -1023,7 +1056,12 @@ async function loadBranchDashboard() {
 /* ============================================================
    BRANCHES — Director only
    ============================================================ */
-const SERVICE_LABELS = { rooms: "Rooms", restaurant: "Restaurant", events: "Events", spa: "Spa", laundry: "Laundry", stock: "Stock" };
+// Stock is deliberately NOT in this list — it's an internal inventory
+// ledger that sits under Bar/Restaurant/Laundry, not a guest-facing
+// branch service a Director toggles on/off. "bar" was missing entirely
+// before, which meant a Director could never enable it even though the
+// backend already gates bar-menu routes on requireBranchService("bar").
+const SERVICE_LABELS = { rooms: "Rooms", restaurant: "Restaurant", bar: "Bar", events: "Events", upcoming_events: "Upcoming Events", spa: "Spa", laundry: "Laundry" };
 
 async function loadBranchesPage() {
   const container = document.getElementById("pageContent");
@@ -1061,6 +1099,20 @@ async function loadBranchesPage() {
             <button type="submit" class="btn btn-primary" id="poSaveBtn" disabled>Save payout account</button>
           </div>
         </form>
+
+        <div style="border-top:1px solid var(--border); margin-top:20px; padding-top:16px;">
+          <h4 style="margin-bottom:4px;">Stripe</h4>
+          <p class="muted" style="font-size:0.82rem; margin-bottom:10px;">
+            A separate provider from Paystack above — for guests paying by card through Stripe instead. Onboarding happens on Stripe's own hosted page, not here.
+            <br><b>Note:</b> Stripe Connect doesn't support payouts to Nigerian bank accounts — this only makes sense for a branch settling in a currency/country Stripe Connect actually supports.
+          </p>
+          <div id="stripeStatusBlock" style="margin-bottom:10px; font-size:0.86rem;">Checking status…</div>
+          <div class="form-field" id="stripeConnectFields">
+            <label>Email for the Stripe account</label>
+            <input type="email" id="stripeConnectEmail" placeholder="finance@yourhotel.com">
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="stripeConnectBtn" onclick="connectStripeClick()">Connect / continue Stripe onboarding</button>
+        </div>
       </div>
     </div>
     <div class="modal-overlay" id="branchModal" style="display:none;">
@@ -1168,10 +1220,12 @@ async function openPayoutModal(branch) {
   document.getElementById("poVerifyResult").style.display = "none";
   document.getElementById("poSaveBtn").disabled = true;
   _poVerified = null;
+  _stripeConnectBranchId = branch.id;
 
   const select = document.getElementById("poBankCode");
   select.innerHTML = `<option value="">Loading banks&hellip;</option>`;
   document.getElementById("payoutModal").style.display = "flex";
+  refreshStripeStatus(branch.id);
 
   try {
     const { banks } = await adminApi.listPaystackBanks();
@@ -1184,6 +1238,42 @@ async function openPayoutModal(branch) {
   }
 }
 function closePayoutModal() { document.getElementById("payoutModal").style.display = "none"; }
+
+let _stripeConnectBranchId = null;
+async function refreshStripeStatus(branchId) {
+  const block = document.getElementById("stripeStatusBlock");
+  block.textContent = "Checking status…";
+  try {
+    const status = await adminApi.getStripeAccountStatus(branchId);
+    if (!status.connected) {
+      block.innerHTML = `<span class="badge badge-inactive">Not connected</span>`;
+    } else if (status.chargesEnabled) {
+      block.innerHTML = `<span class="badge badge-active">Connected — ready to accept payments</span>`;
+    } else {
+      block.innerHTML = `<span class="badge badge-warning">Connected — onboarding incomplete</span> <span class="muted" style="font-size:0.8rem;">Stripe needs more info before this account can accept live payments.</span>`;
+    }
+  } catch (err) {
+    block.innerHTML = `<span class="muted">Couldn't check status — ${err.message}</span>`;
+  }
+}
+async function connectStripeClick() {
+  const email = document.getElementById("stripeConnectEmail").value;
+  if (!email) return showNotice("payoutNotice", "Enter an email for the Stripe account first.");
+  const btn = document.getElementById("stripeConnectBtn");
+  btn.disabled = true;
+  try {
+    const { onboardingUrl } = await adminApi.connectStripeAccount(_stripeConnectBranchId, { email });
+    // Onboarding happens on Stripe's own hosted page — this tab stays put,
+    // a new one carries the Director through it, same pattern as opening
+    // any external OAuth-style flow.
+    window.open(onboardingUrl, "_blank");
+    showNotice("payoutNotice", "Continue in the new tab — come back here and reopen this branch's Payout modal afterward to see the updated status.", "success");
+  } catch (err) {
+    showNotice("payoutNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function verifyPayoutAccountClick() {
   const bankCode = document.getElementById("poBankCode").value;
@@ -1270,43 +1360,46 @@ async function submitBranchForm(e) {
 }
 
 /* ============================================================
-   ROOMS
+   ROOMS — Room + RoomType merged into one listing. Every room is a
+   complete, self-contained record now (name, price, photos, amenities),
+   not a physical unit pointing at a shared template. Creating, editing,
+   deleting a room, and its photos, is Director-only — this whole panel
+   is Director-only, so that's every action on this page except the
+   Status dropdown, which Manager/Staff can also reach from their own
+   panels via the separate status-only route.
+
+   This page ALSO fixes a real bug: branchPath() never sends a branchId,
+   so every write from this panel used to 400 with "branchId is required"
+   the moment you tried it. A branch selector was the missing piece.
    ============================================================ */
+let _roomsSelectedBranchId = "";
+let _cachedRooms = [];
+
 async function loadRoomsPage() {
   const container = document.getElementById("pageContent");
-  container.innerHTML = `
-    ${pageHeader("Rooms", "Room types and individual rooms — priced per branch.",
-      `<button class="btn btn-outline" onclick="openRoomTypeModal()">Add room type</button>
-       <button class="btn btn-primary" onclick="openRoomModal()">Add room</button>`)}
-    <div id="roomsNotice"></div>
-    <div class="panel"><h3>Room types</h3>
-      <table><thead><tr><th>Name</th><th>Base price</th><th>Max occupancy</th><th>Rooms</th><th></th></tr></thead>
-        <tbody id="roomTypesBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="panel"><h3>All rooms</h3>
-      <table><thead><tr><th>Room #</th><th>Type</th><th>Floor</th><th>Status</th><th></th></tr></thead>
-        <tbody id="roomsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
-      </table>
-    </div>
 
-    <div class="modal-overlay" id="roomTypeModal" style="display:none;">
-      <div class="modal">
-        <h3 id="roomTypeModalTitle">Add room type</h3>
-        <form id="roomTypeForm">
-          <input type="hidden" id="rtId">
-          <div class="form-field"><label>Name</label><input type="text" id="rtName" placeholder="e.g. Deluxe King" required></div>
-          <div class="form-row">
-            <div class="form-field"><label>Base price (&#8358;) — this branch</label><input type="number" id="rtPrice" min="0" step="1" required></div>
-            <div class="form-field"><label>Max occupancy</label><input type="number" id="rtOccupancy" min="1" step="1" required></div>
-          </div>
-          <div class="form-field"><label>Description</label><textarea id="rtDescription" rows="2"></textarea></div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-outline" onclick="closeRoomTypeModal()">Cancel</button>
-            <button type="submit" class="btn btn-primary" id="rtSubmitBtn">Save room type</button>
-          </div>
-        </form>
+  let branchOptionsHtml = `<option value="">Select a branch…</option>`;
+  let branches = [];
+  try {
+    ({ branches } = await adminApi.listBranches());
+    if (!_roomsSelectedBranchId && branches.length) _roomsSelectedBranchId = branches[0].id;
+    branchOptionsHtml = branches.map((b) => `<option value="${b.id}" ${b.id === _roomsSelectedBranchId ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch { /* non-fatal — the selector will just be empty */ }
+
+  container.innerHTML = `
+    ${pageHeader("Rooms", "Every room is priced and photographed individually per branch.",
+      `<button class="btn btn-primary" onclick="openRoomModal()" ${_roomsSelectedBranchId ? "" : "disabled"}>Add room</button>`)}
+    <div id="roomsNotice"></div>
+    <div class="panel">
+      <div class="form-field" style="max-width:320px;">
+        <label>Branch</label>
+        <select id="roomsBranchSelect" onchange="_roomsSelectedBranchId=this.value; refreshRooms();">${branchOptionsHtml}</select>
       </div>
+    </div>
+    <div class="panel"><h3>Rooms</h3>
+      <table><thead><tr><th></th><th>Room #</th><th>Name</th><th>Price</th><th>Floor</th><th>Status</th><th></th></tr></thead>
+        <tbody id="roomsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
+      </table>
     </div>
 
     <div class="modal-overlay" id="roomModal" style="display:none;">
@@ -1314,13 +1407,20 @@ async function loadRoomsPage() {
         <h3 id="roomModalTitle">Add room</h3>
         <form id="roomForm">
           <input type="hidden" id="rId">
-          <div class="form-field">
-            <label>Room type</label>
-            <select id="rRoomTypeId" required></select>
+          <div class="form-field"><label>Name</label><input type="text" id="rName" placeholder="e.g. Deluxe King — 214" required></div>
+          <div class="form-row">
+            <div class="form-field"><label>Base price (&#8358;)</label><input type="number" id="rPrice" min="0" step="1" required></div>
+            <div class="form-field"><label>Max occupancy</label><input type="number" id="rOccupancy" min="1" step="1" value="2" required></div>
           </div>
           <div class="form-row">
             <div class="form-field"><label>Room number</label><input type="text" id="rNumber" required></div>
             <div class="form-field"><label>Floor</label><input type="text" id="rFloor"></div>
+          </div>
+          <div class="form-field"><label>Description</label><textarea id="rDescription" rows="2"></textarea></div>
+          <div class="form-field"><label>Amenities (comma-separated)</label><input type="text" id="rAmenities" placeholder="Wi-Fi, AC, Ocean view"></div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="rTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
           </div>
           <div class="form-field">
             <label>Status</label>
@@ -1329,6 +1429,11 @@ async function loadRoomsPage() {
               <option value="MAINTENANCE">Maintenance</option>
               <option value="INACTIVE">Inactive</option>
             </select>
+          </div>
+          <div class="form-field" id="rGalleryField" style="display:none;">
+            <label>Gallery</label>
+            <div id="rGalleryPreview" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px;"></div>
+            <input type="file" id="rImageInput" accept="image/*">
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeRoomModal()">Cancel</button>
@@ -1339,94 +1444,89 @@ async function loadRoomsPage() {
     </div>
   `;
 
-  document.getElementById("roomTypeForm").addEventListener("submit", submitRoomTypeForm);
   document.getElementById("roomForm").addEventListener("submit", submitRoomForm);
-  await refreshRoomsAndTypes();
+  if (_roomsSelectedBranchId) await refreshRooms();
+  else document.getElementById("roomsBody").innerHTML = `<tr><td colspan="7" class="empty-state">Pick a branch above to see its rooms.</td></tr>`;
 }
 
-let _cachedRoomTypes = [];
-
-async function refreshRoomsAndTypes() {
+async function refreshRooms() {
+  if (!_roomsSelectedBranchId) return;
   try {
-    const [{ roomTypes }, { rooms }] = await Promise.all([adminApi.listRoomTypes(), adminApi.listRooms()]);
-    _cachedRoomTypes = roomTypes;
-
-    document.getElementById("roomTypesBody").innerHTML = roomTypes.length ? roomTypes.map((rt) => `
-      <tr>
-        <td>${rt.name}</td>
-        <td>&#8358;${Number(rt.basePrice).toLocaleString()}</td>
-        <td>${rt.maxOccupancy}</td>
-        <td>${(rt.rooms || []).length}</td>
-        <td><button class="btn btn-sm btn-outline" onclick='openRoomTypeModal(${JSON.stringify(rt).replace(/'/g, "&#39;")})'>Edit</button></td>
-      </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No room types yet — add one above.</td></tr>`;
+    const { rooms } = await adminApi.listRooms(_roomsSelectedBranchId);
+    _cachedRooms = rooms;
 
     document.getElementById("roomsBody").innerHTML = rooms.length ? rooms.map((r) => `
       <tr>
+        <td>${r.images && r.images[0] ? `<img src="${r.images[0]}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;">` : `<span class="offering-photo-placeholder"><i class="fa-solid fa-camera"></i></span>`}</td>
         <td>${r.roomNumber}</td>
-        <td>${r.roomType.name}</td>
+        <td>${r.name}</td>
+        <td>&#8358;${Number(r.basePrice).toLocaleString()}</td>
         <td>${r.floor || "—"}</td>
         <td><span class="badge badge-${r.status.toLowerCase()}">${r.status}</span></td>
-        <td><button class="btn btn-sm btn-outline" onclick='openRoomModal(${JSON.stringify(r).replace(/'/g, "&#39;")})'>Edit</button></td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick='openRoomModal(${JSON.stringify(r).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-outline" onclick="deleteRoomConfirm('${r.id}')">Delete</button>
+        </td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms yet.</td></tr>`;
+    `).join("") : `<tr><td colspan="7" class="empty-state">No rooms at this branch yet — add one above.</td></tr>`;
   } catch (err) {
     showNotice("roomsNotice", err.message);
   }
 }
 
-function openRoomTypeModal(rt) {
-  document.getElementById("roomTypeModalTitle").textContent = rt ? "Edit room type" : "Add room type";
-  document.getElementById("roomTypeForm").reset();
-  document.getElementById("rtId").value = rt ? rt.id : "";
-  if (rt) {
-    document.getElementById("rtName").value = rt.name;
-    document.getElementById("rtPrice").value = rt.basePrice;
-    document.getElementById("rtOccupancy").value = rt.maxOccupancy;
-    document.getElementById("rtDescription").value = rt.description || "";
-  }
-  document.getElementById("roomTypeModal").style.display = "flex";
-}
-function closeRoomTypeModal() { document.getElementById("roomTypeModal").style.display = "none"; }
-
-async function submitRoomTypeForm(e) {
-  e.preventDefault();
-  const btn = document.getElementById("rtSubmitBtn");
-  btn.disabled = true;
-  try {
-    const id = document.getElementById("rtId").value;
-    const payload = {
-      name: document.getElementById("rtName").value,
-      basePrice: Number(document.getElementById("rtPrice").value),
-      maxOccupancy: Number(document.getElementById("rtOccupancy").value),
-      description: document.getElementById("rtDescription").value || undefined,
-    };
-    if (id) { await adminApi.updateRoomType(id, payload); showNotice("roomsNotice", "Room type updated.", "success"); }
-    else { await adminApi.createRoomType(payload); showNotice("roomsNotice", "Room type added.", "success"); }
-    closeRoomTypeModal();
-    refreshRoomsAndTypes();
-  } catch (err) {
-    showNotice("roomsNotice", err.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
+let _rEditingId = null;
 function openRoomModal(room) {
   document.getElementById("roomModalTitle").textContent = room ? "Edit room" : "Add room";
   document.getElementById("roomForm").reset();
+  _rEditingId = room ? room.id : null;
   document.getElementById("rId").value = room ? room.id : "";
-  const select = document.getElementById("rRoomTypeId");
-  select.innerHTML = _cachedRoomTypes.map((rt) => `<option value="${rt.id}">${rt.name}</option>`).join("");
+  document.getElementById("rGalleryField").style.display = room ? "block" : "none";
+  document.getElementById("rGalleryPreview").innerHTML = (room && room.images || []).map((url) => `
+    <div style="position:relative;">
+      <img src="${url}" style="width:56px;height:56px;object-fit:cover;border-radius:6px;">
+      <button type="button" onclick="removeRoomImage('${url}')" style="position:absolute;top:-6px;right:-6px;background:#c0392b;color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;">&times;</button>
+    </div>
+  `).join("");
   if (room) {
-    select.value = room.roomType.id || room.roomType._id;
+    document.getElementById("rName").value = room.name;
+    document.getElementById("rPrice").value = room.basePrice;
+    document.getElementById("rOccupancy").value = room.maxOccupancy;
     document.getElementById("rNumber").value = room.roomNumber;
     document.getElementById("rFloor").value = room.floor || "";
+    document.getElementById("rDescription").value = room.description || "";
+    document.getElementById("rAmenities").value = (room.amenities || []).join(", ");
     document.getElementById("rStatus").value = room.status;
   }
+  refreshRoomTagOptions(room ? (room.tags || []) : []);
   document.getElementById("roomModal").style.display = "flex";
 }
 function closeRoomModal() { document.getElementById("roomModal").style.display = "none"; }
+
+async function refreshRoomTagOptions(selectedTags) {
+  const container = document.getElementById("rTagsOptions");
+  if (!_roomsSelectedBranchId) { container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Pick a branch first.</span>`; return; }
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await adminApi.listTags(_roomsSelectedBranchId, "room");
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
+
+async function removeRoomImage(url) {
+  if (!_rEditingId) return;
+  try {
+    await adminApi.deleteRoomImage(_rEditingId, url);
+    const updated = { ..._cachedRooms.find((r) => r.id === _rEditingId), images: (_cachedRooms.find((r) => r.id === _rEditingId)?.images || []).filter((u) => u !== url) };
+    refreshRooms();
+    openRoomModal(updated);
+  } catch (err) {
+    showNotice("roomsNotice", err.message);
+  }
+}
 
 async function submitRoomForm(e) {
   e.preventDefault();
@@ -1435,15 +1535,25 @@ async function submitRoomForm(e) {
   try {
     const id = document.getElementById("rId").value;
     const payload = {
-      roomTypeId: document.getElementById("rRoomTypeId").value,
+      name: document.getElementById("rName").value,
+      basePrice: Number(document.getElementById("rPrice").value),
+      maxOccupancy: Number(document.getElementById("rOccupancy").value),
       roomNumber: document.getElementById("rNumber").value,
       floor: document.getElementById("rFloor").value || undefined,
+      description: document.getElementById("rDescription").value || undefined,
+      amenities: document.getElementById("rAmenities").value.split(",").map((s) => s.trim()).filter(Boolean),
       status: document.getElementById("rStatus").value,
+      tags: Array.from(document.getElementById("rTagsOptions").querySelectorAll("input:checked")).map((el) => el.value),
     };
-    if (id) { await adminApi.updateRoom(id, payload); showNotice("roomsNotice", "Room updated.", "success"); }
-    else { await adminApi.createRoom(payload); showNotice("roomsNotice", "Room added.", "success"); }
+    let savedId = id;
+    if (id) { await adminApi.updateRoom(id, _roomsSelectedBranchId, payload); showNotice("roomsNotice", "Room updated.", "success"); }
+    else { const { room } = await adminApi.createRoom(_roomsSelectedBranchId, payload); savedId = room.id; showNotice("roomsNotice", "Room added.", "success"); }
+
+    const file = document.getElementById("rImageInput").files[0];
+    if (file && savedId) await adminApi.uploadRoomImage(savedId, file);
+
     closeRoomModal();
-    refreshRoomsAndTypes();
+    refreshRooms();
   } catch (err) {
     showNotice("roomsNotice", err.message);
   } finally {
@@ -1451,15 +1561,47 @@ async function submitRoomForm(e) {
   }
 }
 
+async function deleteRoomConfirm(id) {
+  if (!confirm("Delete this room? This can't be undone.")) return;
+  try {
+    await adminApi.deleteRoom(id, _roomsSelectedBranchId);
+    showNotice("roomsNotice", "Room deleted.", "success");
+    refreshRooms();
+  } catch (err) {
+    showNotice("roomsNotice", err.message);
+  }
+}
+
 /* ============================================================
-   STOCK — per-branch inventory with low-stock flags
+   STOCK — per-branch inventory ledger. Quantity is never edited
+   directly anymore — every change (entry, sale, adjustment, closing
+   count) goes through recordStockMovement so there's a real, append-only
+   history behind the number, not just a mutable field. Sales are logged
+   automatically by createOrder on the backend; everything else is
+   recorded here.
    ============================================================ */
+let _stockSelectedBranchId = "";
+
 async function loadStockPage() {
   const container = document.getElementById("pageContent");
+  let branchOptionsHtml = `<option value="">Select a branch…</option>`;
+  let branches = [];
+  try {
+    ({ branches } = await adminApi.listBranches());
+    if (!_stockSelectedBranchId && branches.length) _stockSelectedBranchId = branches[0].id;
+    branchOptionsHtml = branches.map((b) => `<option value="${b.id}" ${b.id === _stockSelectedBranchId ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch { /* non-fatal */ }
+
   container.innerHTML = `
-    ${pageHeader("Stock", "Inventory per branch, with low-stock flags.",
-      `<button class="btn btn-primary" onclick="openStockModal()">Add item</button>`)}
+    ${pageHeader("Stock", "Inventory per branch — entries, sales, adjustments, and closing counts, all logged.",
+      `<button class="btn btn-primary" onclick="openStockModal()" ${_stockSelectedBranchId ? "" : "disabled"}>Add item</button>`)}
     <div id="stockNotice"></div>
+    <div class="panel">
+      <div class="form-field" style="max-width:320px;">
+        <label>Branch</label>
+        <select id="stockBranchSelect" onchange="_stockSelectedBranchId=this.value; refreshStock();">${branchOptionsHtml}</select>
+      </div>
+    </div>
     <div class="panel">
       <table><thead><tr><th>Name</th><th>Quantity</th><th>Unit</th><th>Low-stock threshold</th><th></th></tr></thead>
         <tbody id="stockBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
@@ -1473,10 +1615,13 @@ async function loadStockPage() {
           <input type="hidden" id="stId">
           <div class="form-field"><label>Name</label><input type="text" id="stName" required></div>
           <div class="form-field"><label>Unit</label><input type="text" id="stUnit" placeholder="kg, bottle, roll…" value="unit"></div>
-          <div class="form-row">
-            <div class="form-field"><label>Quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
-            <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stReorderLevel" min="0" step="1" value="5" required></div>
+          <div class="form-row" id="stQuantityRow">
+            <div class="form-field"><label>Starting quantity</label><input type="number" id="stQuantity" min="0" step="1" value="0" required></div>
+            <div class="form-field"><label>Low-stock threshold</label><input type="number" id="stLowStockThreshold" min="0" step="1" value="5" required></div>
           </div>
+          <p id="stQuantityEditNote" style="display:none; color:var(--text-muted); font-size:0.82rem; margin:-6px 0 12px;">
+            Quantity isn't edited here anymore — use "Record movement" from the list below (entry, adjustment, or closing count).
+          </p>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeStockModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save item</button>
@@ -1484,26 +1629,61 @@ async function loadStockPage() {
         </form>
       </div>
     </div>
+
+    <div class="modal-overlay" id="ledgerModal" style="display:none;">
+      <div class="modal" style="max-width:640px;">
+        <h3 id="ledgerModalTitle">Ledger</h3>
+        <div id="ledgerNotice"></div>
+        <form id="movementForm" style="border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px;">
+          <input type="hidden" id="mvStockItemId">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Movement type</label>
+              <select id="mvType" onchange="toggleMovementFields()">
+                <option value="ENTRY">Entry (stock received)</option>
+                <option value="ADJUSTMENT">Adjustment (breakage, correction)</option>
+                <option value="CLOSING_COUNT">Closing count (physical count)</option>
+              </select>
+            </div>
+            <div class="form-field" id="mvDeltaField"><label>Quantity</label><input type="number" id="mvQuantityDelta" step="1"></div>
+            <div class="form-field" id="mvCountedField" style="display:none;"><label>Counted quantity</label><input type="number" id="mvCountedQuantity" min="0" step="1"></div>
+          </div>
+          <div class="form-field"><label>Note <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="mvNote" placeholder="e.g. delivery from supplier, 2 bottles broken"></div>
+          <button type="submit" class="btn btn-primary btn-sm" id="mvSubmitBtn">Record</button>
+        </form>
+        <div style="max-height:320px; overflow-y:auto;">
+          <table><thead><tr><th>When</th><th>Type</th><th>Change</th><th>Balance</th><th>Note</th><th>By</th></tr></thead>
+            <tbody id="ledgerBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeLedgerModal()">Close</button></div>
+      </div>
+    </div>
   `;
   document.getElementById("stockForm").addEventListener("submit", submitStockForm);
-  await refreshStock();
+  document.getElementById("movementForm").addEventListener("submit", submitMovementForm);
+  toggleMovementFields();
+  if (_stockSelectedBranchId) await refreshStock();
+  else document.getElementById("stockBody").innerHTML = `<tr><td colspan="5" class="empty-state">Pick a branch above to see its stock.</td></tr>`;
 }
 
 async function refreshStock() {
+  if (!_stockSelectedBranchId) return;
   try {
-    const { stockItems } = await adminApi.listStockItems();
+    const { stockItems } = await adminApi.listStockItems(_stockSelectedBranchId);
     document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
       <tr>
         <td>${s.name}</td>
         <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
-        <td>${s.unit}</td>
+        <td>${s.unit || "—"}</td>
         <td>${s.lowStockThreshold}</td>
         <td>
+          <button class="btn btn-sm btn-primary" onclick='openLedgerModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Ledger</button>
           <button class="btn btn-sm btn-outline" onclick='openStockModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Edit</button>
           <button class="btn btn-sm btn-outline" onclick="deleteStockItemConfirm('${s.id}')">Delete</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No stock items yet — add one above.</td></tr>`;
+    `).join("") : `<tr><td colspan="5" class="empty-state">No stock items yet — add one above.</td></tr>`;
   } catch (err) {
     showNotice("stockNotice", err.message);
   }
@@ -1513,12 +1693,11 @@ function openStockModal(item) {
   document.getElementById("stockModalTitle").textContent = item ? "Edit item" : "Add item";
   document.getElementById("stockForm").reset();
   document.getElementById("stId").value = item ? item.id : "";
+  document.getElementById("stQuantityRow").style.display = item ? "none" : "";
+  document.getElementById("stQuantityEditNote").style.display = item ? "" : "none";
   if (item) {
     document.getElementById("stName").value = item.name;
-    document.getElementById("stCategory").value = item.category || "";
-    document.getElementById("stUnit").value = item.unit;
-    document.getElementById("stQuantity").value = item.quantity;
-    document.getElementById("stReorderLevel").value = item.reorderLevel;
+    document.getElementById("stUnit").value = item.unit || "";
   }
   document.getElementById("stockModal").style.display = "flex";
 }
@@ -1530,14 +1709,21 @@ async function submitStockForm(e) {
   btn.disabled = true;
   try {
     const id = document.getElementById("stId").value;
-    const payload = {
-      name: document.getElementById("stName").value,
-      unit: document.getElementById("stUnit").value || "unit",
-      quantity: Number(document.getElementById("stQuantity").value),
-      lowStockThreshold: Number(document.getElementById("stReorderLevel").value),
-    };
-    if (id) { await adminApi.updateStockItem(id, payload); showNotice("stockNotice", "Item updated.", "success"); }
-    else { await adminApi.createStockItem(payload); showNotice("stockNotice", "Item added.", "success"); }
+    if (id) {
+      // Editing: name/unit/threshold only — no quantity field sent.
+      const payload = { name: document.getElementById("stName").value, unit: document.getElementById("stUnit").value || "unit" };
+      await adminApi.updateStockItem(id, _stockSelectedBranchId, payload);
+      showNotice("stockNotice", "Item updated.", "success");
+    } else {
+      const payload = {
+        name: document.getElementById("stName").value,
+        unit: document.getElementById("stUnit").value || "unit",
+        quantity: Number(document.getElementById("stQuantity").value),
+        lowStockThreshold: Number(document.getElementById("stLowStockThreshold").value),
+      };
+      await adminApi.createStockItem(_stockSelectedBranchId, payload);
+      showNotice("stockNotice", "Item added.", "success");
+    }
     closeStockModal();
     refreshStock();
   } catch (err) {
@@ -1548,7 +1734,7 @@ async function submitStockForm(e) {
 }
 
 async function deleteStockItemConfirm(id) {
-  if (!confirm("Delete this stock item?")) return;
+  if (!confirm("Delete this stock item? Its ledger history goes with it.")) return;
   try {
     await adminApi.deleteStockItem(id);
     refreshStock();
@@ -1557,18 +1743,94 @@ async function deleteStockItemConfirm(id) {
   }
 }
 
+function toggleMovementFields() {
+  const isClosing = document.getElementById("mvType").value === "CLOSING_COUNT";
+  document.getElementById("mvDeltaField").style.display = isClosing ? "none" : "";
+  document.getElementById("mvCountedField").style.display = isClosing ? "" : "none";
+}
+
+let _ledgerCurrentItem = null;
+async function openLedgerModal(item) {
+  _ledgerCurrentItem = item;
+  document.getElementById("ledgerModalTitle").textContent = `Ledger — ${item.name}`;
+  document.getElementById("mvStockItemId").value = item.id;
+  document.getElementById("movementForm").reset();
+  toggleMovementFields();
+  document.getElementById("ledgerModal").style.display = "flex";
+  await refreshLedger();
+}
+function closeLedgerModal() { document.getElementById("ledgerModal").style.display = "none"; }
+
+async function refreshLedger() {
+  try {
+    const { movements } = await adminApi.listStockMovements(_ledgerCurrentItem.id, _stockSelectedBranchId);
+    document.getElementById("ledgerBody").innerHTML = movements.length ? movements.map((m) => `
+      <tr>
+        <td style="font-size:0.78rem;">${new Date(m.createdAt).toLocaleString()}</td>
+        <td>${m.type}</td>
+        <td style="color:${m.quantityDelta < 0 ? "var(--danger)" : "var(--brass-dark)"};">${m.quantityDelta > 0 ? "+" : ""}${m.quantityDelta}</td>
+        <td>${m.balanceAfter}</td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${m.note || "—"}</td>
+        <td style="font-size:0.78rem;">${m.recordedByType}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No movements yet.</td></tr>`;
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  }
+}
+
+async function submitMovementForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("mvSubmitBtn");
+  btn.disabled = true;
+  try {
+    const type = document.getElementById("mvType").value;
+    const payload = { type, note: document.getElementById("mvNote").value || undefined };
+    if (type === "CLOSING_COUNT") payload.countedQuantity = Number(document.getElementById("mvCountedQuantity").value);
+    else payload.quantityDelta = Number(document.getElementById("mvQuantityDelta").value);
+
+    await adminApi.recordStockMovement(document.getElementById("mvStockItemId").value, _stockSelectedBranchId, payload);
+    document.getElementById("movementForm").reset();
+    toggleMovementFields();
+    await refreshLedger();
+    refreshStock();
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 /* ============================================================
-   EVENTS — branch-scoped
+   EVENTS — branch-scoped. This is a guest renting the hall/venue for
+   their OWN function — distinct from Upcoming Events below, which is
+   the hotel hosting something and selling tickets to it.
    ============================================================ */
+let _eventsSelectedBranchId = "";
+
 async function loadEventsPage() {
   const container = document.getElementById("pageContent");
+  let branchOptionsHtml = `<option value="">Select a branch…</option>`;
+  let branches = [];
+  try {
+    ({ branches } = await adminApi.listBranches());
+    if (!_eventsSelectedBranchId && branches.length) _eventsSelectedBranchId = branches[0].id;
+    branchOptionsHtml = branches.map((b) => `<option value="${b.id}" ${b.id === _eventsSelectedBranchId ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch { /* non-fatal */ }
+
   container.innerHTML = `
     ${pageHeader("Events", "Publish upcoming events guests can book into.",
-      `<button class="btn btn-primary" onclick="openEventModal()">Add event</button>`)}
+      `<button class="btn btn-primary" onclick="openEventModal()" ${_eventsSelectedBranchId ? "" : "disabled"}>Add event</button>`)}
     <div id="eventsNotice"></div>
     <div class="panel">
-      <table><thead><tr><th>Name</th><th>Starts</th><th>Ends</th><th>Capacity</th><th>Price</th><th></th></tr></thead>
-        <tbody id="eventsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      <div class="form-field" style="max-width:320px;">
+        <label>Branch</label>
+        <select id="eventsBranchSelect" onchange="_eventsSelectedBranchId=this.value; refreshEvents();">${branchOptionsHtml}</select>
+      </div>
+    </div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Tags</th><th>Starts</th><th>Ends</th><th>Capacity</th><th>Price</th><th></th></tr></thead>
+        <tbody id="eventsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
 
@@ -1587,6 +1849,10 @@ async function loadEventsPage() {
             <div class="form-field"><label>Capacity</label><input type="number" id="evCapacity" min="0" step="1"></div>
             <div class="form-field"><label>Price (&#8358;)</label><input type="number" id="evPrice" min="0" step="1"></div>
           </div>
+          <div class="form-field">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(manage the list from the Tags page)</span></label>
+            <div id="evTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="evSubmitBtn">Save event</button>
@@ -1596,15 +1862,32 @@ async function loadEventsPage() {
     </div>
   `;
   document.getElementById("eventForm").addEventListener("submit", submitEventForm);
-  await refreshEvents();
+  if (_eventsSelectedBranchId) await refreshEvents();
+  else document.getElementById("eventsBody").innerHTML = `<tr><td colspan="7" class="empty-state">Pick a branch above to see its events.</td></tr>`;
+}
+
+async function refreshEventTagOptions(selectedTags) {
+  const container = document.getElementById("evTagsOptions");
+  if (!_eventsSelectedBranchId) { container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Pick a branch first.</span>`; return; }
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await adminApi.listTags(_eventsSelectedBranchId, "events");
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
 }
 
 async function refreshEvents() {
+  if (!_eventsSelectedBranchId) return;
   try {
-    const { events } = await adminApi.listEventsAdmin();
+    const { events } = await adminApi.listEventsAdmin(_eventsSelectedBranchId);
     document.getElementById("eventsBody").innerHTML = events.length ? events.map((ev) => `
       <tr>
         <td>${ev.name}</td>
+        <td>${(ev.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
         <td>${new Date(ev.startsAt).toLocaleString()}</td>
         <td>${ev.endsAt ? new Date(ev.endsAt).toLocaleString() : "—"}</td>
         <td>${ev.capacity ?? "—"}</td>
@@ -1614,7 +1897,7 @@ async function refreshEvents() {
           <button class="btn btn-sm btn-outline" onclick="deleteEventConfirm('${ev.id}')">Delete</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No events yet — add one above.</td></tr>`;
+    `).join("") : `<tr><td colspan="7" class="empty-state">No events yet — add one above.</td></tr>`;
   } catch (err) {
     showNotice("eventsNotice", err.message);
   }
@@ -1632,6 +1915,7 @@ function openEventModal(ev) {
     document.getElementById("evCapacity").value = ev.capacity ?? "";
     document.getElementById("evPrice").value = ev.price ?? "";
   }
+  refreshEventTagOptions(ev ? (ev.tags || []) : []);
   document.getElementById("eventModal").style.display = "flex";
 }
 function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
@@ -1655,9 +1939,10 @@ async function submitEventForm(e) {
       endsAt: document.getElementById("evEndsAt").value ? new Date(document.getElementById("evEndsAt").value).toISOString() : undefined,
       capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
       price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : undefined,
+      tags: Array.from(document.getElementById("evTagsOptions").querySelectorAll("input:checked")).map((el) => el.value),
     };
-    if (id) { await adminApi.updateEvent(id, payload); showNotice("eventsNotice", "Event updated.", "success"); }
-    else { await adminApi.createEvent(payload); showNotice("eventsNotice", "Event added.", "success"); }
+    if (id) { await adminApi.updateEvent(id, _eventsSelectedBranchId, payload); showNotice("eventsNotice", "Event updated.", "success"); }
+    else { await adminApi.createEvent(_eventsSelectedBranchId, payload); showNotice("eventsNotice", "Event added.", "success"); }
     closeEventModal();
     refreshEvents();
   } catch (err) {
@@ -1678,30 +1963,140 @@ async function deleteEventConfirm(id) {
 }
 
 /* ============================================================
+   UPCOMING EVENTS — hotel-hosted, ticketed events, distinct from Events
+   above (which is a guest renting the hall for their OWN function).
+   Manager drafts and submits these from their panel; this page is the
+   Director's approval queue — approve publishes it (guests can then buy
+   tickets), reject sends it back with a reason.
+   ============================================================ */
+const UPCOMING_EVENT_STATUS_LABELS = {
+  DRAFT: "Draft", PENDING_APPROVAL: "Pending approval", PUBLISHED: "Published",
+  REJECTED: "Rejected", CANCELLED: "Cancelled", COMPLETED: "Completed",
+};
+
+async function loadUpcomingEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Upcoming Events", "Hotel-hosted, ticketed events. Managers draft and submit; you approve or reject here.")}
+    <div id="upcomingEventsNotice"></div>
+    <div class="panel">
+      <div class="form-field" style="max-width:280px;">
+        <label>Filter by status</label>
+        <select id="ueStatusFilter" onchange="refreshUpcomingEvents()">
+          <option value="PENDING_APPROVAL">Pending approval</option>
+          <option value="PUBLISHED">Published</option>
+          <option value="DRAFT">Draft</option>
+          <option value="REJECTED">Rejected</option>
+          <option value="CANCELLED">Cancelled</option>
+          <option value="COMPLETED">Completed</option>
+          <option value="">All</option>
+        </select>
+      </div>
+    </div>
+    <div class="panel">
+      <table>
+        <thead><tr><th>Title</th><th>Branch</th><th>When</th><th>Capacity</th><th>Ticket price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="upcomingEventsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshUpcomingEvents();
+}
+
+async function refreshUpcomingEvents() {
+  const status = document.getElementById("ueStatusFilter").value;
+  try {
+    const { upcomingEvents } = await adminApi.listUpcomingEvents(undefined, status || undefined);
+    document.getElementById("upcomingEventsBody").innerHTML = upcomingEvents.length ? upcomingEvents.map((ue) => `
+      <tr>
+        <td>${ue.title}${ue.rejectionReason ? `<div style="color:var(--text-muted); font-size:0.78rem;">Rejected: ${ue.rejectionReason}</div>` : ""}</td>
+        <td>${ue.branch?.name || "—"}</td>
+        <td>${new Date(ue.startsAt).toLocaleString()}</td>
+        <td>${ue.capacity ?? "Unlimited"}</td>
+        <td>${ue.ticketPrice ? `&#8358;${Number(ue.ticketPrice).toLocaleString()}` : "Free"}</td>
+        <td><span class="badge badge-${ue.status.toLowerCase()}">${UPCOMING_EVENT_STATUS_LABELS[ue.status] || ue.status}</span></td>
+        <td>
+          ${ue.status === "PENDING_APPROVAL" ? `
+            <button class="btn btn-sm btn-primary" onclick="approveUpcomingEventConfirm('${ue.id}')">Approve</button>
+            <button class="btn btn-sm btn-outline" onclick="rejectUpcomingEventPrompt('${ue.id}')">Reject</button>
+          ` : ""}
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="7" class="empty-state">Nothing here right now.</td></tr>`;
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+async function approveUpcomingEventConfirm(id) {
+  if (!confirm("Publish this event? Guests will be able to see it and buy tickets immediately.")) return;
+  try {
+    await adminApi.approveUpcomingEvent(id);
+    showNotice("upcomingEventsNotice", "Published.", "success");
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+async function rejectUpcomingEventPrompt(id) {
+  const reason = prompt("Reason for rejecting this event (shown to the Manager):");
+  if (reason === null) return;
+  try {
+    await adminApi.rejectUpcomingEvent(id, reason || undefined);
+    showNotice("upcomingEventsNotice", "Sent back to the Manager.", "success");
+    refreshUpcomingEvents();
+  } catch (err) {
+    showNotice("upcomingEventsNotice", err.message);
+  }
+}
+
+/* ============================================================
    OFFERINGS — food, drinks, services (priced per branch)
    ============================================================ */
 const OFFERING_CATEGORY_LABELS = { food: "Food", drink: "Drink", service: "Service" };
 
+// category -> tag "service" key (matches VALID_TAG_SERVICES on the backend)
+const OFFERING_TAG_SERVICE = { food: "restaurant", drink: "bar", laundry: "laundry", spa: "spa" };
+
 // category -> { fetch, create, update, label } — one entry per real backend
 // table. "food"/"drink" both live in MenuItem (category FOOD/DRINK);
 // laundry and spa are their own tables with their own required fields.
+// Every fn now takes branchId explicitly — this whole page used to never
+// send one at all, so every create/update 400'd with "branchId is required".
 const OFFERING_TYPES = {
-  food:    { label: "Food",    list: () => adminApi.listMenuItems("FOOD"),  create: adminApi.createMenuItem,    update: adminApi.updateMenuItem,    key: "menuItems" },
-  drink:   { label: "Drink",   list: () => adminApi.listMenuItems("DRINK"), create: adminApi.createMenuItem,    update: adminApi.updateMenuItem,    key: "menuItems" },
-  laundry: { label: "Laundry", list: adminApi.listLaundryItems,             create: adminApi.createLaundryItem, update: adminApi.updateLaundryItem, key: "laundryItems" },
-  spa:     { label: "Spa",     list: adminApi.listSpaTreatments,            create: adminApi.createSpaTreatment,update: adminApi.updateSpaTreatment,key: "spaTreatments" },
+  food:    { label: "Food",    list: (b) => adminApi.listMenuItems(b, "FOOD"),  create: adminApi.createMenuItem,    update: adminApi.updateMenuItem,    key: "menuItems" },
+  drink:   { label: "Drink",   list: (b) => adminApi.listMenuItems(b, "DRINK"), create: adminApi.createMenuItem,    update: adminApi.updateMenuItem,    key: "menuItems" },
+  laundry: { label: "Laundry", list: adminApi.listLaundryItems,                 create: adminApi.createLaundryItem, update: adminApi.updateLaundryItem, key: "laundryItems" },
+  spa:     { label: "Spa",     list: adminApi.listSpaTreatments,                create: adminApi.createSpaTreatment,update: adminApi.updateSpaTreatment,key: "spaTreatments" },
 };
+
+let _offeringsSelectedBranchId = "";
 
 async function loadOfferingsPage() {
   const container = document.getElementById("pageContent");
+  let branchOptionsHtml = `<option value="">Select a branch…</option>`;
+  let branches = [];
+  try {
+    ({ branches } = await adminApi.listBranches());
+    if (!_offeringsSelectedBranchId && branches.length) _offeringsSelectedBranchId = branches[0].id;
+    branchOptionsHtml = branches.map((b) => `<option value="${b.id}" ${b.id === _offeringsSelectedBranchId ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch { /* non-fatal */ }
+
   container.innerHTML = `
     ${pageHeader("Food, Drinks & Services", "Priced per branch — set once per item, per location.",
-      `<button class="btn btn-primary" onclick="openOfferingModal()">Add item</button>`)}
+      `<button class="btn btn-primary" onclick="openOfferingModal()" ${_offeringsSelectedBranchId ? "" : "disabled"}>Add item</button>`)}
     <div id="offeringsNotice"></div>
     <div class="panel">
+      <div class="form-field" style="max-width:320px;">
+        <label>Branch</label>
+        <select id="offeringsBranchSelect" onchange="_offeringsSelectedBranchId=this.value; refreshOfferingsTable();">${branchOptionsHtml}</select>
+      </div>
+    </div>
+    <div class="panel">
       <table>
-        <thead><tr><th>Photo</th><th>Item</th><th>Category</th><th>Price</th><th>Status</th><th></th></tr></thead>
-        <tbody id="offeringsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Photo</th><th>Item</th><th>Category</th><th>Tags</th><th>Price</th><th>Status</th><th></th></tr></thead>
+        <tbody id="offeringsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="modal-overlay" id="offeringModal" style="display:none;">
@@ -1709,6 +2104,7 @@ async function loadOfferingsPage() {
         <h3 id="offeringModalTitle">Add item</h3>
         <form id="offeringForm">
           <input type="hidden" id="ofId">
+          <input type="hidden" id="ofStockItemId">
           <div class="form-row">
             <div class="form-field">
               <label>Category</label>
@@ -1732,6 +2128,23 @@ async function loadOfferingsPage() {
             <label>Dietary tags <span style="color:var(--text-muted); font-weight:400;">(comma-separated — vegan, halal, gluten-free…)</span></label>
             <input type="text" id="ofDietaryTags" placeholder="vegan, halal">
           </div>
+          <div class="form-field" id="ofTagsField">
+            <label>Tags <span style="color:var(--text-muted); font-weight:400;">(helps guests browse — manage the list from the Tags page)</span></label>
+            <div id="ofTagsOptions" class="checkbox-grid"><span style="color:var(--text-muted); font-size:0.82rem;">Loading…</span></div>
+          </div>
+          <div class="form-field" id="ofStockField" style="display:none;">
+            <div id="ofStockLinkedNote" style="display:none; color:var(--text-muted); font-size:0.85rem; margin-bottom:8px;">
+              This item's stock is tracked. Manage its quantity from the <a href="#" onclick="switchPage('stock'); return false;" style="color:var(--brass-dark); font-weight:600;">Stock page</a> — quantity can't be edited here.
+            </div>
+            <div id="ofStockNewFields">
+              <label class="checkbox-item"><input type="checkbox" id="ofTrackStock" onchange="toggleOfferingStockFields()"> Track stock for this item</label>
+              <div class="form-row" id="ofStockQtyRow" style="display:none; margin-top:8px;">
+                <div class="form-field"><label>Starting quantity</label><input type="number" id="ofStockQuantity" min="0" step="1" value="0"></div>
+                <div class="form-field"><label>Unit</label><input type="text" id="ofStockUnit" placeholder="bottles, plates, kg…"></div>
+                <div class="form-field"><label>Low-stock alert below</label><input type="number" id="ofStockLowThreshold" min="0" step="1" value="5"></div>
+              </div>
+            </div>
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeOfferingModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="ofSubmitBtn">Save item</button>
@@ -1742,7 +2155,8 @@ async function loadOfferingsPage() {
   `;
   document.getElementById("offeringForm").addEventListener("submit", submitOfferingForm);
   toggleOfferingFields();
-  refreshOfferingsTable();
+  if (_offeringsSelectedBranchId) refreshOfferingsTable();
+  else document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="7" class="empty-state">Pick a branch above to see its items.</td></tr>`;
 }
 
 function toggleOfferingFields() {
@@ -1753,13 +2167,41 @@ function toggleOfferingFields() {
   const isFoodOrDrink = cat === "food" || cat === "drink";
   document.getElementById("ofRoomServiceField").style.display = isFoodOrDrink ? "" : "none";
   document.getElementById("ofDietaryField").style.display = isFoodOrDrink ? "" : "none";
+  // Stock only makes sense for a physical, consumable item — not laundry
+  // (unlimited by design) or spa (a time slot, not a countable good).
+  document.getElementById("ofStockField").style.display = isFoodOrDrink ? "" : "none";
+  refreshOfferingTagOptions();
+}
+
+/** Populates the tag checkboxes from this branch's managed list for
+ * whichever service the current category maps to. Re-fetches on branch
+ * or category change since the list is scoped to both. */
+async function refreshOfferingTagOptions(selectedTags) {
+  const cat = document.getElementById("ofCategory").value;
+  const service = OFFERING_TAG_SERVICE[cat];
+  const container = document.getElementById("ofTagsOptions");
+  if (!_offeringsSelectedBranchId || !service) { container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Pick a branch first.</span>`; return; }
+  const currentlySelected = selectedTags || Array.from(container.querySelectorAll("input:checked")).map((el) => el.value);
+  try {
+    const { tags } = await adminApi.listTags(_offeringsSelectedBranchId, service);
+    container.innerHTML = tags.length ? tags.map((t) => `
+      <label class="checkbox-item"><input type="checkbox" value="${t.name}" ${currentlySelected.includes(t.name) ? "checked" : ""}> ${t.name}</label>
+    `).join("") : `<span style="color:var(--text-muted); font-size:0.82rem;">No tags yet for this service — add some from the <a href="#" onclick="switchPage('tags'); return false;" style="color:var(--brass-dark); font-weight:600;">Tags page</a>.</span>`;
+  } catch {
+    container.innerHTML = `<span style="color:var(--text-muted); font-size:0.82rem;">Couldn't load tags.</span>`;
+  }
+}
+
+function toggleOfferingStockFields() {
+  document.getElementById("ofStockQtyRow").style.display = document.getElementById("ofTrackStock").checked ? "" : "none";
 }
 
 async function refreshOfferingsTable() {
+  if (!_offeringsSelectedBranchId) return;
   try {
     const results = await Promise.all(
       Object.entries(OFFERING_TYPES).map(async ([cat, cfg]) => {
-        const data = await cfg.list();
+        const data = await cfg.list(_offeringsSelectedBranchId);
         const items = data[cfg.key] || data.menuItems || data.laundryItems || data.spaTreatments || [];
         return items.map((item) => ({ ...item, _category: cat }));
       })
@@ -1775,6 +2217,7 @@ async function refreshOfferingsTable() {
         </td>
         <td>${o.name}</td>
         <td>${OFFERING_TYPES[o._category].label}</td>
+        <td>${(o.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
         <td>&#8358;${Number(o.price).toLocaleString()}</td>
         <td><span class="badge badge-${o.isAvailable ? "active" : "inactive"}">${o.isAvailable ? "Active" : "Inactive"}</span></td>
         <td>
@@ -1782,9 +2225,9 @@ async function refreshOfferingsTable() {
           <button class="btn btn-sm btn-outline" onclick="toggleOfferingActive('${o._category}', '${o.id}', ${o.isAvailable})">${o.isAvailable ? "Deactivate" : "Activate"}</button>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No items yet — add food, drinks, laundry, or spa items above.</td></tr>`;
+    `).join("") : `<tr><td colspan="7" class="empty-state">No items yet — add food, drinks, laundry, or spa items above.</td></tr>`;
   } catch (err) {
-    document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+    document.getElementById("offeringsBody").innerHTML = `<tr><td colspan="7" class="empty-state">${err.message}</td></tr>`;
   }
 }
 
@@ -1807,6 +2250,7 @@ function openOfferingModal(o) {
   document.getElementById("offeringModalTitle").textContent = o ? "Edit item" : "Add item";
   document.getElementById("offeringForm").reset();
   document.getElementById("ofId").value = o ? o.id : "";
+  document.getElementById("ofStockItemId").value = (o && o.stockItemId) || "";
   document.getElementById("ofCategory").disabled = !!o; // category can't change after creation — different table
   if (o) {
     document.getElementById("ofCategory").value = o._category;
@@ -1820,7 +2264,16 @@ function openOfferingModal(o) {
       document.getElementById("ofDietaryTags").value = (o.dietaryTags || []).join(", ");
     }
   }
+  // Stock: creating new stock tracking only happens at item creation
+  // (see createMenuItem on the backend) — an item that already has a
+  // linked StockItem shows a note pointing at the Stock page instead.
+  const alreadyTracked = !!(o && o.stockItemId);
+  document.getElementById("ofStockLinkedNote").style.display = alreadyTracked ? "" : "none";
+  document.getElementById("ofStockNewFields").style.display = alreadyTracked ? "none" : "";
+  document.getElementById("ofTrackStock").checked = false;
+  toggleOfferingStockFields();
   toggleOfferingFields();
+  refreshOfferingTagOptions(o ? (o.tags || []) : []);
   document.getElementById("offeringModal").style.display = "flex";
 }
 function closeOfferingModal() { document.getElementById("offeringModal").style.display = "none"; }
@@ -1833,17 +2286,27 @@ async function submitOfferingForm(e) {
     const id = document.getElementById("ofId").value;
     const category = document.getElementById("ofCategory").value;
     const cfg = OFFERING_TYPES[category];
+    const tags = Array.from(document.getElementById("ofTagsOptions").querySelectorAll("input:checked")).map((el) => el.value);
 
     const base = {
       name: document.getElementById("ofName").value,
       price: Number(document.getElementById("ofPrice").value),
+      tags,
     };
     if (category === "food" || category === "drink") {
       base.category = category.toUpperCase();
       base.description = document.getElementById("ofDescription").value || undefined;
       base.availableForRoomService = document.getElementById("ofRoomService").checked;
-      const tags = document.getElementById("ofDietaryTags").value.split(",").map((t) => t.trim()).filter(Boolean);
-      if (tags.length) base.dietaryTags = tags;
+      const dietaryTags = document.getElementById("ofDietaryTags").value.split(",").map((t) => t.trim()).filter(Boolean);
+      if (dietaryTags.length) base.dietaryTags = dietaryTags;
+      // Inline stock creation — only offered (and only meaningful) when
+      // adding a brand-new item; see openOfferingModal's linked-note branch.
+      if (!id && document.getElementById("ofTrackStock").checked) {
+        base.trackStock = true;
+        base.stockQuantity = Number(document.getElementById("ofStockQuantity").value) || 0;
+        base.stockUnit = document.getElementById("ofStockUnit").value || "unit";
+        base.stockLowStockThreshold = Number(document.getElementById("ofStockLowThreshold").value) || 5;
+      }
     } else if (category === "laundry") {
       base.turnaroundHours = Number(document.getElementById("ofTurnaround").value) || 24;
     } else if (category === "spa") {
@@ -1851,8 +2314,8 @@ async function submitOfferingForm(e) {
       base.durationMinutes = Number(document.getElementById("ofDuration").value) || 60;
     }
 
-    if (id) { await cfg.update(id, base); showNotice("offeringsNotice", "Item updated.", "success"); }
-    else { await cfg.create(base); showNotice("offeringsNotice", "Item added.", "success"); }
+    if (id) { await cfg.update(id, _offeringsSelectedBranchId, base); showNotice("offeringsNotice", "Item updated.", "success"); }
+    else { await cfg.create(_offeringsSelectedBranchId, base); showNotice("offeringsNotice", "Item added.", "success"); }
     closeOfferingModal();
     refreshOfferingsTable();
   } catch (err) {
@@ -1862,7 +2325,7 @@ async function submitOfferingForm(e) {
   }
 }
 async function toggleOfferingActive(category, id, currentlyActive) {
-  try { await OFFERING_TYPES[category].update(id, { isAvailable: !currentlyActive }); refreshOfferingsTable(); }
+  try { await OFFERING_TYPES[category].update(id, _offeringsSelectedBranchId, { isAvailable: !currentlyActive }); refreshOfferingsTable(); }
   catch (err) { showNotice("offeringsNotice", err.message); }
 }
 
@@ -1890,7 +2353,7 @@ async function refreshBookingsTable() {
     document.getElementById("bookingsBody").innerHTML = bookings.length ? bookings.map((b) => `
       <tr>
         <td>${b.guest.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${b.guest.email}</span></td>
-        <td>${b.room.roomType.name} — ${b.room.roomNumber}</td>
+        <td>${b.room.name} — ${b.room.roomNumber}</td>
         <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
         <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
         <td>
@@ -2367,7 +2830,7 @@ async function loadStaffPage() {
             <div class="form-field"><label>Temporary password</label><input type="text" id="sPassword" required></div>
             <div class="form-field">
               <label>Role</label>
-              <select id="sRole" required>
+              <select id="sRole" required onchange="toggleStaffRoleFields()">
                 <option value="STAFF">Staff</option>
                 ${director ? `<option value="MANAGER">Manager</option>` : ""}
               </select>
@@ -2378,23 +2841,28 @@ async function loadStaffPage() {
             <label>Job title <span style="color:var(--text-muted); font-weight:400;">(free text)</span></label>
             <input type="text" id="sTitle" placeholder="e.g. Front Desk Receptionist">
           </div>
-          <div class="form-field">
-            <label>Department <span style="color:var(--text-muted); font-weight:400;">(optional — auto-checks the matching permissions below)</span></label>
-            <select id="sDepartment" onchange="applyDepartmentPermissions()"><option value="">— none —</option></select>
+          <div id="sManagerNote" style="display:none; color:var(--text-muted); font-size:0.85rem; margin-bottom:12px;">
+            A Manager automatically has full access to their branch — there's nothing to pick here. Permissions below only apply to Staff.
           </div>
-          <div class="form-field">
-            <label>Permissions</label>
-            <div class="checkbox-grid">
-              <label class="checkbox-item"><input type="checkbox" value="manage_rooms"> Manage rooms</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_bookings"> Manage bookings</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_stock"> Manage stock</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_events"> Manage events</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_staff"> Manage staff</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_settings"> Manage settings</label>
-              <label class="checkbox-item"><input type="checkbox" value="handle_tickets"> Handle tickets</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_payments"> Record & view payments</label>
-              <label class="checkbox-item"><input type="checkbox" value="view_reports"> View reports</label>
-              <label class="checkbox-item"><input type="checkbox" value="manage_blog"> Manage blog</label>
+          <div id="sPermissionsSection">
+            <div class="form-field">
+              <label>Department <span style="color:var(--text-muted); font-weight:400;">(optional — auto-checks the matching permissions below)</span></label>
+              <select id="sDepartment" onchange="applyDepartmentPermissions()"><option value="">— none —</option></select>
+            </div>
+            <div class="form-field">
+              <label>Permissions</label>
+              <div class="checkbox-grid">
+                <label class="checkbox-item"><input type="checkbox" value="manage_rooms"> Room status &amp; housekeeping <span style="color:var(--text-muted);">(not creating/editing rooms — Director-only)</span></label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_bookings"> Manage bookings</label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_stock"> Manage stock</label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_events"> Manage events</label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_staff"> Manage staff</label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_settings"> Manage settings</label>
+                <label class="checkbox-item"><input type="checkbox" value="handle_tickets"> Handle tickets</label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_payments"> Record & view payments</label>
+                <label class="checkbox-item"><input type="checkbox" value="view_reports"> View reports</label>
+                <label class="checkbox-item"><input type="checkbox" value="manage_blog"> Manage blog</label>
+              </div>
             </div>
           </div>
           <div class="modal-actions">
@@ -2407,6 +2875,7 @@ async function loadStaffPage() {
   `;
 
   document.getElementById("staffForm").addEventListener("submit", submitStaffForm);
+  toggleStaffRoleFields();
   try {
     const { departments } = await adminApi.listDepartments();
     window._departmentCatalog = departments || {};
@@ -2415,6 +2884,12 @@ async function loadStaffPage() {
       Object.keys(departments || {}).map((d) => `<option value="${d}">${d}</option>`).join("");
   } catch { /* non-fatal — department stays optional */ }
   refreshStaffTable();
+}
+
+function toggleStaffRoleFields() {
+  const isManager = document.getElementById("sRole").value === "MANAGER";
+  document.getElementById("sManagerNote").style.display = isManager ? "block" : "none";
+  document.getElementById("sPermissionsSection").style.display = isManager ? "none" : "block";
 }
 
 function applyDepartmentPermissions() {
@@ -2470,7 +2945,6 @@ async function submitStaffForm(e) {
         roleTitle: document.getElementById("sTitle").value || undefined,
         department,
         branchId: branchSelect ? branchSelect.value : undefined,
-        permissions,
       };
       await adminApi.createManager(payload);
       showNotice("staffNotice", "Manager account created.", "success");
@@ -2510,25 +2984,43 @@ async function loadTicketsPage() {
         <tbody id="ticketsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div class="modal-overlay" id="assignTicketModal" style="display:none;">
+      <div class="modal">
+        <h3>Assign ticket</h3>
+        <div id="assignTicketNotice"></div>
+        <div class="form-field">
+          <label>Assign to</label>
+          <select id="assignTicketTarget"><option value="">Loading…</option></select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeAssignTicketModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="assignTicketSubmitBtn" onclick="submitAssignTicket()">Assign</button>
+        </div>
+      </div>
+    </div>
   `;
   await refreshTicketsTable();
 }
+let _cachedTickets = [];
 async function refreshTicketsTable() {
   try {
     const { tickets } = await adminApi.listTickets();
-    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => `
+    _cachedTickets = tickets;
+    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => {
+      const assignee = t.assignedManager || t.assignedStaffMember;
+      return `
       <tr>
         <td>${t.subject}</td>
         <td>${t.guest.name}</td>
         <td>${t.priority}</td>
-        <td>${t.assignedStaff ? t.assignedStaff.name : "—"}</td>
+        <td>${assignee ? assignee.name : "—"}</td>
         <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
         <td>
-          ${!t.assignedStaff ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
+          <button class="btn btn-sm btn-outline" onclick="openAssignTicketModal('${t.id}')">${assignee ? "Reassign" : "Assign"}</button>
           ${t.status !== "RESOLVED" ? `<button class="btn btn-sm btn-outline" onclick="resolveTicketRow('${t.id}')">Resolve</button>` : ""}
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
+    `; }).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
 
     const openCount = tickets.filter((t) => ["OPEN", "IN_PROGRESS"].includes(t.status)).length;
     const bellBadge = document.getElementById("ticketsBellBadge");
@@ -2543,9 +3035,53 @@ async function refreshTicketsTable() {
     document.getElementById("ticketsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
   }
 }
-async function claimTicket(id) {
-  try { await adminApi.assignTicket(id); refreshTicketsTable(); }
-  catch (err) { showNotice("ticketsNotice", err.message); }
+
+/** A ticket belongs to one specific branch (visible across every branch
+ * in this Director view), so who's assignable has to be fetched fresh
+ * per-ticket rather than from one global staff list. Deliberately no
+ * "assign to me" shortcut for Director — the backend's assignment model
+ * is Manager/Staff only (assignedManagerId/assignedStaffId, no
+ * assignedDirectorId), so a Director always assigns to someone at that
+ * branch rather than claiming it personally. */
+let _assignTicketId = null;
+async function openAssignTicketModal(ticketId) {
+  const ticket = _cachedTickets.find((t) => t.id === ticketId);
+  if (!ticket) return;
+  _assignTicketId = ticketId;
+  document.getElementById("assignTicketModal").style.display = "flex";
+  const select = document.getElementById("assignTicketTarget");
+  select.innerHTML = `<option value="">Loading…</option>`;
+  try {
+    const [{ managers }, { staff }] = await Promise.all([
+      adminApi.listManagers(ticket.branchId),
+      adminApi.listStaff(ticket.branchId),
+    ]);
+    const options = [
+      ...managers.map((m) => ({ id: m.id, label: `${m.name} (Manager)` })),
+      ...staff.map((s) => ({ id: s.id, label: `${s.name} (Staff)` })),
+    ];
+    select.innerHTML = options.length
+      ? options.map((o) => `<option value="${o.id}">${o.label}</option>`).join("")
+      : `<option value="">No one at this branch yet</option>`;
+  } catch (err) {
+    select.innerHTML = `<option value="">Couldn't load — ${err.message}</option>`;
+  }
+}
+function closeAssignTicketModal() { document.getElementById("assignTicketModal").style.display = "none"; }
+async function submitAssignTicket() {
+  const staffId = document.getElementById("assignTicketTarget").value;
+  if (!staffId) return showNotice("assignTicketNotice", "Pick someone to assign this to.");
+  const btn = document.getElementById("assignTicketSubmitBtn");
+  btn.disabled = true;
+  try {
+    await adminApi.assignTicket(_assignTicketId, staffId);
+    closeAssignTicketModal();
+    refreshTicketsTable();
+  } catch (err) {
+    showNotice("assignTicketNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 async function resolveTicketRow(id) {
   try { await adminApi.resolveTicket(id); refreshTicketsTable(); }
@@ -2560,21 +3096,21 @@ async function loadAnalyticsPage() {
   if (!isDirector()) { container.innerHTML = `<div class="empty-state">Director access required.</div>`; return; }
 
   container.innerHTML = `
-    ${pageHeader("Analytics", "Trends across all branches.")}
+    ${pageHeader("Analytics", "Trends across all branches, last 30 days.")}
     <div id="analyticsNotice"></div>
     <div class="stats-grid" id="analyticsStatCards"><div class="loading-state">Loading…</div></div>
     <div class="panel">
-      <h3>Occupancy & revenue — last 30 days</h3>
+      <h3>Revenue & activity — last 30 days</h3>
       <table>
-        <thead><tr><th>Date</th><th>Occupancy</th><th>Revenue</th><th>New bookings</th><th>Tickets opened</th></tr></thead>
-        <tbody id="analyticsTrendBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Date</th><th>Revenue</th><th>New bookings</th><th>Tickets opened</th></tr></thead>
+        <tbody id="analyticsTrendBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="panel">
       <h3>Branch comparison</h3>
       <table>
-        <thead><tr><th>Branch</th><th>Occupancy</th><th>Revenue (30d)</th><th>ADR</th><th>Open tickets</th></tr></thead>
-        <tbody id="analyticsBranchBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Branch</th><th>Occupancy (today)</th><th>Revenue (30d)</th></tr></thead>
+        <tbody id="analyticsBranchBody"><tr><td colspan="3" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
   `;
@@ -2583,31 +3119,28 @@ async function loadAnalyticsPage() {
     const { totals, trend, byBranch } = await adminApi.getAnalytics();
 
     document.getElementById("analyticsStatCards").innerHTML = `
-      <div class="stat-card"><b>${totals.occupancyRatePercent}%</b><span>Avg occupancy (30d)</span></div>
+      <div class="stat-card"><b>${totals.occupancyRatePercent}%</b><span>Occupancy (today)</span></div>
       <div class="stat-card"><b>&#8358;${Number(totals.revenue30d || 0).toLocaleString()}</b><span>Revenue (30d)</span></div>
-      <div class="stat-card"><b>&#8358;${Number(totals.adr || 0).toLocaleString()}</b><span>Avg daily rate</span></div>
-      <div class="stat-card"><b>${totals.avgResolutionHours || "—"}h</b><span>Avg ticket resolution</span></div>
+      <div class="stat-card"><b>&#8358;${Number(totals.adr || 0).toLocaleString()}</b><span>Avg daily rate (rooms, 30d)</span></div>
+      <div class="stat-card"><b>${totals.avgResolutionHours || "—"}h</b><span>Avg ticket resolution (30d)</span></div>
     `;
 
     document.getElementById("analyticsTrendBody").innerHTML = (trend || []).length ? trend.map((d) => `
       <tr>
         <td>${d.date}</td>
-        <td>${d.occupancyRatePercent}%</td>
         <td>&#8358;${Number(d.revenue || 0).toLocaleString()}</td>
         <td>${d.newBookings}</td>
         <td>${d.ticketsOpened}</td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No trend data yet.</td></tr>`;
+    `).join("") : `<tr><td colspan="4" class="empty-state">No trend data yet.</td></tr>`;
 
     document.getElementById("analyticsBranchBody").innerHTML = (byBranch || []).length ? byBranch.map((b) => `
       <tr>
         <td>${b.name}</td>
         <td>${b.occupancyRatePercent}%</td>
         <td>&#8358;${Number(b.revenue30d || 0).toLocaleString()}</td>
-        <td>&#8358;${Number(b.adr || 0).toLocaleString()}</td>
-        <td>${b.openTickets}</td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No branch data yet.</td></tr>`;
+    `).join("") : `<tr><td colspan="3" class="empty-state">Only shown company-wide (no branch filter applied).</td></tr>`;
   } catch (err) {
     showNotice("analyticsNotice", err.message);
   }
@@ -2637,9 +3170,15 @@ async function loadAuditLogPage() {
         ${branchFilterHtml}
         <select id="alActionFilter" onchange="refreshAuditLogTable()">
           <option value="">All actions</option>
-          <option value="CREATE">Create</option>
-          <option value="UPDATE">Update</option>
-          <option value="DELETE">Delete</option>
+          <option value="room">Rooms</option>
+          <option value="booking">Bookings</option>
+          <option value="blog">Blog</option>
+          <option value="newsletter">Newsletter</option>
+          <option value="upcomingEvent">Upcoming events</option>
+          <option value="manager">Managers</option>
+          <option value="staff">Staff</option>
+          <option value="branch">Branches</option>
+          <option value="settings">Settings</option>
         </select>
         <input type="date" id="alFromDate" onchange="refreshAuditLogTable()">
         <input type="date" id="alToDate" onchange="refreshAuditLogTable()">
@@ -2669,11 +3208,11 @@ async function refreshAuditLogTable() {
     document.getElementById("auditLogBody").innerHTML = logs.length ? logs.map((l) => `
       <tr>
         <td>${(l.createdAt || "").replace("T", " ").slice(0, 16)}</td>
-        <td>${l.staffName}</td>
+        <td>${l.actorName} <span style="color:var(--text-muted); font-size:0.76rem;">(${l.actorType})</span></td>
         <td>${l.branchName || "—"}</td>
-        <td><span class="badge badge-${l.action.toLowerCase()}">${l.action}</span></td>
-        <td>${l.entityType} ${l.entityLabel ? `— ${l.entityLabel}` : ""}</td>
-        <td>${l.summary || "—"}</td>
+        <td><span class="badge">${l.action}</span></td>
+        <td>${l.targetType ? `${l.targetType}${l.targetId ? ` — ${String(l.targetId).slice(0, 8)}` : ""}` : "—"}</td>
+        <td style="font-size:0.78rem; color:var(--text-muted);">${l.metadata ? JSON.stringify(l.metadata) : "—"}</td>
       </tr>
     `).join("") : `<tr><td colspan="6" class="empty-state">No activity in this range.</td></tr>`;
   } catch (err) {
@@ -2682,30 +3221,164 @@ async function refreshAuditLogTable() {
 }
 
 /* ============================================================
-   SETTINGS
+   TAGS — a small, managed, per-branch/per-service picklist. Director
+   or Manager curates this; every item-creation form across Rooms,
+   Restaurant/Bar, Laundry, Spa, Events, and Upcoming Events picks
+   from whatever's here for its service instead of free-typing.
    ============================================================ */
+const TAG_SERVICE_LABELS = {
+  restaurant: "Restaurant", bar: "Bar", laundry: "Laundry",
+  room: "Rooms", spa: "Spa", events: "Events", upcoming_events: "Upcoming Events",
+};
+let _tagsSelectedBranchId = "";
+
+async function loadTagsPage() {
+  const container = document.getElementById("pageContent");
+  let branchOptionsHtml = `<option value="">Select a branch…</option>`;
+  let branches = [];
+  try {
+    ({ branches } = await adminApi.listBranches());
+    if (!_tagsSelectedBranchId && branches.length) _tagsSelectedBranchId = branches[0].id;
+    branchOptionsHtml = branches.map((b) => `<option value="${b.id}" ${b.id === _tagsSelectedBranchId ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch { /* non-fatal */ }
+
+  container.innerHTML = `
+    ${pageHeader("Tags", "A small, managed list per service — pick from these when creating an item so guests can browse by category.")}
+    <div id="tagsNotice"></div>
+    <div class="panel">
+      <div class="form-row" style="align-items:flex-end;">
+        <div class="form-field" style="max-width:320px;">
+          <label>Branch</label>
+          <select id="tagsBranchSelect" onchange="_tagsSelectedBranchId=this.value; refreshTagsPage();">${branchOptionsHtml}</select>
+        </div>
+        <div class="form-field" style="max-width:280px;">
+          <label>New tag name</label>
+          <input type="text" id="newTagName" placeholder="e.g. Breakfast, Traditional wear">
+        </div>
+        <div class="form-field" style="max-width:220px;">
+          <label>Service</label>
+          <select id="newTagService">
+            ${Object.entries(TAG_SERVICE_LABELS).map(([val, label]) => `<option value="${val}">${label}</option>`).join("")}
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="createTagConfirm()" ${_tagsSelectedBranchId ? "" : "disabled"} style="height:42px;">Add tag</button>
+      </div>
+    </div>
+    <div id="tagsGroups">${_tagsSelectedBranchId ? `<div class="loading-state">Loading…</div>` : `<div class="empty-state">Pick a branch above.</div>`}</div>
+  `;
+  if (_tagsSelectedBranchId) await refreshTagsPage();
+}
+
+async function refreshTagsPage() {
+  if (!_tagsSelectedBranchId) return;
+  const container = document.getElementById("tagsGroups");
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { tags } = await adminApi.listTags(_tagsSelectedBranchId);
+    if (!tags.length) { container.innerHTML = `<div class="empty-state">No tags yet for this branch — add one above.</div>`; return; }
+
+    const byService = {};
+    tags.forEach((t) => { (byService[t.service] = byService[t.service] || []).push(t); });
+
+    container.innerHTML = Object.entries(TAG_SERVICE_LABELS)
+      .filter(([service]) => byService[service])
+      .map(([service, label]) => `
+        <div class="panel">
+          <h3>${label}</h3>
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            ${byService[service].map((t) => `
+              <span class="badge" style="display:inline-flex; align-items:center; gap:6px;">
+                ${t.name}
+                <button onclick="deleteTagConfirm('${t.id}')" style="background:none;border:none;cursor:pointer;color:inherit;opacity:0.6;padding:0;" title="Delete tag">&times;</button>
+              </span>
+            `).join("")}
+          </div>
+        </div>
+      `).join("");
+  } catch (err) {
+    showNotice("tagsNotice", err.message);
+  }
+}
+
+async function createTagConfirm() {
+  const name = document.getElementById("newTagName").value.trim();
+  const service = document.getElementById("newTagService").value;
+  if (!name) return showNotice("tagsNotice", "Enter a tag name first.");
+  try {
+    await adminApi.createTag(_tagsSelectedBranchId, name, service);
+    document.getElementById("newTagName").value = "";
+    showNotice("tagsNotice", "Tag added.", "success");
+    refreshTagsPage();
+  } catch (err) {
+    showNotice("tagsNotice", err.message);
+  }
+}
+
+async function deleteTagConfirm(id) {
+  if (!confirm("Delete this tag? Items that already used it keep the label — this only removes it from the picker for new ones.")) return;
+  try {
+    await adminApi.deleteTag(id, _tagsSelectedBranchId);
+    refreshTagsPage();
+  } catch (err) {
+    showNotice("tagsNotice", err.message);
+  }
+}
+
+/* ============================================================
+   SETTINGS — per-branch operational info (address/city/state/phone/
+   email/services). This used to show Name/Tagline/Description fields
+   that don't exist on the backend's accepted field list at all, AND
+   never sent a branchId, so it always failed with "Director must
+   specify ?branchId=" before you could even see the mismatch. Both
+   fixed here. (Branding/theme/policies live on the separate Site
+   Settings page, untouched.)
+   ============================================================ */
+let _settingsSelectedBranchId = "";
+
 async function loadSettingsPage() {
   const container = document.getElementById("pageContent");
+  let branchOptionsHtml = `<option value="">Select a branch…</option>`;
+  let branches = [];
+  try {
+    ({ branches } = await adminApi.listBranches());
+    if (!_settingsSelectedBranchId && branches.length) _settingsSelectedBranchId = branches[0].id;
+    branchOptionsHtml = branches.map((b) => `<option value="${b.id}" ${b.id === _settingsSelectedBranchId ? "selected" : ""}>${b.name}</option>`).join("");
+  } catch { /* non-fatal */ }
+
   container.innerHTML = `
-    ${pageHeader("Settings", "Hotel info shown on the public website.")}
+    ${pageHeader("Settings", "Per-branch operational info — address, contact details, and which services are live.")}
     <div id="settingsNotice"></div>
-    <div class="panel" id="settingsFormPanel"><div class="loading-state">Loading…</div></div>
+    <div class="panel">
+      <div class="form-field" style="max-width:320px;">
+        <label>Branch</label>
+        <select id="settingsBranchSelect" onchange="_settingsSelectedBranchId=this.value; loadSettingsPage();">${branchOptionsHtml}</select>
+      </div>
+    </div>
+    <div class="panel" id="settingsFormPanel"><div class="loading-state">${_settingsSelectedBranchId ? "Loading…" : "Pick a branch above."}</div></div>
   `;
+  if (!_settingsSelectedBranchId) return;
 
   try {
-    const { settings } = await adminApi.getSettings();
+    const { branch } = await adminApi.getSettings(_settingsSelectedBranchId);
     document.getElementById("settingsFormPanel").innerHTML = `
       <form id="settingsForm">
         <div class="form-row">
-          <div class="form-field"><label>Name</label><input type="text" id="stName" value="${settings.name || ""}"></div>
-          <div class="form-field"><label>Tagline</label><input type="text" id="stTagline" value="${settings.tagline || ""}"></div>
+          <div class="form-field"><label>Email</label><input type="email" id="stEmail" value="${branch.email || ""}"></div>
+          <div class="form-field"><label>Phone</label><input type="text" id="stPhone" value="${branch.phone || ""}"></div>
         </div>
-        <div class="form-field"><label>Description</label><textarea id="stDescription" rows="3">${settings.description || ""}</textarea></div>
+        <div class="form-field"><label>Address</label><input type="text" id="stAddress" value="${branch.address || ""}"></div>
         <div class="form-row">
-          <div class="form-field"><label>Email</label><input type="email" id="stEmail" value="${settings.email || ""}"></div>
-          <div class="form-field"><label>Phone</label><input type="text" id="stPhone" value="${settings.phone || ""}"></div>
+          <div class="form-field"><label>City</label><input type="text" id="stCity" value="${branch.city || ""}"></div>
+          <div class="form-field"><label>State</label><input type="text" id="stState" value="${branch.state || ""}"></div>
         </div>
-        <div class="form-field"><label>Address</label><input type="text" id="stAddress" value="${settings.address || ""}"></div>
+        <div class="form-field">
+          <label>Services live at this branch</label>
+          <div class="checkbox-grid" id="stServices">
+            ${Object.entries(SERVICE_LABELS).map(([val, label]) => `
+              <label class="checkbox-item"><input type="checkbox" value="${val}" ${(branch.services || []).includes(val) ? "checked" : ""}> ${label}</label>
+            `).join("")}
+          </div>
+        </div>
         <button type="submit" class="btn btn-primary" id="stSubmitBtn">Save settings</button>
       </form>
     `;
@@ -2714,13 +3387,13 @@ async function loadSettingsPage() {
       const btn = document.getElementById("stSubmitBtn");
       btn.disabled = true;
       try {
-        await adminApi.updateSettings({
-          name: document.getElementById("stName").value,
-          tagline: document.getElementById("stTagline").value,
-          description: document.getElementById("stDescription").value,
+        await adminApi.updateSettings(_settingsSelectedBranchId, {
           email: document.getElementById("stEmail").value,
           phone: document.getElementById("stPhone").value,
           address: document.getElementById("stAddress").value,
+          city: document.getElementById("stCity").value,
+          state: document.getElementById("stState").value,
+          services: Array.from(document.getElementById("stServices").querySelectorAll("input:checked")).map((el) => el.value),
         });
         showNotice("settingsNotice", "Settings saved.", "success");
       } catch (err) {
@@ -3571,15 +4244,6 @@ async function submitDisableTwoFactor() {
 /* ============================================================
    MANAGERS — Director only
    ============================================================ */
-const MANAGER_PERMISSION_LABELS = {
-  manage_rooms: "Manage rooms", manage_bookings: "Manage bookings", manage_stock: "Manage stock",
-  manage_events: "Manage events", manage_staff: "Manage staff", manage_settings: "Manage branch settings",
-  handle_tickets: "Handle tickets", manage_payments: "Record & view payments", view_reports: "View reports",
-  manage_blog: "Manage blog", manage_menu: "Manage menu", manage_laundry: "Manage laundry",
-  manage_spa: "Manage spa", manage_reviews: "Manage reviews", manage_promos: "Manage promo codes",
-  manage_newsletter: "Manage newsletter", manage_security: "Guest lookup / security",
-};
-
 async function loadManagersPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
@@ -3607,15 +4271,12 @@ async function loadManagersPage() {
             <div class="form-field"><label>Role title (optional)</label><input type="text" id="mgTitle" placeholder="e.g. General Manager"></div>
           </div>
           <div class="form-field">
-            <label>Department <span style="color:var(--text-muted); font-weight:400;">(optional — auto-checks the matching permissions below)</span></label>
-            <select id="mgDepartment" onchange="applyManagerDepartmentPermissions()"><option value="">— none —</option></select>
+            <label>Department <span style="color:var(--text-muted); font-weight:400;">(free text — for org-chart purposes only)</span></label>
+            <input type="text" id="mgDepartment" placeholder="e.g. Front of House">
           </div>
-          <div class="form-field">
-            <label>Permissions</label>
-            <div class="checkbox-grid" id="mgPermissionsGrid">
-              ${Object.entries(MANAGER_PERMISSION_LABELS).map(([val, label]) => `<label class="checkbox-item"><input type="checkbox" value="${val}"> ${label}</label>`).join("")}
-            </div>
-          </div>
+          <p style="color:var(--text-muted); font-size:0.85rem; margin:-4px 0 12px;">
+            A Manager has full access to everything at their branch — there's no permission list to configure. (Permissions only apply to Staff, set on the Staff page.)
+          </p>
           <div class="modal-actions">
             <button type="button" class="btn btn-outline" onclick="closeManagerModal()">Cancel</button>
             <button type="submit" class="btn btn-primary" id="mgSubmitBtn">Create manager</button>
@@ -3632,12 +4293,6 @@ async function loadManagersPage() {
   } catch { /* department stays optional */ }
   refreshManagersTable();
   populateManagerBranchSelect();
-}
-
-function applyManagerDepartmentPermissions() {
-  const dept = document.getElementById("mgDepartment").value;
-  const suggested = (window._managerDeptCatalog || {})[dept] || [];
-  document.querySelectorAll("#mgPermissionsGrid input").forEach((cb) => { if (suggested.includes(cb.value)) cb.checked = true; });
 }
 
 async function populateManagerBranchSelect() {
@@ -3675,7 +4330,6 @@ async function refreshManagersTable() {
 function openManagerModal(managerId) {
   document.getElementById("managerForm").reset();
   document.getElementById("mgId").value = managerId || "";
-  document.querySelectorAll("#mgPermissionsGrid input").forEach((cb) => { cb.checked = false; });
 
   const manager = managerId ? (window._cachedManagers || []).find((m) => m.id === managerId) : null;
   document.getElementById("managerModalTitle").textContent = manager ? "Edit manager" : "New manager";
@@ -3695,7 +4349,6 @@ function openManagerModal(managerId) {
     document.getElementById("mgEmail").disabled = true;
     document.getElementById("mgTitle").value = manager.roleTitle || "";
     document.getElementById("mgDepartment").value = manager.department || "";
-    document.querySelectorAll("#mgPermissionsGrid input").forEach((cb) => { cb.checked = (manager.permissions || []).includes(cb.value); });
   } else {
     document.getElementById("mgEmail").disabled = false;
   }
@@ -3709,7 +4362,6 @@ async function submitManagerForm(e) {
   btn.disabled = true;
   try {
     const id = document.getElementById("mgId").value;
-    const permissions = Array.from(document.querySelectorAll("#mgPermissionsGrid input:checked")).map((el) => el.value);
     const department = document.getElementById("mgDepartment").value || undefined;
 
     if (id) {
@@ -3717,7 +4369,6 @@ async function submitManagerForm(e) {
         name: document.getElementById("mgName").value,
         roleTitle: document.getElementById("mgTitle").value || undefined,
         department,
-        permissions,
       });
       showNotice("managersNotice", "Manager updated.", "success");
     } else {
@@ -3728,7 +4379,6 @@ async function submitManagerForm(e) {
         password: document.getElementById("mgPassword").value,
         roleTitle: document.getElementById("mgTitle").value || undefined,
         department,
-        permissions,
       });
       showNotice("managersNotice", "Manager created — welcome email sent.", "success");
     }
