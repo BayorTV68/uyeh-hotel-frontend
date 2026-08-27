@@ -580,6 +580,13 @@ const adminApi = {
   listPaystackBanks: () => adminRequest("/director/paystack/banks"),
   verifyPayoutAccount: (payload) => adminRequest("/director/paystack/verify-account", { method: "POST", body: JSON.stringify(payload) }),
   setBranchPayoutAccount: (branchId, payload) => adminRequest(`/director/branches/${branchId}/payout-account`, { method: "POST", body: JSON.stringify(payload) }),
+  // Stripe Connect — same "how does this branch get paid" concept as the
+  // Paystack payout account above, but a separate provider entirely:
+  // onboarding happens on Stripe's own hosted page, not a form here.
+  // This UI didn't exist at all before — the backend routes were built
+  // and never wired to anything.
+  connectStripeAccount: (branchId, payload) => adminRequest(`/director/branches/${branchId}/stripe-account`, { method: "POST", body: JSON.stringify(payload) }),
+  getStripeAccountStatus: (branchId) => adminRequest(`/director/branches/${branchId}/stripe-account/status`),
 
   // Company-wide rollup — Director dashboard
   getCompanyOverview: () => adminRequest("/director/company/overview"),
@@ -634,6 +641,8 @@ const adminApi = {
 
   listBookings: (status) => adminRequest(branchPath(`/bookings${status ? `?status=${status}` : ""}`)),
   updateBookingStatus: (id, status) => adminRequest(branchPath(`/bookings/${id}/status`), { method: "PATCH", body: JSON.stringify({ status }) }),
+  getFolio: (id) => adminRequest(branchPath(`/bookings/${id}/folio`)),
+  settleFolio: (id, method) => adminRequest(branchPath(`/bookings/${id}/folio/settle`), { method: "POST", body: JSON.stringify({ method }) }),
 
   // Stock — same branchId fix, plus the new ledger endpoints. quantity is
   // no longer sent on update (the backend ignores it there on purpose —
@@ -660,7 +669,7 @@ const adminApi = {
   deleteTag: (id, branchId) => adminRequest(`/manager/tags/${id}?branchId=${branchId}`, { method: "DELETE" }),
 
   listDepartments: () => adminRequest(branchPath("/departments")),
-  listStaff: () => adminRequest(branchPath("/staff")),
+  listStaff: (branchId) => adminRequest(`/manager/staff${branchId ? `?branchId=${branchId}` : ""}`),
   createStaff: (payload) => adminRequest(branchPath("/staff"), { method: "POST", body: JSON.stringify(payload) }),
   updateStaff: (id, payload) => adminRequest(branchPath(`/staff/${id}`), { method: "PATCH", body: JSON.stringify(payload) }),
 
@@ -739,10 +748,10 @@ const adminApi = {
     return adminRequest(`/director/audit-log${qs ? `?${qs}` : ""}`);
   },
 
-  // Analytics — not built on the backend yet. Left pointing at a
-  // not-yet-real endpoint on purpose so the page shows a clear "couldn't
-  // load" error instead of silently looking broken like before.
-  getAnalytics: () => adminRequest("/admin/analytics"),
+    // Real 30-day trend + branch comparison, computed server-side from
+  // Transaction/Booking/Ticket records. /admin/analytics never existed —
+  // there is no /api/admin/* router at all, hence "route not found".
+  getAnalytics: () => adminRequest("/director/analytics"),
 
   // Site-wide settings — Director only (company branding, feature flags, etc.)
   getSiteSettings: () => adminRequest("/director/settings"),
@@ -1107,6 +1116,20 @@ async function loadBranchesPage() {
             <button type="submit" class="btn btn-primary" id="poSaveBtn" disabled>Save payout account</button>
           </div>
         </form>
+
+        <div style="border-top:1px solid var(--border); margin-top:20px; padding-top:16px;">
+          <h4 style="margin-bottom:4px;">Stripe</h4>
+          <p class="muted" style="font-size:0.82rem; margin-bottom:10px;">
+            A separate provider from Paystack above — for guests paying by card through Stripe instead. Onboarding happens on Stripe's own hosted page, not here.
+            <br><b>Note:</b> Stripe Connect doesn't support payouts to Nigerian bank accounts — this only makes sense for a branch settling in a currency/country Stripe Connect actually supports.
+          </p>
+          <div id="stripeStatusBlock" style="margin-bottom:10px; font-size:0.86rem;">Checking status…</div>
+          <div class="form-field" id="stripeConnectFields">
+            <label>Email for the Stripe account</label>
+            <input type="email" id="stripeConnectEmail" placeholder="finance@yourhotel.com">
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="stripeConnectBtn" onclick="connectStripeClick()">Connect / continue Stripe onboarding</button>
+        </div>
       </div>
     </div>
     <div class="modal-overlay" id="branchModal" style="display:none;">
@@ -1214,10 +1237,12 @@ async function openPayoutModal(branch) {
   document.getElementById("poVerifyResult").style.display = "none";
   document.getElementById("poSaveBtn").disabled = true;
   _poVerified = null;
+  _stripeConnectBranchId = branch.id;
 
   const select = document.getElementById("poBankCode");
   select.innerHTML = `<option value="">Loading banks&hellip;</option>`;
   document.getElementById("payoutModal").style.display = "flex";
+  refreshStripeStatus(branch.id);
 
   try {
     const { banks } = await adminApi.listPaystackBanks();
@@ -1230,6 +1255,39 @@ async function openPayoutModal(branch) {
   }
 }
 function closePayoutModal() { document.getElementById("payoutModal").style.display = "none"; }
+
+let _stripeConnectBranchId = null;
+async function refreshStripeStatus(branchId) {
+  const block = document.getElementById("stripeStatusBlock");
+  block.textContent = "Checking status…";
+  try {
+    const status = await adminApi.getStripeAccountStatus(branchId);
+    if (!status.connected) {
+      block.innerHTML = `<span class="badge badge-inactive">Not connected</span>`;
+    } else if (status.chargesEnabled) {
+      block.innerHTML = `<span class="badge badge-active">Connected — ready to accept payments</span>`;
+    } else {
+      block.innerHTML = `<span class="badge badge-warning">Connected — onboarding incomplete</span> <span class="muted" style="font-size:0.8rem;">Stripe needs more info before this account can accept live payments.</span>`;
+    }
+  } catch (err) {
+    block.innerHTML = `<span class="muted">Couldn't check status — ${err.message}</span>`;
+  }
+}
+async function connectStripeClick() {
+  const email = document.getElementById("stripeConnectEmail").value;
+  if (!email) return showNotice("payoutNotice", "Enter an email for the Stripe account first.");
+  const btn = document.getElementById("stripeConnectBtn");
+  btn.disabled = true;
+  try {
+    const { onboardingUrl } = await adminApi.connectStripeAccount(_stripeConnectBranchId, { email });
+    window.open(onboardingUrl, "_blank");
+    showNotice("payoutNotice", "Continue in the new tab — come back here and reopen this branch's Payout modal afterward to see the updated status.", "success");
+  } catch (err) {
+    showNotice("payoutNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
 
 async function verifyPayoutAccountClick() {
   const bankCode = document.getElementById("poBankCode").value;
@@ -2388,7 +2446,8 @@ async function refreshBookingsTable() {
         <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
         <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
         <td>
-          ${NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
+          ${b.status === "CHECKED_IN" ? `<button class="btn btn-sm btn-outline" onclick="openFolioModal('${b.id}')">Check out</button>`
+            : NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
           ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceBooking('${b.id}','CANCELLED')">Cancel</button>` : ""}
         </td>
       </tr>
@@ -2400,6 +2459,94 @@ async function refreshBookingsTable() {
 async function advanceBooking(id, status) {
   try { await adminApi.updateBookingStatus(id, status); refreshBookingsTable(); }
   catch (err) { showNotice("bookingsNotice", err.message); }
+}
+
+/* ============================================================
+   FOLIO — the guest's running room-charge tab. Only relevant for a
+   CHECKED_IN booking. Checkout is blocked server-side while a balance
+   is outstanding, so this modal is the only path to checking someone
+   out once they've charged anything to their room.
+   ============================================================ */
+async function openFolioModal(bookingId) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "folioModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <h3>Room folio</h3>
+      <div id="folioModalNotice"></div>
+      <div id="folioModalContent"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  await refreshFolioModal(bookingId);
+}
+
+async function refreshFolioModal(bookingId) {
+  try {
+    const { booking, charges, balance } = await adminApi.getFolio(bookingId);
+    document.getElementById("folioModalContent").innerHTML = `
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:12px;">${booking.guestName} — Room ${booking.roomNumber}</p>
+      ${charges.length ? `
+        <table><thead><tr><th>Type</th><th>Placed</th><th style="text-align:right;">Amount</th></tr></thead>
+          <tbody>${charges.map((c) => `<tr><td>${c.type.replace(/_/g, " ")}</td><td>${new Date(c.createdAt).toLocaleString()}</td><td style="text-align:right;">&#8358;${Number(c.totalAmount).toLocaleString()}</td></tr>`).join("")}</tbody>
+        </table>
+        <div class="summary-line total" style="margin-top:10px;"><span>Balance due</span><span>&#8358;${Number(balance).toLocaleString()}</span></div>
+        <form id="folioSettleForm" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+          <div class="form-field">
+            <label>Settle by</label>
+            <select id="folioMethod">
+              <option value="CASH">Cash</option>
+              <option value="CARD">Card</option>
+              <option value="TRANSFER">Transfer</option>
+              <option value="PAYSTACK">Paystack</option>
+              <option value="STRIPE">Stripe</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button>
+            <button type="submit" class="btn btn-primary" id="folioSettleBtn">Settle &amp; check out</button>
+          </div>
+        </form>
+      ` : `
+        <div class="empty-state">No room charges on this stay.</div>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button>
+          <button type="button" class="btn btn-primary" onclick="checkOutFromFolio('${bookingId}')">Check out</button>
+        </div>
+      `}
+    `;
+    if (charges.length) {
+      document.getElementById("folioSettleForm").addEventListener("submit", (e) => { e.preventDefault(); settleFolioAndCheckOut(bookingId); });
+    }
+  } catch (err) {
+    document.getElementById("folioModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+async function settleFolioAndCheckOut(bookingId) {
+  const btn = document.getElementById("folioSettleBtn");
+  const method = document.getElementById("folioMethod").value;
+  if (btn) { btn.disabled = true; btn.textContent = "Settling…"; }
+  try {
+    await adminApi.settleFolio(bookingId, method);
+    await adminApi.updateBookingStatus(bookingId, "CHECKED_OUT");
+    document.getElementById("folioModal").remove();
+    showNotice("bookingsNotice", "Folio settled and guest checked out.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    document.getElementById("folioModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = "Settle & check out"; }
+  }
+}
+
+async function checkOutFromFolio(bookingId) {
+  try {
+    await adminApi.updateBookingStatus(bookingId, "CHECKED_OUT");
+    document.getElementById("folioModal").remove();
+    showNotice("bookingsNotice", "Guest checked out.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    document.getElementById("folioModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
 }
 
 /* ============================================================
@@ -3015,25 +3162,43 @@ async function loadTicketsPage() {
         <tbody id="ticketsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div class="modal-overlay" id="assignTicketModal" style="display:none;">
+      <div class="modal">
+        <h3>Assign ticket</h3>
+        <div id="assignTicketNotice"></div>
+        <div class="form-field">
+          <label>Assign to</label>
+          <select id="assignTicketTarget"><option value="">Loading…</option></select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeAssignTicketModal()">Cancel</button>
+          <button type="button" class="btn btn-primary" id="assignTicketSubmitBtn" onclick="submitAssignTicket()">Assign</button>
+        </div>
+      </div>
+    </div>
   `;
   await refreshTicketsTable();
 }
+let _cachedTickets = [];
 async function refreshTicketsTable() {
   try {
     const { tickets } = await adminApi.listTickets();
-    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => `
+    _cachedTickets = tickets;
+    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => {
+      const assignee = t.assignedManager || t.assignedStaffMember;
+      return `
       <tr>
         <td>${t.subject}</td>
         <td>${t.guest.name}</td>
         <td>${t.priority}</td>
-        <td>${t.assignedStaff ? t.assignedStaff.name : "—"}</td>
+        <td>${assignee ? assignee.name : "—"}</td>
         <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
         <td>
-          ${!t.assignedStaff ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
+          <button class="btn btn-sm btn-outline" onclick="openAssignTicketModal('${t.id}')">${assignee ? "Reassign" : "Assign"}</button>
           ${t.status !== "RESOLVED" ? `<button class="btn btn-sm btn-outline" onclick="resolveTicketRow('${t.id}')">Resolve</button>` : ""}
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
+    `; }).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
 
     const openCount = tickets.filter((t) => ["OPEN", "IN_PROGRESS"].includes(t.status)).length;
     const bellBadge = document.getElementById("ticketsBellBadge");
@@ -3048,9 +3213,49 @@ async function refreshTicketsTable() {
     document.getElementById("ticketsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
   }
 }
-async function claimTicket(id) {
-  try { await adminApi.assignTicket(id); refreshTicketsTable(); }
-  catch (err) { showNotice("ticketsNotice", err.message); }
+
+/** A ticket belongs to one specific branch (visible across every branch
+ * in this Director view), so who's assignable has to be fetched fresh
+ * per-ticket rather than from one global staff list. */
+let _assignTicketId = null;
+async function openAssignTicketModal(ticketId) {
+  const ticket = _cachedTickets.find((t) => t.id === ticketId);
+  if (!ticket) return;
+  _assignTicketId = ticketId;
+  document.getElementById("assignTicketModal").style.display = "flex";
+  const select = document.getElementById("assignTicketTarget");
+  select.innerHTML = `<option value="">Loading…</option>`;
+  try {
+    const [{ managers }, { staff }] = await Promise.all([
+      adminApi.listManagers(ticket.branchId),
+      adminApi.listStaff(ticket.branchId),
+    ]);
+    const options = [
+      ...managers.map((m) => ({ id: m.id, label: `${m.name} (Manager)` })),
+      ...staff.map((s) => ({ id: s.id, label: `${s.name} (Staff)` })),
+    ];
+    select.innerHTML = options.length
+      ? options.map((o) => `<option value="${o.id}">${o.label}</option>`).join("")
+      : `<option value="">No one at this branch yet</option>`;
+  } catch (err) {
+    select.innerHTML = `<option value="">Couldn't load — ${err.message}</option>`;
+  }
+}
+function closeAssignTicketModal() { document.getElementById("assignTicketModal").style.display = "none"; }
+async function submitAssignTicket() {
+  const staffId = document.getElementById("assignTicketTarget").value;
+  if (!staffId) return showNotice("assignTicketNotice", "Pick someone to assign this to.");
+  const btn = document.getElementById("assignTicketSubmitBtn");
+  btn.disabled = true;
+  try {
+    await adminApi.assignTicket(_assignTicketId, staffId);
+    closeAssignTicketModal();
+    refreshTicketsTable();
+  } catch (err) {
+    showNotice("assignTicketNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
 }
 async function resolveTicketRow(id) {
   try { await adminApi.resolveTicket(id); refreshTicketsTable(); }
@@ -3065,21 +3270,21 @@ async function loadAnalyticsPage() {
   if (!isDirector()) { container.innerHTML = `<div class="empty-state">Director access required.</div>`; return; }
 
   container.innerHTML = `
-    ${pageHeader("Analytics", "Trends across all branches.")}
+    ${pageHeader("Analytics", "Trends across all branches, last 30 days.")}
     <div id="analyticsNotice"></div>
     <div class="stats-grid" id="analyticsStatCards"><div class="loading-state">Loading…</div></div>
     <div class="panel">
-      <h3>Occupancy & revenue — last 30 days</h3>
+      <h3>Revenue & activity — last 30 days</h3>
       <table>
-        <thead><tr><th>Date</th><th>Occupancy</th><th>Revenue</th><th>New bookings</th><th>Tickets opened</th></tr></thead>
-        <tbody id="analyticsTrendBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Date</th><th>Revenue</th><th>New bookings</th><th>Tickets opened</th></tr></thead>
+        <tbody id="analyticsTrendBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
     <div class="panel">
       <h3>Branch comparison</h3>
       <table>
-        <thead><tr><th>Branch</th><th>Occupancy</th><th>Revenue (30d)</th><th>ADR</th><th>Open tickets</th></tr></thead>
-        <tbody id="analyticsBranchBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+        <thead><tr><th>Branch</th><th>Occupancy (today)</th><th>Revenue (30d)</th></tr></thead>
+        <tbody id="analyticsBranchBody"><tr><td colspan="3" class="loading-state">Loading…</td></tr></tbody>
       </table>
     </div>
   `;
@@ -3088,31 +3293,28 @@ async function loadAnalyticsPage() {
     const { totals, trend, byBranch } = await adminApi.getAnalytics();
 
     document.getElementById("analyticsStatCards").innerHTML = `
-      <div class="stat-card"><b>${totals.occupancyRatePercent}%</b><span>Avg occupancy (30d)</span></div>
+      <div class="stat-card"><b>${totals.occupancyRatePercent}%</b><span>Occupancy (today)</span></div>
       <div class="stat-card"><b>&#8358;${Number(totals.revenue30d || 0).toLocaleString()}</b><span>Revenue (30d)</span></div>
-      <div class="stat-card"><b>&#8358;${Number(totals.adr || 0).toLocaleString()}</b><span>Avg daily rate</span></div>
-      <div class="stat-card"><b>${totals.avgResolutionHours || "—"}h</b><span>Avg ticket resolution</span></div>
+      <div class="stat-card"><b>&#8358;${Number(totals.adr || 0).toLocaleString()}</b><span>Avg daily rate (rooms, 30d)</span></div>
+      <div class="stat-card"><b>${totals.avgResolutionHours || "—"}h</b><span>Avg ticket resolution (30d)</span></div>
     `;
 
     document.getElementById("analyticsTrendBody").innerHTML = (trend || []).length ? trend.map((d) => `
       <tr>
         <td>${d.date}</td>
-        <td>${d.occupancyRatePercent}%</td>
         <td>&#8358;${Number(d.revenue || 0).toLocaleString()}</td>
         <td>${d.newBookings}</td>
         <td>${d.ticketsOpened}</td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No trend data yet.</td></tr>`;
+    `).join("") : `<tr><td colspan="4" class="empty-state">No trend data yet.</td></tr>`;
 
     document.getElementById("analyticsBranchBody").innerHTML = (byBranch || []).length ? byBranch.map((b) => `
       <tr>
         <td>${b.name}</td>
         <td>${b.occupancyRatePercent}%</td>
         <td>&#8358;${Number(b.revenue30d || 0).toLocaleString()}</td>
-        <td>&#8358;${Number(b.adr || 0).toLocaleString()}</td>
-        <td>${b.openTickets}</td>
       </tr>
-    `).join("") : `<tr><td colspan="5" class="empty-state">No branch data yet.</td></tr>`;
+    `).join("") : `<tr><td colspan="3" class="empty-state">No branch data yet.</td></tr>`;
   } catch (err) {
     showNotice("analyticsNotice", err.message);
   }
@@ -3142,9 +3344,15 @@ async function loadAuditLogPage() {
         ${branchFilterHtml}
         <select id="alActionFilter" onchange="refreshAuditLogTable()">
           <option value="">All actions</option>
-          <option value="CREATE">Create</option>
-          <option value="UPDATE">Update</option>
-          <option value="DELETE">Delete</option>
+          <option value="room">Rooms</option>
+          <option value="booking">Bookings</option>
+          <option value="blog">Blog</option>
+          <option value="newsletter">Newsletter</option>
+          <option value="upcomingEvent">Upcoming events</option>
+          <option value="manager">Managers</option>
+          <option value="staff">Staff</option>
+          <option value="branch">Branches</option>
+          <option value="settings">Settings</option>
         </select>
         <input type="date" id="alFromDate" onchange="refreshAuditLogTable()">
         <input type="date" id="alToDate" onchange="refreshAuditLogTable()">
@@ -3174,11 +3382,11 @@ async function refreshAuditLogTable() {
     document.getElementById("auditLogBody").innerHTML = logs.length ? logs.map((l) => `
       <tr>
         <td>${(l.createdAt || "").replace("T", " ").slice(0, 16)}</td>
-        <td>${l.staffName}</td>
+        <td>${l.actorName} <span style="color:var(--text-muted); font-size:0.76rem;">(${l.actorType})</span></td>
         <td>${l.branchName || "—"}</td>
-        <td><span class="badge badge-${l.action.toLowerCase()}">${l.action}</span></td>
-        <td>${l.entityType} ${l.entityLabel ? `— ${l.entityLabel}` : ""}</td>
-        <td>${l.summary || "—"}</td>
+        <td><span class="badge">${l.action}</span></td>
+        <td>${l.targetType ? `${l.targetType}${l.targetId ? ` — ${String(l.targetId).slice(0, 8)}` : ""}` : "—"}</td>
+        <td style="font-size:0.78rem; color:var(--text-muted);">${l.metadata ? JSON.stringify(l.metadata) : "—"}</td>
       </tr>
     `).join("") : `<tr><td colspan="6" class="empty-state">No activity in this range.</td></tr>`;
   } catch (err) {

@@ -278,6 +278,7 @@ const guestApi = {
     guestRequest(`/branches/${branchId}/bookings/${bookingId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
   listMyBookings: () => guestRequest("/guest/bookings"),
   getFolio: (bookingId) => guestRequest(`/guest/bookings/${bookingId}/folio`),
+  getFolio: (bookingId) => guestRequest(`/guest/bookings/${bookingId}/folio`),
   cancelBooking: (branchId, id) => guestRequest(`/branches/${branchId}/bookings/${id}/cancel`, { method: "PATCH" }),
   // No invoice route exists on the backend yet — intentionally not offered
   // in this panel rather than linking to something that 404s.
@@ -634,7 +635,8 @@ async function loadMyBookingsPage() {
           ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.branchId}','${b.id}')">Cancel booking</button>` : ""}
           ${b.status === "CHECKED_IN" ? `<button class="btn btn-sm btn-outline" onclick="openFolioModal('${b.id}','${b.room.roomNumber}')">Room charges</button>` : ""}
           ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.name.replace(/'/g, "&#39;")}')">Leave a review</button>` : ""}
-        </div>
+           ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.name.replace(/'/g, "&#39;")}')">Leave a review</button>` : ""}
+          </div>
       </div>
     `).join("") : `<div class="empty-state">You haven't booked with us yet. <a href="#" onclick="switchPage('search'); return false;" style="color:var(--brass-dark); font-weight:600;">Find a room →</a></div>`;
   } catch (err) {
@@ -647,6 +649,37 @@ async function cancelMyBooking(branchId, id) {
   try { await guestApi.cancelBooking(branchId, id); loadMyBookingsPage(); }
   catch (err) { showNotice("myBookingsNotice", err.message); }
 }
+
+/* ============================================================
+   ROOM CHARGES (folio) — read-only. Settling the balance is a
+   front-desk action at checkout, not something a guest does here.
+   ============================================================ */
+async function openFolioModal(bookingId, roomNumber) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "folioModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <h3>Room ${roomNumber} — charges this stay</h3>
+      <div id="folioModalContent"><div class="loading-state">Loading…</div></div>
+      <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  try {
+    const { charges, balance, currency } = await guestApi.getFolio(bookingId);
+    document.getElementById("folioModalContent").innerHTML = charges.length ? `
+      ${charges.map((c) => `
+        <div class="summary-line">
+          <span>${c.type.replace(/_/g, " ")} — ${new Date(c.createdAt).toLocaleDateString()}</span>
+          <span>&#8358;${Number(c.totalAmount).toLocaleString()}</span>
+        </div>
+      `).join("")}
+      <div class="summary-line total"><span>Balance due at checkout</span><span>&#8358;${Number(balance).toLocaleString()}</span></div>
+    ` : `<div class="empty-state">No charges on this room yet.</div>`;
+  } catch (err) {
+    document.getElementById("folioModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
 
 /* ============================================================
    ROOM CHARGES (folio) — read-only. Settling the balance is a
@@ -1016,6 +1049,7 @@ async function removeFromWishlist(id) {
    createOrder() controller's payload shape per type.
    ============================================================ */
 let _orderCart = []; // [{ id, name, price, quantity }] for line-item types
+let _myActiveBookings = []; // this guest's CHECKED_IN bookings — powers the "charge to room" option below
 
 async function loadOrderPage() {
   const container = document.getElementById("pageContent");
@@ -1025,8 +1059,13 @@ async function loadOrderPage() {
     branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
   } catch { /* handled below */ }
 
+  try {
+    const { bookings } = await guestApi.listMyBookings();
+    _myActiveBookings = bookings.filter((b) => b.status === "CHECKED_IN");
+  } catch { _myActiveBookings = []; }
+
   container.innerHTML = `
-    ${pageHeader("Order Something", "Room service, restaurant, bar, laundry, spa — order directly, pay through Paystack.")}
+    ${pageHeader("Order Something", "Room service, restaurant, bar, laundry, spa — order directly, pay through Paystack, or charge it to your room if you're checked in.")}
     <div class="form-row" style="margin-bottom:20px;">
       <div class="form-field"><label>Branch</label><select id="orBranch" onchange="loadOrderCatalog()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
       <div class="form-field">
@@ -1040,12 +1079,40 @@ async function loadOrderPage() {
         </select>
       </div>
     </div>
+    <div id="orderPaymentChoice"></div>
     <div id="orderNotice"></div>
     <div id="orderCatalog"><div class="loading-state">Pick a branch to see what's available.</div></div>
     <div id="orderCartSummary"></div>
   `;
   _orderCart = [];
   if (branchOptions) loadOrderCatalog();
+}
+
+// Shows the "charge to room" checkbox only when the currently-selected
+// branch matches one of the guest's own CHECKED_IN bookings — mirrors
+// the backend's own requirement exactly, so this can never produce a
+// request the backend would reject.
+function renderOrderPaymentChoice() {
+  const branchId = document.getElementById("orBranch")?.value;
+  const el = document.getElementById("orderPaymentChoice");
+  if (!el) return;
+  const matchingBooking = _myActiveBookings.find((b) => b.branchId === branchId);
+  if (!matchingBooking) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <div class="panel" style="margin-bottom:20px;">
+      <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
+        <input type="checkbox" id="orChargeToRoom" value="${matchingBooking.id}" onchange="updateOrderSubmitLabel()">
+        Charge this to Room ${matchingBooking.room.roomNumber} instead of paying now
+      </label>
+    </div>
+  `;
+}
+
+function updateOrderSubmitLabel() {
+  const chargeCheckbox = document.getElementById("orChargeToRoom");
+  const btn = document.getElementById("orSubmitBtn");
+  if (!btn) return;
+  btn.textContent = chargeCheckbox && chargeCheckbox.checked ? "Charge to room" : "Place order & pay";
 }
 
 async function loadOrderCatalog() {

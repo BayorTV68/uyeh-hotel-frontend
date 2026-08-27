@@ -328,6 +328,8 @@ const managerApi = {
 
   listBookings: (status) => adminRequest(`/manager/bookings${status ? `?status=${status}` : ""}`),
   updateBookingStatus: (id, status) => adminRequest(`/manager/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  getFolio: (id) => adminRequest(`/manager/bookings/${id}/folio`),
+  settleFolio: (id, method) => adminRequest(`/manager/bookings/${id}/folio/settle`, { method: "POST", body: JSON.stringify({ method }) }),
 
   listStaff: () => adminRequest("/manager/staff"),
   createStaff: (payload) => adminRequest("/manager/staff", { method: "POST", body: JSON.stringify(payload) }),
@@ -1082,7 +1084,8 @@ async function refreshBookingsTable() {
       <td>${b.room.name} — ${b.room.roomNumber}</td>
       <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
       <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
-      <td>${NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
+      <td>${b.status === "CHECKED_IN" ? `<button class="btn btn-sm btn-outline" onclick="openFolioModal('${b.id}')">Check out</button>`
+        : NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
       ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceBooking('${b.id}','CANCELLED')">Cancel</button>` : ""}</td></tr>
     `).join("") : `<tr><td colspan="5" class="empty-state">No bookings yet.</td></tr>`;
   } catch (err) { document.getElementById("bookingsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
@@ -1090,6 +1093,94 @@ async function refreshBookingsTable() {
 async function advanceBooking(id, status) {
   try { await managerApi.updateBookingStatus(id, status); refreshBookingsTable(); }
   catch (err) { showNotice("bookingsNotice", err.message); }
+}
+
+/* ============================================================
+   FOLIO — the guest's running room-charge tab. Only relevant for a
+   CHECKED_IN booking. Checkout is blocked server-side while a balance
+   is outstanding, so this modal is the only path to checking someone
+   out once they've charged anything to their room.
+   ============================================================ */
+async function openFolioModal(bookingId) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "folioModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <h3>Room folio</h3>
+      <div id="folioModalNotice"></div>
+      <div id="folioModalContent"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  await refreshFolioModal(bookingId);
+}
+
+async function refreshFolioModal(bookingId) {
+  try {
+    const { booking, charges, balance } = await managerApi.getFolio(bookingId);
+    document.getElementById("folioModalContent").innerHTML = `
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:12px;">${booking.guestName} — Room ${booking.roomNumber}</p>
+      ${charges.length ? `
+        <table><thead><tr><th>Type</th><th>Placed</th><th style="text-align:right;">Amount</th></tr></thead>
+          <tbody>${charges.map((c) => `<tr><td>${c.type.replace(/_/g, " ")}</td><td>${new Date(c.createdAt).toLocaleString()}</td><td style="text-align:right;">&#8358;${Number(c.totalAmount).toLocaleString()}</td></tr>`).join("")}</tbody>
+        </table>
+        <div class="summary-line total" style="margin-top:10px;"><span>Balance due</span><span>&#8358;${Number(balance).toLocaleString()}</span></div>
+        <form id="folioSettleForm" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+          <div class="form-field">
+            <label>Settle by</label>
+            <select id="folioMethod">
+              <option value="CASH">Cash</option>
+              <option value="CARD">Card</option>
+              <option value="TRANSFER">Transfer</option>
+              <option value="PAYSTACK">Paystack</option>
+              <option value="STRIPE">Stripe</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button>
+            <button type="submit" class="btn btn-primary" id="folioSettleBtn">Settle &amp; check out</button>
+          </div>
+        </form>
+      ` : `
+        <div class="empty-state">No room charges on this stay.</div>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button>
+          <button type="button" class="btn btn-primary" onclick="checkOutFromFolio('${bookingId}')">Check out</button>
+        </div>
+      `}
+    `;
+    if (charges.length) {
+      document.getElementById("folioSettleForm").addEventListener("submit", (e) => { e.preventDefault(); settleFolioAndCheckOut(bookingId); });
+    }
+  } catch (err) {
+    document.getElementById("folioModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+async function settleFolioAndCheckOut(bookingId) {
+  const btn = document.getElementById("folioSettleBtn");
+  const method = document.getElementById("folioMethod").value;
+  if (btn) { btn.disabled = true; btn.textContent = "Settling…"; }
+  try {
+    await managerApi.settleFolio(bookingId, method);
+    await managerApi.updateBookingStatus(bookingId, "CHECKED_OUT");
+    document.getElementById("folioModal").remove();
+    showNotice("bookingsNotice", "Folio settled and guest checked out.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    document.getElementById("folioModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = "Settle & check out"; }
+  }
+}
+
+async function checkOutFromFolio(bookingId) {
+  try {
+    await managerApi.updateBookingStatus(bookingId, "CHECKED_OUT");
+    document.getElementById("folioModal").remove();
+    showNotice("bookingsNotice", "Guest checked out.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    document.getElementById("folioModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
 }
 
 /* ============================================================
@@ -1265,8 +1356,8 @@ async function refreshTicketsTable() {
     const { tickets } = await managerApi.listTickets();
     document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => `
       <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
-      <td>${t.assignedStaff ? t.assignedStaff.name : "—"}</td><td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
-      <td>${!t.assignedStaff ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
+      <td>${(t.assignedManager || t.assignedStaffMember) ? (t.assignedManager || t.assignedStaffMember).name : "—"}</td><td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+      <td>${!(t.assignedManager || t.assignedStaffMember) ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
       ${t.status !== "RESOLVED" ? `<button class="btn btn-sm btn-outline" onclick="resolveTicketRow('${t.id}')">Resolve</button>` : ""}</td></tr>
     `).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
 
