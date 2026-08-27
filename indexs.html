@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title id="pageTitle">Our Hotel — Book direct, no OTA fees, real-time availability</title>
+<meta name="description" id="pageDescription" content="Book rooms, restaurant, spa and events directly with real-time availability and Paystack payment.">
+<style>
+/* ============================================================
+   This page is fully self-contained — all CSS and JS live in
+   this one file. No external .css or .js files. The only
+   external resource is the Google Fonts stylesheet below (a
+   font, not application logic, so it stays linked).
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #14181f;
+  --ink-soft: #1c222b;
+  --ivory: #f6f1e7;
+  --ivory-dim: #ede5d4;
+  --brass: #b98d45;
+  --brass-light: #d9b876;
+  --teal: #2f5d5a;
+  --teal-light: #3f7a76;
+  --text-muted: #6b6355;
+  --text-on-ink: #ede6d6;
+  --radius: 3px;
+  --font-display: 'Fraunces', serif;
+  --font-body: 'Inter', -apple-system, sans-serif;
+  /* Confident, considered easing — used for every deliberate reveal
+     in the page instead of the browser's default "ease". */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.87, 0, 0.13, 1);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; }
+a { color: inherit; text-decoration: none; }
+img { max-width: 100%; display: block; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+
+/* ---- Preloader — a deliberate entrance, not a delay. Curtain lifts
+   in one confident motion once the page is actually ready, never
+   later than 2.4s regardless of what's still loading. Skipped
+   outright for reduced-motion visitors — just gone, no animation. ---- */
+#preloader { position: fixed; inset: 0; z-index: 999; background: var(--ink); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; transition: transform 0.9s var(--ease-in-out); }
+#preloader.lifted { transform: translateY(-100%); pointer-events: none; }
+.preloader-mark { font-family: var(--font-display); font-size: 1.6rem; color: var(--ivory); letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 10px; opacity: 0; animation: markIn 0.6s var(--ease-out) 0.15s forwards; }
+.preloader-mark span { color: var(--brass-light); }
+.preloader-bar { width: 160px; height: 1px; background: rgba(237, 230, 214, 0.18); position: relative; overflow: hidden; }
+.preloader-bar::after { content: ""; position: absolute; inset: 0; background: var(--brass-light); transform: scaleX(0); transform-origin: left; animation: barFill 1.1s var(--ease-in-out) 0.2s forwards; }
+@keyframes markIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes barFill { to { transform: scaleX(1); } }
+@media (prefers-reduced-motion: reduce) {
+  #preloader { display: none; }
+}
+
+/* ---- Custom cursor — pointer:fine devices only. Native cursor is
+   only hidden once JS confirms it's safe to (class added on <html>),
+   so a JS failure or touch device never loses the real cursor. ---- */
+html.has-cursor, html.has-cursor a, html.has-cursor button { cursor: none; }
+#cursorDot, #cursorRing { position: fixed; top: 0; left: 0; pointer-events: none; z-index: 998; border-radius: 50%; transform: translate(-50%, -50%); }
+#cursorDot { width: 6px; height: 6px; background: var(--brass-light); transition: opacity 0.2s; }
+#cursorRing { width: 34px; height: 34px; border: 1px solid rgba(217, 184, 118, 0.55); transition: width 0.25s var(--ease-out), height 0.25s var(--ease-out), opacity 0.2s, border-color 0.25s; }
+#cursorRing.hover { width: 56px; height: 56px; border-color: var(--brass-light); }
+#cursorDot.hover { opacity: 0; }
+@media (pointer: coarse), (prefers-reduced-motion: reduce) {
+  #cursorDot, #cursorRing { display: none; }
+}
+
+/* ---- Scroll progress hairline ---- */
+#scrollProgress { position: fixed; top: 0; left: 0; height: 2px; background: var(--brass-light); z-index: 60; width: 0%; }
+
+/* ---- Nav ---- */
+.site-nav { position: sticky; top: 0; z-index: 50; background: rgba(20, 24, 31, 0.92); backdrop-filter: blur(8px); border-bottom: 1px solid rgba(217, 184, 118, 0.15); transition: transform 0.5s var(--ease-out); }
+.site-nav.nav-hidden { transform: translateY(-100%); }
+.site-nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 76px; }
+.brand { font-family: var(--font-display); font-size: 1.3rem; color: var(--ivory); letter-spacing: 0.01em; display: inline-flex; align-items: center; gap: 10px; }
+.brand span { color: var(--brass-light); }
+.brand-logo { height: 32px; width: auto; display: block; }
+.nav-links { display: flex; gap: 36px; align-items: center; }
+.nav-links a { color: var(--text-on-ink); font-size: 0.92rem; letter-spacing: 0.02em; }
+.nav-links a:not(.nav-cta) { position: relative; padding-bottom: 2px; }
+.nav-links a:not(.nav-cta)::after { content: ""; position: absolute; left: 0; right: 100%; bottom: 0; height: 1px; background: var(--brass-light); transition: right 0.4s var(--ease-out); }
+.nav-links a:not(.nav-cta):hover::after { right: 0; }
+.nav-cta { border: 1px solid var(--brass); color: var(--brass-light) !important; padding: 9px 20px; border-radius: var(--radius); font-size: 0.85rem !important; transition: background 0.3s var(--ease-out), color 0.3s var(--ease-out), transform 0.3s var(--ease-out); }
+.nav-cta:hover { background: var(--brass); color: var(--ink) !important; }
+
+/* Animated hamburger — three bars morphing into an X, ivory on the
+   dark nav bar (unlike a light-background version, so bars are
+   --ivory, not black). */
+.nav-toggle { display: none; flex-direction: column; justify-content: center; gap: 5px; width: 28px; height: 28px; background: none; border: none; cursor: pointer; padding: 0; }
+.nav-toggle .bar { display: block; width: 100%; height: 2px; background: var(--ivory); transition: transform 0.3s var(--ease-out), opacity 0.3s var(--ease-out); }
+.nav-toggle.active .bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.active .bar:nth-child(2) { opacity: 0; }
+.nav-toggle.active .bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+@media (max-width: 860px) {
+  .nav-links { position: fixed; top: 76px; left: 0; right: 0; background: var(--ink); flex-direction: column; align-items: flex-start; padding: 24px 32px; gap: 20px; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: all 0.3s var(--ease-out); }
+  .nav-links.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
+  .nav-toggle { display: flex; }
+}
+
+/* ---- Hero ---- */
+.hero { min-height: 100svh; background: var(--ink); color: var(--text-on-ink); position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 140px 0 88px; isolation: isolate; }
+@media (min-width: 861px) { .hero { justify-content: center; padding: 0; } }
+
+/* Background photo layer — separate from .hero itself so the slow
+   drift + mouse-parallax transform never fights the grain/gradient
+   overlays below. Renders nothing but the solid ink color when the
+   Director hasn't set a hero image yet. */
+.hero-bg { position: absolute; inset: -8%; z-index: -2; background-image: var(--hero-image, none); background-size: cover; background-position: 70% center; transform: translate3d(0, 0, 0) scale(1.08); will-change: transform; }
+.hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.16) 0, transparent 45%), radial-gradient(circle at 85% 75%, rgba(47, 93, 90, 0.4) 0, transparent 50%), linear-gradient(180deg, rgba(20,24,31,0.15) 0%, rgba(20,24,31,0.55) 100%); pointer-events: none; }
+.hero .wrap { position: relative; }
+.hero-content { max-width: 620px; }
+
+.hero-intro-blur { pointer-events: none; user-select: none; margin-bottom: 22px; font-size: clamp(15px, 2.6vw, 18px); line-height: 1.5; font-weight: 400; color: rgba(237, 230, 214, 0.55); filter: blur(3px); opacity: 0; transform: translateY(10px); transition: opacity 1s var(--ease-out), transform 1s var(--ease-out); }
+.hero-intro-blur.in { opacity: 1; transform: translateY(0); }
+
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 20px; opacity: 0; transform: translateY(8px); transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out); }
+.eyebrow.in { opacity: 1; transform: translateY(0); }
+.eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--brass); }
+.hero h1 { font-size: clamp(2.4rem, 5vw, 4rem); max-width: 15ch; margin-bottom: 24px; min-height: 1.1em; }
+.type-cursor { display: inline-block; width: 2px; height: 0.9em; background: var(--ivory); vertical-align: -0.1em; margin-left: 2px; animation: blink 1s step-end infinite; }
+.type-cursor.hidden { display: none; }
+.hero p.lead { font-size: 1.1rem; color: rgba(237, 230, 214, 0.75); max-width: 46ch; margin-bottom: 38px; opacity: 0; transform: translateY(10px); transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out); }
+.hero p.lead.in { opacity: 1; transform: translateY(0); }
+
+/* Pill actions — each one enters on its own staggered delay, off a
+   fixed timer independent of the typewriter, with a confident
+   expo-out slide rather than a quick linear fade. */
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.hero-actions > * { opacity: 0; transform: translateY(14px); transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out), background 0.3s var(--ease-out), color 0.3s var(--ease-out); }
+.hero-actions.in > *:nth-child(1) { transition-delay: 0ms; }
+.hero-actions.in > *:nth-child(2) { transition-delay: 90ms; }
+.hero-actions.in > *:nth-child(3) { transition-delay: 180ms; }
+.hero-actions.in > *:nth-child(4) { transition-delay: 270ms; }
+.hero-actions.in > *:nth-child(5) { transition-delay: 360ms; }
+.hero-actions.in > * { opacity: 1; transform: translateY(0); }
+.pill { display: inline-flex; align-items: center; justify-content: center; background: rgba(246, 241, 231, 0.94); color: var(--ink); border: 1px solid transparent; border-radius: 999px; font-size: 0.86rem; font-weight: 500; letter-spacing: 0.01em; padding: 11px 20px; white-space: nowrap; }
+.pill:hover { background: var(--brass); }
+.pill.pill-primary { background: var(--brass); }
+.pill.pill-primary:hover { background: var(--brass-light); }
+.pill-outline { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--ivory); border: 1px solid rgba(237, 230, 214, 0.4); border-radius: 999px; font-size: 0.86rem; padding: 11px 20px; white-space: nowrap; cursor: pointer; font-family: var(--font-body); position: relative; }
+.pill-outline:hover { background: var(--ivory); color: var(--ink); }
+.pill-outline u { text-underline-offset: 2px; }
+.pill-outline .copy-flash { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); font-size: 0.72rem; background: var(--ink); color: var(--ivory); padding: 4px 10px; border-radius: 3px; opacity: 0; transition: opacity 0.2s; pointer-events: none; white-space: nowrap; }
+.pill-outline .copy-flash.show { opacity: 1; }
+/* Magnetic hover — JS sets --mx/--my as the button nudges toward the
+   cursor within its own bounds; harmless no-op until JS sets them. */
+.magnetic { transform: translate(var(--mx, 0), var(--my, 0)) translateY(0); }
+.hero-actions.in > .magnetic { transform: translate(var(--mx, 0), var(--my, 0)) translateY(0); }
+
+.scroll-cue { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; color: rgba(237, 230, 214, 0.5); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0; transition: opacity 1s var(--ease-out); }
+.scroll-cue.in { opacity: 1; }
+.scroll-cue .line { width: 1px; height: 26px; background: rgba(237, 230, 214, 0.35); position: relative; overflow: hidden; }
+.scroll-cue .line::after { content: ""; position: absolute; top: -100%; left: 0; width: 100%; height: 100%; background: var(--brass-light); animation: scrollDrip 1.8s var(--ease-in-out) infinite; }
+@keyframes scrollDrip { 0% { top: -100%; } 60%, 100% { top: 100%; } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .scroll-cue .line::after { animation: none !important; top: 0; }
+}
+
+.tide-divider { display: block; width: 100%; height: 48px; background: var(--ink); }
+.tide-divider svg { display: block; width: 100%; height: 48px; }
+
+/* ---- Marquee ticker — a continuous strip of the platform's own
+   claims, not decoration for its own sake: it's the same three facts
+   (direct booking, real-time availability, no OTA markup) the whole
+   page argues for, just given one confident, ambient restatement. ---- */
+.marquee { background: var(--ivory-dim); border-bottom: 1px solid rgba(107, 99, 85, 0.12); overflow: hidden; padding: 14px 0; }
+.marquee-track { display: flex; width: max-content; gap: 48px; animation: marqueeScroll 26s linear infinite; }
+.marquee-track span { font-family: var(--font-display); font-size: 0.95rem; color: var(--text-muted); letter-spacing: 0.02em; display: inline-flex; align-items: center; gap: 48px; white-space: nowrap; }
+.marquee-track span::after { content: "✳︎"; color: var(--brass); font-size: 0.8rem; }
+@keyframes marqueeScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none !important; }
+}
+
+/* ---- Buttons (used outside the hero — CTA banner, branch cards, etc.) ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: var(--radius); font-size: 0.9rem; letter-spacing: 0.02em; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.3s var(--ease-out); }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover { background: var(--brass-light); }
+.btn-ghost { border-color: rgba(237, 230, 214, 0.3); color: var(--text-on-ink); }
+.btn-ghost:hover { border-color: var(--brass-light); color: var(--brass-light); }
+.btn-dark { background: var(--ink); color: var(--ivory); }
+.btn-dark:hover { background: var(--teal); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ---- Section scaffolding ---- */
+section { padding: 96px 0; }
+.section-head { max-width: 640px; margin-bottom: 56px; }
+.section-head .eyebrow { color: var(--teal); opacity: 1; transform: none; transition: none; }
+.section-head .eyebrow::before { background: var(--teal); }
+.section-head h2 { font-size: clamp(1.9rem, 3.5vw, 2.6rem); color: var(--ink); }
+.section-head p { color: var(--text-muted); margin-top: 14px; font-size: 1.02rem; }
+
+/* Word-cascade mask reveal — used on every section h2. Each word sits
+   in its own overflow-hidden mask; the inner span slides up from
+   below it on an expo-out curve, staggered word by word. This is the
+   same reveal language used sitewide instead of a plain opacity fade. */
+.mask-word { display: inline-block; overflow: hidden; vertical-align: top; }
+.mask-word-inner { display: inline-block; transform: translateY(115%); transition: transform 0.8s var(--ease-out); transition-delay: calc(var(--i, 0) * 45ms); }
+h2.is-visible .mask-word-inner { transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .mask-word-inner { transform: translateY(0) !important; transition: none !important; }
+}
+
+/* ---- Key-tag signature element ---- */
+.key-tag { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; background: var(--brass); border-radius: 6px; color: var(--ink); font-family: var(--font-display); font-weight: 600; font-size: 1rem; transform: rotate(-4deg); }
+.key-tag::after { content: ""; position: absolute; top: 8px; left: -7px; width: 8px; height: 8px; border-radius: 50%; background: var(--ivory); border: 2px solid var(--ink); }
+
+/* ---- Branch cards (multi-location) — dynamically injected, so they
+   animate in on their own cascading delay the moment data arrives
+   rather than waiting on a scroll-triggered observer. ---- */
+.branch-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+.branch-card { background: #fff; border: 1px solid rgba(107, 99, 85, 0.12); border-radius: 4px; overflow: hidden; transition: transform 0.4s var(--ease-out), box-shadow 0.4s var(--ease-out); opacity: 0; transform: translateY(18px); animation: cardIn 0.7s var(--ease-out) forwards; animation-delay: var(--d, 0ms); }
+.branch-card:hover { transform: translateY(-6px); box-shadow: 0 24px 48px -20px rgba(20, 24, 31, 0.3); }
+@keyframes cardIn { to { opacity: 1; transform: translateY(0); } }
+.branch-card-top { height: 130px; background: linear-gradient(135deg, var(--teal) 0%, var(--teal-light) 60%, var(--brass) 140%); display: flex; align-items: flex-end; padding: 18px 22px; }
+.branch-card-top .city-tag { font-size: 0.74rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ivory); background: rgba(20,24,31,0.35); padding: 5px 12px; border-radius: 20px; }
+.branch-card-body { padding: 22px 24px 26px; }
+.branch-card-body h3 { font-size: 1.2rem; margin-bottom: 6px; }
+.branch-card-body p.addr { color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px; }
+.branch-services { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.branch-services span { font-size: 0.72rem; letter-spacing: 0.02em; text-transform: capitalize; color: var(--teal); background: rgba(47, 93, 90, 0.08); padding: 4px 10px; border-radius: 20px; }
+
+/* Skeleton loading state — replaces the plain "Loading…" text with a
+   shimmering placeholder shaped like the real cards. */
+.skeleton-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
+.skeleton-card { height: 280px; border-radius: 4px; background: linear-gradient(100deg, rgba(107,99,85,0.06) 30%, rgba(107,99,85,0.14) 50%, rgba(107,99,85,0.06) 70%); background-size: 200% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton-card { animation: none; background-position: 0 0; } }
+
+/* ---- Amenities band ---- */
+.amenities-band { background: var(--ink); color: var(--text-on-ink); }
+.amenities-band .section-head h2 { color: var(--ivory); }
+.amenities-band .section-head p { color: rgba(237, 230, 214, 0.65); }
+.amenities-band .section-head .eyebrow { color: var(--brass-light); }
+.amenities-band .section-head .eyebrow::before { background: var(--brass); }
+.amenity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 40px; }
+.amenity-item .key-tag { margin-bottom: 20px; }
+.amenity-item h4 { font-size: 1.15rem; margin-bottom: 10px; color: var(--ivory); }
+.amenity-item p { color: rgba(237, 230, 214, 0.6); font-size: 0.92rem; }
+/* Cascading stagger — parent gets .is-visible once scrolled into
+   view; each child's own transition-delay does the cascading. */
+.reveal-stagger > * { opacity: 0; transform: translateY(22px); transition: opacity 0.7s var(--ease-out), transform 0.7s var(--ease-out); }
+.reveal-stagger.is-visible > * { opacity: 1; transform: translateY(0); }
+.reveal-stagger > *:nth-child(1) { transition-delay: 0ms; }
+.reveal-stagger > *:nth-child(2) { transition-delay: 90ms; }
+.reveal-stagger > *:nth-child(3) { transition-delay: 180ms; }
+.reveal-stagger > *:nth-child(4) { transition-delay: 270ms; }
+
+/* ---- Trust grid ---- */
+.trust-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 36px; }
+.trust-item .key-tag { margin-bottom: 18px; }
+.trust-item h4 { font-size: 1.05rem; margin-bottom: 8px; }
+.trust-item p { color: var(--text-muted); font-size: 0.9rem; }
+
+/* ---- CTA banner ---- */
+.cta-banner { background: linear-gradient(135deg, var(--teal) 0%, var(--ink) 100%); color: var(--ivory); text-align: center; padding: 90px 0; }
+.cta-banner h2 { color: var(--ivory); font-size: clamp(1.9rem, 3.5vw, 2.6rem); margin-bottom: 16px; }
+.cta-banner p { color: rgba(237,230,214,0.7); max-width: 46ch; margin: 0 auto 32px; font-size: 1.02rem; }
+
+.loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
+
+/* ---- Subtle grain texture — used on dark/tonal sections for warmth
+   instead of relying on photography we don't have yet ---- */
+.grain { position: relative; }
+.grain::after {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+/* ---- Scroll reveal (body copy — plain fade, mask reveal is reserved
+   for headings only) ---- */
+.reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out); }
+.reveal.is-visible { opacity: 1; transform: translateY(0); }
+
+/* ---- Signature Experiences ---- */
+.experience-grid { display: grid; grid-template-columns: 1.3fr 1fr; grid-template-rows: auto auto; gap: 24px; }
+.experience-card { position: relative; border-radius: 4px; overflow: hidden; color: var(--ivory); min-height: 280px; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px; isolation: isolate; }
+.experience-card::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: transform 0.7s var(--ease-out); }
+.experience-card:hover::before { transform: scale(1.08); }
+.experience-card::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(20,24,31,0) 0%, rgba(20,24,31,0.75) 100%); }
+.experience-card.card-dining { grid-column: 1; grid-row: 1 / 3; min-height: 100%; }
+.experience-card.card-dining::before { background: linear-gradient(155deg, var(--teal) 0%, var(--teal-light) 55%, var(--brass) 145%); }
+.experience-card.card-spa::before { background: linear-gradient(155deg, #3a4a4a 0%, var(--teal) 100%); }
+.experience-card.card-events::before { background: linear-gradient(155deg, var(--ink-soft) 0%, #3a2f22 60%, var(--brass) 160%); }
+.experience-eyebrow { font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 10px; }
+.experience-card h3 { font-size: 1.5rem; margin-bottom: 10px; }
+.experience-card.card-dining h3 { font-size: 1.9rem; }
+.experience-card p { color: rgba(237, 230, 214, 0.82); font-size: 0.94rem; max-width: 40ch; }
+.experience-note { font-size: 0.76rem; color: rgba(237, 230, 214, 0.5); margin-top: 14px; }
+@media (max-width: 860px) {
+  .experience-grid { grid-template-columns: 1fr; }
+  .experience-card.card-dining { grid-row: auto; }
+}
+
+/* ---- Footer ---- */
+footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 64px 0 32px; }
+.footer-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1.2fr; gap: 40px; margin-bottom: 48px; }
+@media (max-width: 960px) { .footer-grid { grid-template-columns: 1fr 1fr; } }
+footer .brand { display: block; margin-bottom: 14px; }
+footer h5 { color: var(--ivory); font-size: 0.85rem; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 16px; font-family: var(--font-body); font-weight: 600; }
+footer ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+footer a { font-size: 0.9rem; transition: color 0.3s var(--ease-out); }
+footer a:hover { color: var(--brass-light); }
+.footer-bottom { border-top: 1px solid rgba(237, 230, 214, 0.1); padding-top: 24px; font-size: 0.8rem; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+@media (max-width: 720px) { .footer-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div id="preloader" aria-hidden="true">
+  <div class="preloader-mark">Our Hotel<span>.</span></div>
+  <div class="preloader-bar"></div>
+</div>
+
+<div id="cursorRing"></div>
+<div id="cursorDot"></div>
+<div id="scrollProgress"></div>
+
+<nav class="site-nav" id="siteNav">
+  <div class="wrap">
+    <a href="index.html" class="brand" id="navBrand">Our Hotel</a>
+    <div class="nav-links" id="navLinks">
+      <a href="index.html">Home</a>
+      <a href="blog.html">Blog</a>
+      <a href="index.html#locations">Locations</a>
+      <a href="about.html">About</a>
+      <a href="contact.html">Contact</a>
+      <a href="index.html#locations" class="nav-cta">Book a room</a>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+      <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+    </button>
+  </div>
+</nav>
+
+<header class="hero grain">
+  <div class="hero-bg" id="heroBg"></div>
+  <div class="wrap">
+    <div class="hero-content">
+      <p class="hero-intro-blur" id="heroBlur">Before anything else — a word on how<br>we like to welcome people.</p>
+
+      <p class="eyebrow" id="heroEyebrow" data-content="heroEyebrow">Every location, held to the same standard</p>
+      <h1 data-content="heroTitle" id="heroTitle">A stay arranged the way it should be.</h1>
+      <p class="lead" id="heroSubtitle" data-content="heroSubtitle">Rooms, dining, spa and events — reserved directly with us, at any branch, with real-time availability and nothing left to guesswork.</p>
+
+      <div class="hero-actions" id="heroActions">
+        <a href="#locations" class="pill pill-primary magnetic">Check availability</a>
+        <a href="#experiences" class="pill magnetic">Explore dining &amp; spa</a>
+        <a href="#standard" class="pill magnetic">See how it works</a>
+        <a href="about.html" class="pill magnetic">About us</a>
+        <button type="button" class="pill-outline magnetic" id="heroEmailPill" onclick="copyHeroEmail()">
+          Reach us: <u id="heroEmailText">hello@ourhotel.com</u>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1"/>
+            <rect x="1" y="1" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1"/>
+          </svg>
+          <span class="copy-flash" id="copyFlash">Copied</span>
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="scroll-cue" id="scrollCue"><span>Scroll</span><span class="line"></span></div>
+</header>
+<div class="tide-divider">
+  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+</div>
+
+<div class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <span>Direct booking, no OTA fees</span>
+    <span>Real-time availability</span>
+    <span>Pay by card, transfer, or USSD</span>
+    <span>Every branch, one standard</span>
+    <span>Direct booking, no OTA fees</span>
+    <span>Real-time availability</span>
+    <span>Pay by card, transfer, or USSD</span>
+    <span>Every branch, one standard</span>
+  </div>
+</div>
+
+<!-- ===== LOCATIONS — live from GET /api/branches ===== -->
+<section id="locations" class="reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Our locations</p>
+      <h2 data-content="locationsTitle">Choose a branch to get started.</h2>
+      <p data-content="locationsSubtitle">Every location runs on the same platform — rooms, availability, and payment work the same way wherever you book.</p>
+    </div>
+    <div class="branch-grid" id="branchGrid">
+      <div class="skeleton-grid"><div class="skeleton-card"></div><div class="skeleton-card"></div><div class="skeleton-card"></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== SIGNATURE EXPERIENCES ===== -->
+<!-- Art-directed with gradient/texture panels rather than stock photography —
+     swap the ::before backgrounds for real branch photography (dining room,
+     spa treatment room, event space) as it becomes available; the layout
+     and hover treatment don't need to change when that happens. -->
+<section id="experiences" class="reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">Signature experiences</p>
+      <h2>Beyond the room.</h2>
+      <p>What sets each stay apart isn't the booking — it's what's waiting once you arrive. Availability varies by location.</p>
+    </div>
+    <div class="experience-grid reveal-stagger">
+      <div class="experience-card card-dining">
+        <p class="experience-eyebrow">Dining</p>
+        <h3>A table, held for you.</h3>
+        <p>From in-room service to the branch restaurant, order or reserve ahead — the kitchen knows you're coming before you arrive.</p>
+        <p class="experience-note">Available at select locations</p>
+      </div>
+      <div class="experience-card card-spa">
+        <p class="experience-eyebrow">Spa &amp; wellness</p>
+        <h3>Time set aside, properly.</h3>
+        <p>Treatments booked the same way as a room — real availability, no back-and-forth.</p>
+        <p class="experience-note">Available at select locations</p>
+      </div>
+      <div class="experience-card card-events">
+        <p class="experience-eyebrow">Events &amp; celebrations</p>
+        <h3>A space, kept ready.</h3>
+        <p>Browse upcoming events or reserve a space for your own — handled directly with the branch team.</p>
+        <p class="experience-note">Available at select locations</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== WHAT WE OFFER ===== -->
+<section class="amenities-band grain reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">What we offer</p>
+      <h2 data-content="servicesTitle">One system, every service you'd expect.</h2>
+      <p data-content="servicesSubtitle">Not every location offers every service — each branch page shows exactly what's available there.</p>
+    </div>
+    <div class="amenity-grid reveal-stagger">
+      <div class="amenity-item"><div class="key-tag">R</div><h4>Rooms &amp; direct booking</h4><p>Real-time availability, no double-bookings, book straight through us — no third-party markup.</p></div>
+      <div class="amenity-item"><div class="key-tag">D</div><h4>Restaurant &amp; room service</h4><p>Order from the branch menu, delivered to your room or reserve a table ahead of time.</p></div>
+      <div class="amenity-item"><div class="key-tag">E</div><h4>Events &amp; spaces</h4><p>Browse upcoming events at each branch and reserve your spot directly.</p></div>
+      <div class="amenity-item"><div class="key-tag">S</div><h4>Spa &amp; laundry</h4><p>Where offered, book spa treatments or laundry service the same way you book a room.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== THE STANDARD ===== -->
+<section id="standard" class="reveal">
+  <div class="wrap">
+    <div class="section-head">
+      <p class="eyebrow">The standard</p>
+      <h2 data-content="trustTitle">Every detail, handled the same way, every time.</h2>
+    </div>
+    <div class="trust-grid reveal-stagger">
+      <div class="trust-item"><div class="key-tag">1</div><h4>Real-time availability</h4><p>What you see is actually open — our system rejects any attempt at a double-booking at the database level, not just on the screen.</p></div>
+      <div class="trust-item"><div class="key-tag">2</div><h4>Pay your way</h4><p>Card, bank transfer, or USSD through Paystack — no card required if you'd rather transfer directly.</p></div>
+      <div class="trust-item"><div class="key-tag">3</div><h4>Book with or without an account</h4><p>Create an account for faster rebooking and saved preferences, or check out as a guest — your choice either way.</p></div>
+      <div class="trust-item"><div class="key-tag">4</div><h4>Direct support</h4><p>Questions go straight to the right branch's team — not a call center reading from a script.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== CTA BANNER ===== -->
+<section class="cta-banner grain reveal">
+  <div class="wrap">
+    <h2 data-content="ctaTitle">Ready to book your stay?</h2>
+    <p data-content="ctaSubtitle">Choose a location, see what's actually available, and book directly with us — no account required to get started.</p>
+    <a href="#locations" class="btn btn-primary">See our locations</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="footer-grid">
+      <div>
+        <a href="index.html" class="brand" id="footerBrand">Our Hotel</a>
+        <p style="max-width:34ch; margin-top:10px; font-size:0.9rem;" data-content="footerAbout">Multiple locations, one company, one booking system — built directly by the team that runs it.</p>
+      </div>
+      <div>
+        <h5>Explore</h5>
+        <ul>
+          <li><a href="index.html#locations">Locations</a></li>
+          <li><a href="about.html">About</a></li>
+          <li><a href="contact.html">Contact</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Get in touch</h5>
+        <ul>
+          <li><a href="mailto:hello@ourhotel.com" id="footerEmail" data-content="footerEmail">hello@ourhotel.com</a></li>
+          <li><a href="tel:" id="footerPhone" data-content="footerPhone">Phone available on each branch page</a></li>
+        </ul>
+      </div>
+      <div>
+        <h5>Newsletter</h5>
+        <p style="font-size:0.85rem; margin-bottom:14px; max-width:26ch;">Offers and news from every location.</p>
+        <form id="newsletterForm" style="display:flex; flex-direction:column; gap:8px;">
+          <input type="email" id="newsletterEmail" placeholder="you@email.com" required
+            style="padding:10px 12px; border-radius:3px; border:1px solid rgba(237,230,214,0.25); background:rgba(255,255,255,0.06); color:var(--ivory); font-family:var(--font-body); font-size:0.85rem;">
+          <button type="submit" id="newsletterSubmitBtn" class="btn btn-primary" style="padding:10px; font-size:0.82rem;">Subscribe</button>
+        </form>
+        <p id="newsletterNote" style="font-size:0.76rem; margin-top:8px; color:rgba(237,230,214,0.5);"></p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Our Hotel</span>. All rights reserved.</span>
+      <span>A stay arranged directly with us, start to finish.</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ============================================================
+   All page logic lives here, inline. Nothing shared with any
+   other page — location.html has its own independent copy of
+   whatever it needs, not this file. That's deliberate: a shared
+   main.js meant editing one page could silently change another.
+   ============================================================ */
+(function () {
+  "use strict";
+
+  const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const isFinePointer = window.matchMedia("(pointer: fine)").matches;
+
+  async function apiRequest(path, options = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  /* ---------------------------------------------------------
+     Preloader — curtain lifts once the page has actually loaded,
+     with a 900ms floor (so it never feels like a glitch on a fast
+     connection) and a 2.4s ceiling (so a slow connection is never
+     punished with a long forced wait). Skipped entirely for
+     reduced-motion visitors via the CSS rule that hides #preloader.
+     --------------------------------------------------------- */
+  function initPreloader() {
+    const el = document.getElementById("preloader");
+    if (!el || prefersReducedMotion) return;
+    const minWait = new Promise((resolve) => setTimeout(resolve, 900));
+    const pageLoad = new Promise((resolve) => {
+      if (document.readyState === "complete") resolve();
+      else window.addEventListener("load", resolve, { once: true });
+    });
+    const ceiling = new Promise((resolve) => setTimeout(resolve, 2400));
+    Promise.race([Promise.all([minWait, pageLoad]), ceiling]).then(() => {
+      el.classList.add("lifted");
+      setTimeout(() => { el.style.display = "none"; }, 950);
+    });
+  }
+
+  /* ---------------------------------------------------------
+     Custom cursor — pointer:fine only. Delegated hover detection
+     so it works on the branch cards even though they're injected
+     later by loadBranches().
+     --------------------------------------------------------- */
+  function initCustomCursor() {
+    if (prefersReducedMotion || !isFinePointer) return;
+    document.documentElement.classList.add("has-cursor");
+    const dot = document.getElementById("cursorDot");
+    const ring = document.getElementById("cursorRing");
+    let ringX = window.innerWidth / 2, ringY = window.innerHeight / 2;
+    let targetX = ringX, targetY = ringY;
+
+    window.addEventListener("mousemove", (e) => {
+      targetX = e.clientX; targetY = e.clientY;
+      dot.style.left = `${e.clientX}px`;
+      dot.style.top = `${e.clientY}px`;
+    });
+
+    function frame() {
+      ringX += (targetX - ringX) * 0.18;
+      ringY += (targetY - ringY) * 0.18;
+      ring.style.left = `${ringX}px`;
+      ring.style.top = `${ringY}px`;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+
+    document.addEventListener("mouseover", (e) => {
+      if (e.target.closest("a, button, .branch-card, .experience-card")) {
+        ring.classList.add("hover");
+        dot.classList.add("hover");
+      }
+    });
+    document.addEventListener("mouseout", (e) => {
+      if (e.target.closest("a, button, .branch-card, .experience-card")) {
+        ring.classList.remove("hover");
+        dot.classList.remove("hover");
+      }
+    });
+  }
+
+  /* ---------------------------------------------------------
+     Magnetic buttons — nudges toward the cursor within its own
+     bounds, snaps back on leave. Static elements only (the hero
+     pills are all in the HTML from page load).
+     --------------------------------------------------------- */
+  function initMagneticButtons() {
+    if (prefersReducedMotion || !isFinePointer) return;
+    document.querySelectorAll(".magnetic").forEach((el) => {
+      el.addEventListener("mousemove", (e) => {
+        const rect = el.getBoundingClientRect();
+        const relX = e.clientX - rect.left - rect.width / 2;
+        const relY = e.clientY - rect.top - rect.height / 2;
+        el.style.setProperty("--mx", `${relX * 0.25}px`);
+        el.style.setProperty("--my", `${relY * 0.35}px`);
+      });
+      el.addEventListener("mouseleave", () => {
+        el.style.setProperty("--mx", "0px");
+        el.style.setProperty("--my", "0px");
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------
+     Nav — auto-hides on scroll down, reappears on scroll up.
+     Never hides while the mobile menu is open. Also drives the
+     scroll-progress hairline.
+     --------------------------------------------------------- */
+  function initNavScrollBehavior() {
+    const nav = document.getElementById("siteNav");
+    const progress = document.getElementById("scrollProgress");
+    const links = document.getElementById("navLinks");
+    let lastY = window.scrollY;
+    let ticking = false;
+
+    function onScroll() {
+      const y = window.scrollY;
+      const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      progress.style.width = `${docHeight > 0 ? (y / docHeight) * 100 : 0}%`;
+
+      const menuOpen = links.classList.contains("open");
+      if (!menuOpen) {
+        if (y > lastY && y > 140) nav.classList.add("nav-hidden");
+        else nav.classList.remove("nav-hidden");
+      }
+      lastY = y;
+      ticking = false;
+    }
+    window.addEventListener("scroll", () => {
+      if (!ticking) { requestAnimationFrame(onScroll); ticking = true; }
+    });
+  }
+
+  /**
+   * Everything the Director configures in Site Settings — name, logo, hero
+   * image, brand colors, homepage copy, footer contact info, SEO — comes
+   * from this one real, working GET /api/settings call. It's public and
+   * auto-creates a default row server-side if the Director hasn't set
+   * anything yet, so this never 404s — it just shows the fallbacks already
+   * hardcoded in this page's HTML until real values are saved.
+   */
+  async function hydrateSiteSettings() {
+    try {
+      const { settings } = await apiRequest("/settings");
+      const name = settings.platformName || "Our Hotel";
+
+      document.title = document.title.replace("Our Hotel", name);
+      document.getElementById("footerCopyrightName").textContent = name;
+
+      const navBrand = document.getElementById("navBrand");
+      const footerBrand = document.getElementById("footerBrand");
+      if (settings.logoUrl) {
+        const logoHtml = `<img class="brand-logo" src="${settings.logoUrl}" alt="${name}">`;
+        navBrand.innerHTML = logoHtml;
+        footerBrand.innerHTML = logoHtml;
+      } else {
+        navBrand.textContent = name;
+        footerBrand.textContent = name;
+      }
+
+      if (settings.heroImageUrl) {
+        document.documentElement.style.setProperty("--hero-image", `url("${settings.heroImageUrl}")`);
+      }
+
+      if (settings.brand) {
+        if (settings.brand.primaryColor) document.documentElement.style.setProperty("--ink", settings.brand.primaryColor);
+        if (settings.brand.secondaryColor) document.documentElement.style.setProperty("--brass", settings.brand.secondaryColor);
+        if (settings.brand.accentColor) document.documentElement.style.setProperty("--teal", settings.brand.accentColor);
+      }
+
+      if (settings.seo) {
+        if (settings.seo.metaTitle) document.title = settings.seo.metaTitle;
+        if (settings.seo.metaDescription) {
+          const metaDesc = document.getElementById("pageDescription");
+          if (metaDesc) metaDesc.setAttribute("content", settings.seo.metaDescription);
+        }
+        if (settings.seo.ogImageUrl) {
+          let ogTag = document.querySelector('meta[property="og:image"]');
+          if (!ogTag) {
+            ogTag = document.createElement("meta");
+            ogTag.setAttribute("property", "og:image");
+            document.head.appendChild(ogTag);
+          }
+          ogTag.setAttribute("content", settings.seo.ogImageUrl);
+        }
+      }
+
+      const heroTitleEl = document.getElementById("heroTitle");
+      if (heroTitleEl) heroTitleEl.textContent = settings.headline || `One booking system, every ${name} location.`;
+      const heroSubtitleEl = document.querySelector('[data-content="heroSubtitle"]');
+      if (heroSubtitleEl && settings.subheadline) heroSubtitleEl.textContent = settings.subheadline;
+
+      const ctaTitleEl = document.querySelector('[data-content="ctaTitle"]');
+      if (ctaTitleEl && settings.ctaTitle) ctaTitleEl.textContent = settings.ctaTitle;
+      const ctaSubtitleEl = document.querySelector('[data-content="ctaSubtitle"]');
+      if (ctaSubtitleEl && settings.ctaSubtitle) ctaSubtitleEl.textContent = settings.ctaSubtitle;
+
+      const footerAboutEl = document.querySelector('[data-content="footerAbout"]');
+      if (footerAboutEl && settings.footerAbout) footerAboutEl.textContent = settings.footerAbout;
+      const footerEmailEl = document.querySelector('[data-content="footerEmail"]');
+      const emailForPill = settings.footerEmail || "hello@ourhotel.com";
+      if (footerEmailEl && settings.footerEmail) {
+        footerEmailEl.textContent = settings.footerEmail;
+        footerEmailEl.setAttribute("href", `mailto:${settings.footerEmail}`);
+      }
+      const heroEmailText = document.getElementById("heroEmailText");
+      if (heroEmailText) heroEmailText.textContent = emailForPill;
+
+      const footerPhoneEl = document.querySelector('[data-content="footerPhone"]');
+      if (footerPhoneEl && settings.footerPhone) {
+        footerPhoneEl.textContent = settings.footerPhone;
+        footerPhoneEl.setAttribute("href", `tel:${settings.footerPhone}`);
+      }
+    } catch (err) {
+      console.warn("Could not load site settings, using fallbacks:", err.message);
+    } finally {
+      // Both run only once all dynamic text mutations above are done —
+      // the typewriter always types the real final headline, and the
+      // section-heading word-split never gets clobbered by a later
+      // textContent assignment (ctaTitle is the one heading that's
+      // hydrated dynamically, so splitting before this point would
+      // destroy the split the moment settings arrived).
+      revealHeroIntro();
+      startHeroTypewriter();
+      initSectionRevealMasks();
+    }
+  }
+
+  function copyHeroEmail() {
+    const email = document.getElementById("heroEmailText").textContent;
+    navigator.clipboard.writeText(email).then(() => {
+      const flash = document.getElementById("copyFlash");
+      flash.classList.add("show");
+      setTimeout(() => flash.classList.remove("show"), 1200);
+    });
+  }
+  window.copyHeroEmail = copyHeroEmail;
+
+  function revealHeroIntro() {
+    document.getElementById("heroBlur").classList.add("in");
+    document.getElementById("heroEyebrow").classList.add("in");
+    document.getElementById("scrollCue").classList.add("in");
+  }
+
+  /** Types out #heroTitle's own text one character at a time. Reduced-
+   * motion visitors just see the final text immediately, no cursor. */
+  function startHeroTypewriter() {
+    const el = document.getElementById("heroTitle");
+    const leadEl = document.getElementById("heroSubtitle");
+    if (!el) return;
+    const fullText = el.textContent.trim();
+
+    if (prefersReducedMotion) {
+      el.textContent = fullText;
+      if (leadEl) leadEl.classList.add("in");
+      return;
+    }
+
+    const speed = 32;
+    const startDelay = 350;
+    el.textContent = "";
+    const cursor = document.createElement("span");
+    cursor.className = "type-cursor";
+    el.after(cursor);
+
+    setTimeout(() => {
+      let i = 0;
+      const interval = setInterval(() => {
+        i += 1;
+        el.textContent = fullText.slice(0, i);
+        if (i >= fullText.length) {
+          clearInterval(interval);
+          cursor.classList.add("hidden");
+          if (leadEl) leadEl.classList.add("in");
+        }
+      }, speed);
+    }, startDelay);
+  }
+
+  /** Pill actions fade in on their own fixed timer — never waits on
+   * the typewriter, so a slow typer doesn't delay the booking CTA. */
+  function revealHeroActions() {
+    setTimeout(() => {
+      const el = document.getElementById("heroActions");
+      if (el) el.classList.add("in");
+    }, prefersReducedMotion ? 0 : 500);
+  }
+
+  /** Slow ambient drift (always on) blended with mouse-reactive
+   * parallax (skipped entirely for reduced-motion visitors) on the
+   * hero background layer. One rAF loop drives both so they never
+   * fight each other or a CSS keyframe running in parallel. */
+  function initHeroMotion() {
+    const bg = document.getElementById("heroBg");
+    if (!bg || prefersReducedMotion) return;
+
+    let mouseX = 0, mouseY = 0;
+    window.addEventListener("mousemove", (e) => {
+      mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+      mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+    });
+
+    function frame(t) {
+      const driftX = Math.sin(t / 9000) * 10;
+      const driftY = Math.cos(t / 12000) * 6;
+      const px = driftX + mouseX * 14;
+      const py = driftY + mouseY * 10;
+      bg.style.transform = `translate3d(${px}px, ${py}px, 0) scale(1.08)`;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function initNav() {
+    const toggle = document.getElementById("navToggle");
+    const links = document.getElementById("navLinks");
+    if (toggle && links) {
+      toggle.addEventListener("click", () => {
+        const isOpen = links.classList.toggle("open");
+        toggle.classList.toggle("active", isOpen);
+        toggle.setAttribute("aria-expanded", String(isOpen));
+      });
+    }
+  }
+
+  /** Wraps each word of an element's text in its own overflow-hidden
+   * mask span with a numbered --i custom property, used by the
+   * .mask-word-inner CSS transition-delay to cascade word by word. */
+  function splitWordsForReveal(el) {
+    const words = el.textContent.trim().split(/\s+/);
+    el.innerHTML = words
+      .map((w, i) => `<span class="mask-word" style="--i:${i}"><span class="mask-word-inner">${w}</span></span>`)
+      .join(" ");
+  }
+
+  /** Section headings get the word-cascade mask reveal, triggered by
+   * scroll position. Runs once, after hydrateSiteSettings has finished
+   * mutating any dynamic heading text (ctaTitle). */
+  function initSectionRevealMasks() {
+    const headings = document.querySelectorAll(".section-head h2, .cta-banner h2");
+    headings.forEach((h) => splitWordsForReveal(h));
+
+    if (prefersReducedMotion || !("IntersectionObserver" in window)) {
+      headings.forEach((h) => h.classList.add("is-visible"));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.4 }
+    );
+    headings.forEach((h) => observer.observe(h));
+  }
+
+  /** Scroll-triggered reveal for .reveal and .reveal-stagger sections. */
+  function initReveal() {
+    const targets = document.querySelectorAll(".reveal, .reveal-stagger");
+    if (!targets.length) return;
+
+    if (prefersReducedMotion || !("IntersectionObserver" in window)) {
+      targets.forEach((el) => el.classList.add("is-visible"));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("is-visible");
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -60px 0px" }
+    );
+    targets.forEach((el) => observer.observe(el));
+  }
+
+  /** Live "Our Locations" section, fed by the real GET /api/branches.
+   * Cards animate in on a cascading delay as soon as data arrives —
+   * no scroll-observer needed for dynamically injected content. */
+  async function loadBranches() {
+    const grid = document.getElementById("branchGrid");
+    if (!grid) return;
+
+    try {
+      const { branches } = await apiRequest("/branches");
+
+      if (!branches.length) {
+        grid.innerHTML = `<div class="empty-state">No locations published yet — check back soon.</div>`;
+        return;
+      }
+
+      grid.innerHTML = branches.map((b, i) => `
+        <div class="branch-card" style="--d:${i * 90}ms">
+          <div class="branch-card-top"><span class="city-tag">${b.city}${b.state ? `, ${b.state}` : ""}</span></div>
+          <div class="branch-card-body">
+            <h3>${b.name}</h3>
+            <p class="addr">${b.address || ""}</p>
+            <div class="branch-services">${(b.services || []).map((s) => `<span>${s}</span>`).join("")}</div>
+            <a href="location.html?branch=${b.slug || b.id}" class="btn btn-dark" style="width:100%;">View rooms &amp; book</a>
+          </div>
+        </div>
+      `).join("");
+    } catch (err) {
+      grid.innerHTML = `<div class="empty-state">Couldn't load our locations right now — please try again shortly.</div>`;
+    }
+  }
+
+  async function submitNewsletterSignup(e) {
+    e.preventDefault();
+    const btn = document.getElementById("newsletterSubmitBtn");
+    const note = document.getElementById("newsletterNote");
+    const email = document.getElementById("newsletterEmail").value;
+    btn.disabled = true;
+    try {
+      const { message } = await apiRequest("/newsletter/subscribe", { method: "POST", body: JSON.stringify({ email }) });
+      note.textContent = message;
+      document.getElementById("newsletterEmail").value = "";
+    } catch (err) {
+      note.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    initPreloader();
+    initCustomCursor();
+    initMagneticButtons();
+    initNav();
+    initNavScrollBehavior();
+    initReveal();
+    initHeroMotion();
+    revealHeroActions();
+    hydrateSiteSettings(); // also triggers the hero intro reveal, typewriter, and heading masks once resolved
+    loadBranches();
+    document.getElementById("newsletterForm").addEventListener("submit", submitNewsletterSignup);
+    document.getElementById("year").textContent = new Date().getFullYear();
+  });
+})();
+</script>
+ <script src="/chat-widget.js"></script>
+</body>
+</html>
