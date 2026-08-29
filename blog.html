@@ -61,6 +61,7 @@ section { padding: 72px 0; }
 .post-card-body h3 { font-size: 1.25rem; margin-bottom: 10px; }
 .post-card-body p { color: var(--text-muted); font-size: 0.92rem; flex: 1; }
 .post-card-body .read-more { margin-top: 16px; font-size: 0.85rem; color: var(--teal); font-weight: 600; }
+.post-card-body .engagement-row { margin-top: 10px; display: flex; gap: 14px; font-size: 0.78rem; color: var(--text-muted); }
 
 .loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
 
@@ -183,6 +184,10 @@ footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 48px
           <h3>${p.title}</h3>
           <p>${p.excerpt || ""}</p>
           <span class="read-more">Read more &rarr;</span>
+          <div class="engagement-row">
+            <span>&#9825; ${p._count ? p._count.likes : 0}</span>
+            <span>&#128172; ${p._count ? p._count.comments : 0}</span>
+          </div>
         </div>
       </a>
     `).join("");

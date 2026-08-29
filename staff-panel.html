@@ -269,9 +269,6 @@ const staffApi = {
     return { token: data.token, refreshToken: data.refreshToken, staff: data.staff };
   },
 
-  // Rooms — status change only. Creating/editing/deleting a room, or its
-  // photos, is Director-only (see admin-panel.html); this account never
-  // reaches those routes.
   listRooms: () => adminRequest("/manager/rooms"),
   updateRoomStatus: (id, status) => adminRequest(`/manager/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
@@ -280,10 +277,11 @@ const staffApi = {
 
   listMenuItems: (category) => adminRequest(`/manager/menu${category ? `?category=${category}` : ""}`),
 
-  // Stock — a Staff account with manage_stock can view items and record
-  // movements (entries, adjustments, closing counts). Creating/editing/
-  // deleting the StockItem itself (name, unit, threshold) stays a
-  // Manager/Director action — not exposed in this panel.
+  // Laundry & spa catalogs — the routes already existed on the backend;
+  // this panel just never had a way to call them before Place Order.
+  listLaundryItems: () => adminRequest("/manager/laundry-items"),
+  listSpaTreatments: () => adminRequest("/manager/spa-treatments"),
+
   listStockItems: () => adminRequest("/manager/stock"),
   listStockMovements: (id) => adminRequest(`/manager/stock/${id}/movements`),
   recordStockMovement: (id, payload) => adminRequest(`/manager/stock/${id}/movements`, { method: "POST", body: JSON.stringify(payload) }),
@@ -301,6 +299,14 @@ const staffApi = {
   // never actually defined — any manage_payments account crashed the
   // whole Dashboard on load. The route existed on the backend all along.
   listTransactions: () => adminRequest("/manager/transactions"),
+  recordTransaction: (payload) => adminRequest("/manager/transactions", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Walk-in orders — placed by staff on a guest's behalf. Permission is
+  // checked per order type on the backend (see server.js), not here.
+  searchGuests: (q) => adminRequest(`/manager/guests/search?q=${encodeURIComponent(q)}`),
+  createWalkInOrder: (payload) => adminRequest("/manager/orders", { method: "POST", body: JSON.stringify(payload) }),
+  listOrders: (status) => adminRequest(`/manager/orders${status ? `?status=${status}` : ""}`),
+  updateOrderStatus: (id, status) => adminRequest(`/manager/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
 
   getReports: () => adminRequest("/manager/reports"),
 };
@@ -317,6 +323,8 @@ const NAV_GROUPS = [
       { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
       { page: "housekeeping", label: "Housekeeping", icon: "fa-broom", permission: "manage_rooms" },
       { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
+      { page: "place-order", label: "Place Order", icon: "fa-bell-concierge", permissions: ["manage_menu", "manage_laundry", "manage_spa"] },
+      { page: "orders", label: "Orders", icon: "fa-receipt", permission: "manage_bookings" },
       { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
       { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
       { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
@@ -342,7 +350,9 @@ function renderSidebar() {
   document.getElementById("adminBranch").textContent = staff.branchName || "";
 
   const groupsHtml = NAV_GROUPS.map((group) => {
-    const visibleItems = group.items.filter((item) => (staff.permissions || []).includes(item.permission));
+    const visibleItems = group.items.filter((item) => item.permissions
+      ? item.permissions.some((p) => (staff.permissions || []).includes(p))
+      : (staff.permissions || []).includes(item.permission));
     if (!visibleItems.length) return "";
     return `
       <div class="nav-group open" data-group="${group.id}">
@@ -382,6 +392,8 @@ const PAGE_LOADERS = {
   rooms: loadRoomsPage,
   housekeeping: loadHousekeepingPage,
   menu: loadMenuPage,
+  "place-order": loadPlaceOrderPage,
+  orders: loadOrdersQueuePage,
   bookings: loadBookingsPage,
   stock: loadStockPage,
   events: () => loadComingSoon("Events", "Publish upcoming events guests can book into."),
@@ -398,8 +410,14 @@ function switchPage(page) {
   // account has permission for, a direct switchPage() call (or a stale
   // link) still gets blocked here rather than trusting the click alone.
   const pagePermission = { rooms: "manage_rooms", menu: "manage_menu", bookings: "manage_bookings",
-    stock: "manage_stock", events: "manage_events", tickets: "handle_tickets", reports: "view_reports" }[page];
+    stock: "manage_stock", events: "manage_events", tickets: "handle_tickets", reports: "view_reports",
+    orders: "manage_bookings" }[page];
+  const pageAnyPermissions = { "place-order": ["manage_menu", "manage_laundry", "manage_spa"] }[page];
   if (pagePermission && !hasPermission(pagePermission)) {
+    container.innerHTML = `<div class="empty-state">You don't have access to this section. Ask your Manager to grant it.</div>`;
+    return;
+  }
+  if (pageAnyPermissions && !pageAnyPermissions.some((p) => hasPermission(p))) {
     container.innerHTML = `<div class="empty-state">You don't have access to this section. Ask your Manager to grant it.</div>`;
     return;
   }
@@ -749,6 +767,344 @@ async function loadMenuPage() {
       <td>&#8358;${Number(m.price).toLocaleString()}</td></tr>
     `).join("") : `<tr><td colspan="4" class="empty-state">No menu items yet.</td></tr>`;
   } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="4" class="empty-state">${err.message}</td></tr>`; }
+}
+
+/* ============================================================
+   PLACE ORDER — walk-in orders staff create on a guest's behalf.
+   The order-type dropdown is filtered to only the types this account's
+   own permissions actually cover (manage_menu / manage_laundry /
+   manage_spa) — matching exactly what the backend will accept, so a
+   staff member never fills out a form only to have it 403 at the end.
+   ============================================================ */
+const ORDER_TYPE_PERMISSION = { ROOM_SERVICE: "manage_menu", RESTAURANT: "manage_menu", BAR: "manage_menu", LAUNDRY: "manage_laundry", SPA: "manage_spa" };
+const ORDER_TYPE_LABELS = { ROOM_SERVICE: "Room Service", RESTAURANT: "Restaurant", BAR: "Bar", LAUNDRY: "Laundry", SPA: "Spa" };
+// Mirrors ORDER_TYPE_TO_TRANSACTION_SOURCE in server.js — kept in sync
+// by hand since it isn't exposed through an endpoint.
+const ORDER_TYPE_TRANSACTION_SOURCE = { ROOM_SERVICE: "FOOD", RESTAURANT: "FOOD", BAR: "DRINK", LAUNDRY: "SERVICE", SPA: "SERVICE" };
+
+let _poCart = [];
+let _poSelectedGuestId = null;
+let _poCatalogItems = [];
+
+async function loadPlaceOrderPage() {
+  const availableTypes = Object.keys(ORDER_TYPE_PERMISSION).filter((t) => hasPermission(ORDER_TYPE_PERMISSION[t]));
+  _poCart = []; _poSelectedGuestId = null;
+
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Place Order", "Create an order on behalf of a guest at the counter, phone, or table.")}
+    <div id="placeOrderNotice"></div>
+    ${!availableTypes.length ? `<div class="empty-state">You don't have access to any order type. Ask your Manager to grant it.</div>` : `
+    <div class="panel">
+      <div class="form-row">
+        <div class="form-field">
+          <label>Order type</label>
+          <select id="poType" onchange="onOrderTypeChange()">
+            ${availableTypes.map((t) => `<option value="${t}">${ORDER_TYPE_LABELS[t]}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Charge to room <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+          <select id="poRoom"><option value="">— Not charging to a room —</option></select>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); margin:18px 0; padding-top:18px;">
+        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.86rem;">Guest</label>
+        <div class="form-field">
+          <label>Search existing guest</label>
+          <input type="text" id="poGuestSearch" placeholder="Name, email, or phone" oninput="searchGuestDebounced()" autocomplete="off">
+          <div id="poGuestResults"></div>
+        </div>
+        <div id="poSelectedGuest" style="display:none; margin:10px 0; padding:10px 14px; background:var(--ivory); border:1px solid var(--border); border-radius:6px;">
+          <b id="poSelectedGuestName"></b> <span id="poSelectedGuestEmail" style="color:var(--text-muted); font-size:0.82rem;"></span>
+          <button type="button" class="btn btn-sm btn-outline" style="margin-left:10px;" onclick="clearSelectedGuest()">Change</button>
+        </div>
+        <div id="poNewGuestFields">
+          <p style="font-size:0.8rem; color:var(--text-muted); margin:10px 0 8px;">No account? Enter their details — a lightweight guest record is created automatically:</p>
+          <div class="form-row">
+            <div class="form-field"><label>Name</label><input type="text" id="poGuestName"></div>
+            <div class="form-field"><label>Email</label><input type="email" id="poGuestEmail"></div>
+            <div class="form-field"><label>Phone <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="poGuestPhone"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); margin:18px 0; padding-top:18px;">
+        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.86rem;">Items</label>
+        <div id="poCatalog"><div class="loading-state">Loading catalog…</div></div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); margin:18px 0; padding-top:18px;">
+        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.86rem;">Payment</label>
+        <div class="form-row">
+          <div class="form-field">
+            <label>How is this being paid?</label>
+            <select id="poPayment" onchange="togglePaymentMethodField()">
+              <option value="ROOM">Charge to room</option>
+              <option value="NOW">Paid now at the counter</option>
+              <option value="LATER">Bill later / unpaid for now</option>
+            </select>
+          </div>
+          <div class="form-field" id="poMethodField" style="display:none;">
+            <label>Method</label>
+            <select id="poMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="TRANSFER">Transfer</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-line total" style="margin:14px 0;"><span>Total</span><span id="poTotalDisplay">&#8358;0</span></div>
+      <button type="button" class="btn btn-primary" id="poSubmitBtn" onclick="submitWalkInOrder()">Place order</button>
+    </div>
+    `}
+  `;
+  if (!availableTypes.length) return;
+
+  togglePaymentMethodField();
+  try {
+    const { rooms } = await staffApi.listRooms();
+    document.getElementById("poRoom").innerHTML += rooms.map((r) => `<option value="${r.id}">${r.name} — ${r.roomNumber}</option>`).join("");
+  } catch { /* room charging just won't be selectable if this fails */ }
+
+  await onOrderTypeChange();
+}
+
+function togglePaymentMethodField() {
+  const isNow = document.getElementById("poPayment").value === "NOW";
+  document.getElementById("poMethodField").style.display = isNow ? "" : "none";
+}
+
+async function onOrderTypeChange() {
+  const type = document.getElementById("poType").value;
+  _poCart = [];
+  const catalogEl = document.getElementById("poCatalog");
+  catalogEl.innerHTML = `<div class="loading-state">Loading catalog…</div>`;
+
+  try {
+    if (type === "SPA") {
+      const { spaTreatments } = await staffApi.listSpaTreatments();
+      _poCatalogItems = spaTreatments;
+      catalogEl.innerHTML = `
+        <div class="form-row">
+          <div class="form-field"><label>Treatment</label>
+            <select id="poSpaTreatment" onchange="updatePoTotal()">
+              ${spaTreatments.map((t) => `<option value="${t.id}" data-price="${t.price}">${t.name} — &#8358;${Number(t.price).toLocaleString()}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-field"><label>Date &amp; time</label><input type="datetime-local" id="poSpaTime"></div>
+        </div>
+      `;
+    } else if (type === "LAUNDRY") {
+      const { laundryItems } = await staffApi.listLaundryItems();
+      _poCatalogItems = laundryItems;
+      catalogEl.innerHTML = `
+        <table><thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
+          <tbody>${laundryItems.length ? laundryItems.map((i) => `
+            <tr><td>${i.name}</td><td>&#8358;${Number(i.price).toLocaleString()}</td>
+            <td><button type="button" class="btn btn-sm btn-outline" onclick="addToPoCart('${i.id}')">Add</button></td></tr>
+          `).join("") : `<tr><td colspan="3" class="empty-state">Nothing available.</td></tr>`}</tbody>
+        </table>
+        <div id="poCartWrap" style="margin-top:14px;"></div>
+      `;
+      renderPoCart();
+    } else {
+      const { menuItems } = await staffApi.listMenuItems(type === "BAR" ? "DRINK" : "FOOD");
+      const items = type === "ROOM_SERVICE" ? menuItems.filter((i) => i.availableForRoomService) : menuItems;
+      _poCatalogItems = items;
+      catalogEl.innerHTML = `
+        <table><thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
+          <tbody>${items.length ? items.map((i) => `
+            <tr><td>${i.name}</td><td>&#8358;${Number(i.price).toLocaleString()}</td>
+            <td><button type="button" class="btn btn-sm btn-outline" onclick="addToPoCart('${i.id}')">Add</button></td></tr>
+          `).join("") : `<tr><td colspan="3" class="empty-state">Nothing available${type === "ROOM_SERVICE" ? " for room service" : ""}.</td></tr>`}</tbody>
+        </table>
+        <div id="poCartWrap" style="margin-top:14px;"></div>
+      `;
+      renderPoCart();
+    }
+  } catch (err) {
+    catalogEl.innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+  updatePoTotal();
+}
+
+function addToPoCart(itemId) {
+  const item = _poCatalogItems.find((i) => i.id === itemId);
+  if (!item) return;
+  const existing = _poCart.find((l) => l.id === itemId);
+  if (existing) existing.quantity += 1;
+  else _poCart.push({ id: item.id, name: item.name, price: Number(item.price), quantity: 1 });
+  renderPoCart();
+  updatePoTotal();
+}
+function removeFromPoCart(itemId) {
+  _poCart = _poCart.filter((l) => l.id !== itemId);
+  renderPoCart();
+  updatePoTotal();
+}
+function renderPoCart() {
+  const wrap = document.getElementById("poCartWrap");
+  if (!wrap) return;
+  wrap.innerHTML = _poCart.length ? `
+    <table><thead><tr><th>Item</th><th>Qty</th><th>Line total</th><th></th></tr></thead>
+      <tbody>${_poCart.map((l) => `
+        <tr><td>${l.name}</td><td>${l.quantity}</td><td>&#8358;${(l.price * l.quantity).toLocaleString()}</td>
+        <td><button type="button" class="btn btn-sm btn-danger" onclick="removeFromPoCart('${l.id}')">Remove</button></td></tr>
+      `).join("")}</tbody>
+    </table>
+  ` : `<p style="color:var(--text-muted); font-size:0.84rem;">No items added yet.</p>`;
+}
+
+function updatePoTotal() {
+  const type = document.getElementById("poType").value;
+  let total = 0;
+  if (type === "SPA") {
+    const sel = document.getElementById("poSpaTreatment");
+    total = sel ? Number(sel.selectedOptions[0]?.dataset.price || 0) : 0;
+  } else {
+    total = _poCart.reduce((sum, l) => sum + l.price * l.quantity, 0);
+  }
+  document.getElementById("poTotalDisplay").textContent = `₦${total.toLocaleString()}`;
+  return total;
+}
+
+let _poSearchTimer = null;
+function searchGuestDebounced() {
+  clearTimeout(_poSearchTimer);
+  _poSearchTimer = setTimeout(async () => {
+    const q = document.getElementById("poGuestSearch").value.trim();
+    const resultsEl = document.getElementById("poGuestResults");
+    if (q.length < 2) { resultsEl.innerHTML = ""; return; }
+    try {
+      const { guests } = await staffApi.searchGuests(q);
+      resultsEl.innerHTML = guests.length ? guests.map((g) => `
+        <div style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; margin-top:4px; cursor:pointer;" onclick='selectGuest(${JSON.stringify(g).replace(/'/g, "&#39;")})'>
+          <b>${g.name}</b> <span style="color:var(--text-muted); font-size:0.82rem;">${g.email}${g.phone ? " · " + g.phone : ""}</span>
+        </div>
+      `).join("") : `<p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">No match — enter their details below instead.</p>`;
+    } catch { /* search failing shouldn't block manual entry below */ }
+  }, 350);
+}
+function selectGuest(guest) {
+  _poSelectedGuestId = guest.id;
+  document.getElementById("poSelectedGuestName").textContent = guest.name;
+  document.getElementById("poSelectedGuestEmail").textContent = guest.email;
+  document.getElementById("poSelectedGuest").style.display = "block";
+  document.getElementById("poNewGuestFields").style.display = "none";
+  document.getElementById("poGuestResults").innerHTML = "";
+  document.getElementById("poGuestSearch").value = "";
+}
+function clearSelectedGuest() {
+  _poSelectedGuestId = null;
+  document.getElementById("poSelectedGuest").style.display = "none";
+  document.getElementById("poNewGuestFields").style.display = "block";
+}
+
+async function submitWalkInOrder() {
+  const btn = document.getElementById("poSubmitBtn");
+  const type = document.getElementById("poType").value;
+  const total = updatePoTotal();
+  const paymentChoice = document.getElementById("poPayment").value;
+  const roomId = document.getElementById("poRoom").value || undefined;
+
+  if (!_poSelectedGuestId && (!document.getElementById("poGuestName").value || !document.getElementById("poGuestEmail").value)) {
+    showNotice("placeOrderNotice", "Select an existing guest or enter a name and email for a new one.");
+    return;
+  }
+  if (paymentChoice === "ROOM" && !roomId) {
+    showNotice("placeOrderNotice", "Select a room to charge this to, or choose a different payment option.");
+    return;
+  }
+
+  const payload = {
+    type,
+    existingGuestId: _poSelectedGuestId || undefined,
+    guest: _poSelectedGuestId ? undefined : {
+      name: document.getElementById("poGuestName").value,
+      email: document.getElementById("poGuestEmail").value,
+      phone: document.getElementById("poGuestPhone").value || undefined,
+    },
+    roomId,
+    chargeToRoom: paymentChoice === "ROOM",
+  };
+
+  if (type === "SPA") {
+    payload.treatmentId = document.getElementById("poSpaTreatment").value;
+    payload.scheduledAt = document.getElementById("poSpaTime").value;
+    if (!payload.scheduledAt) { showNotice("placeOrderNotice", "Pick a date and time for the appointment."); return; }
+  } else {
+    if (!_poCart.length) { showNotice("placeOrderNotice", "Add at least one item."); return; }
+    payload.lines = _poCart.map((l) => ({ [type === "LAUNDRY" ? "laundryItemId" : "menuItemId"]: l.id, quantity: l.quantity }));
+  }
+
+  btn.disabled = true;
+  try {
+    const { order } = await staffApi.createWalkInOrder(payload);
+
+    if (paymentChoice === "NOW" && order.totalAmount) {
+      try {
+        await staffApi.recordTransaction({
+          orderId: order.id,
+          guestName: _poSelectedGuestId ? document.getElementById("poSelectedGuestName").textContent : document.getElementById("poGuestName").value,
+          source: ORDER_TYPE_TRANSACTION_SOURCE[type],
+          amount: order.totalAmount,
+          method: document.getElementById("poMethod").value,
+        });
+      } catch (err) {
+        showNotice("placeOrderNotice", `Order placed, but recording the payment failed: ${err.message}. Record it from Transactions instead.`, "error");
+        return;
+      }
+    }
+
+    showNotice("placeOrderNotice", "Order placed.", "success");
+    await loadPlaceOrderPage();
+  } catch (err) {
+    showNotice("placeOrderNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   ORDERS QUEUE — every order at this branch, guest self-service and
+   staff walk-in alike, with the placing staff member shown when
+   applicable. Same "advance status" convention as Bookings.
+   ============================================================ */
+async function loadOrdersQueuePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Orders", "Every order placed at this branch — online and walk-in.")}
+    <div id="ordersNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Type</th><th>Total</th><th>Status</th><th>Placed by</th><th></th></tr></thead>
+        <tbody id="ordersBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshOrdersQueue();
+}
+async function refreshOrdersQueue() {
+  const NEXT_STATUS = { PENDING: "IN_PROGRESS", IN_PROGRESS: "COMPLETED" };
+  try {
+    const { orders } = await staffApi.listOrders();
+    document.getElementById("ordersBody").innerHTML = orders.length ? orders.map((o) => `
+      <tr>
+        <td>${o.guest.name}</td>
+        <td>${(o.type || "").replace(/_/g, " ")}</td>
+        <td>${o.totalAmount != null ? "&#8358;" + Number(o.totalAmount).toLocaleString() : "—"}</td>
+        <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${o.placedByStaff ? o.placedByStaff.name : "Guest"}</td>
+        <td>${NEXT_STATUS[o.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceOrder('${o.id}','${NEXT_STATUS[o.status]}')">${NEXT_STATUS[o.status].replace("_"," ").toLowerCase()}</button>` : ""}
+        ${["PENDING","IN_PROGRESS"].includes(o.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceOrder('${o.id}','CANCELLED')">Cancel</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No orders yet.</td></tr>`;
+  } catch (err) {
+    document.getElementById("ordersBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+async function advanceOrder(id, status) {
+  try { await staffApi.updateOrderStatus(id, status); refreshOrdersQueue(); }
+  catch (err) { showNotice("ordersNotice", err.message); }
 }
 
 /* ============================================================
