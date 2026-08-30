@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log In or Create Account</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   AUTH PAGE — login, signup, forgot-password, reset-password.
+   Independent, self-contained file, same brand tokens as
+   guest-panel.html but no shared JS — matches this site's existing
+   convention (each static page owns its own copy of what it needs).
+
+   guest-panel.html no longer has any auth UI at all: it assumes a
+   valid session already exists in localStorage, and redirects here
+   if one doesn't (or a 401 clears it mid-session). This is the only
+   page responsible for ever putting a session into localStorage in
+   the first place.
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --ink: #14181f; --ivory: #f6f1e7; --panel: #ffffff;
+  --border: #e6e0d2; --border-soft: rgba(20,24,31,0.08);
+  --brass: #b98d45; --brass-dark: #96712f; --teal: #2f5d5a; --danger: #a3392a; --info: #3b6ea5;
+  --text-muted: #6b6355;
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif; --radius: 10px;
+}
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); font-size: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+a { color: inherit; text-decoration: none; }
+
+.auth-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink); padding: 20px; }
+.auth-card { background: var(--panel); padding: 44px 40px; border-radius: var(--radius); width: 100%; max-width: 400px; }
+.auth-card .brand { font-family: var(--font-display); font-size: 1.6rem; margin-bottom: 4px; }
+.auth-card .brand span { color: var(--brass); }
+.auth-card p.sub { color: var(--text-muted); margin-bottom: 22px; font-size: 0.88rem; }
+.auth-tabs { display: flex; gap: 4px; margin-bottom: 22px; border-bottom: 1px solid var(--border); }
+.auth-tab-btn { flex: 1; background: none; border: none; padding: 10px; font-family: var(--font-body); font-size: 0.88rem; font-weight: 600;
+  color: var(--text-muted); cursor: pointer; border-bottom: 2px solid transparent; }
+.auth-tab-btn.active { color: var(--brass-dark); border-bottom-color: var(--brass); }
+
+.btn { font-family: var(--font-body); font-size: 0.84rem; font-weight: 600; padding: 11px 20px; border-radius: 7px; border: none; cursor: pointer; transition: opacity 0.15s; }
+.btn:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-block { width: 100%; }
+.link-btn { display: block; width: 100%; margin-top: 12px; background: none; border: none; color: var(--text-muted); font-size: 0.85rem; cursor: pointer; text-align: center; font-family: var(--font-body); }
+.link-btn:hover { color: var(--brass-dark); }
+
+.notice { padding: 12px 16px; border-radius: 7px; font-size: 0.84rem; margin-bottom: 14px; }
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.2); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--teal); border: 1px solid rgba(47,93,90,0.2); }
+
+.form-field { margin-bottom: 14px; }
+.form-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.form-field input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px; font-family: var(--font-body); font-size: 0.86rem; background: #fff; }
+.form-field input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+</style>
+</head>
+<body>
+
+<div class="auth-screen">
+  <div class="auth-card">
+    <div class="brand" id="authBrand">Our Hotel</div>
+    <p class="sub" id="authSub">Book your stay, manage reservations, and get support — all in one place.</p>
+
+    <div class="auth-tabs" id="authTabs">
+      <button class="auth-tab-btn active" data-tab="login" onclick="switchAuthMode('login')">Log in</button>
+      <button class="auth-tab-btn" data-tab="signup" onclick="switchAuthMode('signup')">Create account</button>
+    </div>
+    <div id="authNotice"></div>
+
+    <form id="loginForm">
+      <div class="form-field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary btn-block" id="loginBtn">Log in</button>
+      <button type="button" class="link-btn" onclick="switchAuthMode('forgot')">Forgot your password?</button>
+    </form>
+
+    <form id="signupForm" style="display:none;">
+      <div class="form-field"><label>Full name</label><input type="text" id="regName" required></div>
+      <div class="form-field"><label>Email</label><input type="email" id="regEmail" required></div>
+      <div class="form-field"><label>Phone <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="regPhone"></div>
+      <div class="form-field"><label>Password</label><input type="password" id="regPassword" required minlength="8"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="registerBtn">Create account</button>
+    </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required></div>
+      <button type="submit" class="btn btn-primary btn-block" id="twoFactorBtn">Verify</button>
+      <button type="button" class="link-btn" onclick="switchAuthMode('login')">&larr; Back to login</button>
+    </form>
+
+    <form id="forgotForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter your account email — if it's registered, we'll send a reset link.</p>
+      <div class="form-field"><label>Email</label><input type="email" id="forgotEmail" required></div>
+      <button type="submit" class="btn btn-primary btn-block" id="forgotBtn">Send reset link</button>
+      <button type="button" class="link-btn" onclick="switchAuthMode('login')">&larr; Back to login</button>
+    </form>
+
+    <form id="resetForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Choose a new password for your account.</p>
+      <input type="hidden" id="resetToken">
+      <div class="form-field"><label>New password</label><input type="password" id="resetPassword" required minlength="8"></div>
+      <div class="form-field"><label>Confirm new password</label><input type="password" id="resetPasswordConfirm" required minlength="8"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="resetBtn">Set new password</button>
+    </form>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+
+  // Same localStorage keys guest-panel.html reads — this is the
+  // contract between the two files. Own copy of each function, no
+  // shared JS file, matching this site's existing convention.
+  function getToken() { return localStorage.getItem("guest_token"); }
+  function getGuest() { try { return JSON.parse(localStorage.getItem("guest_user")); } catch { return null; } }
+  function setSession(token, refreshToken, guest) {
+    localStorage.setItem("guest_token", token);
+    localStorage.setItem("guest_refresh_token", refreshToken || "");
+    localStorage.setItem("guest_user", JSON.stringify(guest));
+  }
+
+  async function authRequest(path, options = {}) {
+    const res = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+    return data;
+  }
+
+  function showAuthNotice(message, type = "error") {
+    document.getElementById("authNotice").innerHTML = `<div class="notice ${type}">${message}</div>`;
+  }
+
+  function switchAuthMode(mode) {
+    document.querySelectorAll(".auth-tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === mode));
+    document.getElementById("authTabs").style.display = (mode === "login" || mode === "signup") ? "flex" : "none";
+    document.getElementById("loginForm").style.display = mode === "login" ? "block" : "none";
+    document.getElementById("signupForm").style.display = mode === "signup" ? "block" : "none";
+    document.getElementById("twoFactorForm").style.display = mode === "2fa" ? "block" : "none";
+    document.getElementById("forgotForm").style.display = mode === "forgot" ? "block" : "none";
+    document.getElementById("resetForm").style.display = mode === "reset" ? "block" : "none";
+    document.getElementById("authNotice").innerHTML = "";
+  }
+  window.switchAuthMode = switchAuthMode;
+
+  let _pendingTempToken = null;
+
+  document.getElementById("loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "Logging in…";
+    try {
+      const result = await authRequest("/auth/guest/login", {
+        method: "POST",
+        body: JSON.stringify({ email: document.getElementById("loginEmail").value, password: document.getElementById("loginPassword").value }),
+      });
+      if (result.requires2FA) {
+        _pendingTempToken = result.tempToken;
+        switchAuthMode("2fa");
+        document.getElementById("twoFactorCode").focus();
+        return;
+      }
+      setSession(result.token, result.refreshToken, result.guest);
+      window.location.href = "guest-panel.html";
+    } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Log in"; }
+  });
+
+  document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("twoFactorBtn"); btn.disabled = true; btn.textContent = "Verifying…";
+    try {
+      const result = await authRequest("/auth/login/2fa", {
+        method: "POST",
+        body: JSON.stringify({ tempToken: _pendingTempToken, code: document.getElementById("twoFactorCode").value.trim() }),
+      });
+      _pendingTempToken = null;
+      setSession(result.token, result.refreshToken, result.guest);
+      window.location.href = "guest-panel.html";
+    } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Verify"; }
+  });
+
+  document.getElementById("signupForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("registerBtn"); btn.disabled = true; btn.textContent = "Creating account…";
+    try {
+      const result = await authRequest("/auth/guest/register", {
+        method: "POST",
+        body: JSON.stringify({
+          name: document.getElementById("regName").value,
+          email: document.getElementById("regEmail").value,
+          phone: document.getElementById("regPhone").value || undefined,
+          password: document.getElementById("regPassword").value,
+        }),
+      });
+      setSession(result.token, result.refreshToken, result.guest);
+      window.location.href = "guest-panel.html";
+    } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Create account"; }
+  });
+
+  document.getElementById("forgotForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById("forgotBtn"); btn.disabled = true; btn.textContent = "Sending…";
+    try {
+      const { message } = await authRequest("/auth/guest/forgot-password", {
+        method: "POST",
+        body: JSON.stringify({ email: document.getElementById("forgotEmail").value }),
+      });
+      showAuthNotice(message, "success");
+    } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Send reset link"; }
+  });
+
+  document.getElementById("resetForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const newPassword = document.getElementById("resetPassword").value;
+    const confirmPassword = document.getElementById("resetPasswordConfirm").value;
+    if (newPassword !== confirmPassword) { showAuthNotice("Passwords don't match."); return; }
+    const btn = document.getElementById("resetBtn"); btn.disabled = true; btn.textContent = "Saving…";
+    try {
+      const { message } = await authRequest("/auth/guest/reset-password", {
+        method: "POST",
+        body: JSON.stringify({ token: document.getElementById("resetToken").value, newPassword }),
+      });
+      showAuthNotice(`${message} You can log in now.`, "success");
+      // Drop the one-time token out of the URL/browser history now that
+      // it's been used — no reason for it to linger there.
+      history.replaceState(null, "", window.location.pathname);
+      setTimeout(() => switchAuthMode("login"), 1800);
+    } catch (err) { showAuthNotice(err.message); } finally { btn.disabled = false; btn.textContent = "Set new password"; }
+  });
+
+  async function hydratePlatformName() {
+    try {
+      const { settings } = await authRequest("/settings");
+      const name = settings.platformName || settings.name || "Our Hotel";
+      document.title = document.title.replace("Log In or Create Account", `Log In — ${name}`);
+      const brandEl = document.getElementById("authBrand");
+      if (brandEl) brandEl.textContent = name;
+    } catch { /* keep the "Our Hotel" fallback already in the HTML */ }
+  }
+
+  // Boot. Already logged in? Skip this page entirely. Otherwise, a
+  // password-reset link (?token=...) or a deep link (?mode=signup)
+  // opens straight into the right form instead of always defaulting
+  // to login.
+  if (getToken() && getGuest()) {
+    window.location.href = "guest-panel.html";
+  } else {
+    hydratePlatformName();
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    if (token) {
+      document.getElementById("resetToken").value = token;
+      switchAuthMode("reset");
+    } else if (params.get("mode") === "signup") {
+      switchAuthMode("signup");
+    } else {
+      switchAuthMode("login");
+    }
+  }
+})();
+</script>
+</body>
+</html>
