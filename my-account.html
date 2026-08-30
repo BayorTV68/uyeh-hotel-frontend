@@ -247,7 +247,13 @@ function clearSession() {
 async function guestRequest(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
   if (getToken()) headers.Authorization = `Bearer ${getToken()}`;
+  const startedAt = Date.now();
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  // Fire-and-forget on purpose — never let tracking delay the actual
+  // response getting back to the caller.
+  if (typeof queueActivityEvent === "function") {
+    queueActivityEvent({ type: "API_CALL", method: options.method || "GET", statusCode: res.status, durationMs: Date.now() - startedAt, metadata: { path } });
+  }
   if (res.status === 401) { clearSession(); showAuth(); throw new Error("Session expired — please log in again"); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
@@ -267,16 +273,16 @@ const guestApi = {
 
   listBranches: () => guestRequest("/branches"),
   getBranch: (branchId) => guestRequest(`/branches/${branchId}`),
-  // Returns full Room records directly — Room absorbed RoomType, so
-  // there's no separate "type" to group by anymore. Each result is a
-  // complete, bookable listing with its own name/price/photos.
-  checkAvailability: (branchId, checkIn, checkOut) =>
+   checkAvailability: (branchId, checkIn, checkOut) =>
     guestRequest(`/branches/${branchId}/availability?checkIn=${checkIn}&checkOut=${checkOut}`),
 
   createBooking: (branchId, payload) => guestRequest(`/branches/${branchId}/bookings`, { method: "POST", body: JSON.stringify(payload) }),
+  verifyPaystackPayment: (reference) => guestRequest("/payments/paystack/verify", { method: "POST", body: JSON.stringify({ reference }) }),
+  joinWaitlist: (branchId, payload) => guestRequest(`/branches/${branchId}/waitlist`, { method: "POST", body: JSON.stringify(payload) }),
   initiateBookingPayment: (branchId, bookingId, callbackUrl) =>
     guestRequest(`/branches/${branchId}/bookings/${bookingId}/initiate-payment`, { method: "POST", body: JSON.stringify({ callbackUrl }) }),
   listMyBookings: () => guestRequest("/guest/bookings"),
+  getFolio: (bookingId) => guestRequest(`/guest/bookings/${bookingId}/folio`),
   getFolio: (bookingId) => guestRequest(`/guest/bookings/${bookingId}/folio`),
   cancelBooking: (branchId, id) => guestRequest(`/branches/${branchId}/bookings/${id}/cancel`, { method: "PATCH" }),
   // No invoice route exists on the backend yet — intentionally not offered
@@ -457,6 +463,7 @@ function switchPage(page) {
   const loader = PAGE_LOADERS[page];
   const container = document.getElementById("pageContent");
   if (!loader) { container.innerHTML = `<div class="empty-state">Page not found.</div>`; return; }
+  if (typeof queueActivityEvent === "function") queueActivityEvent({ type: "PAGE_VIEW", targetLabel: page });
   container.innerHTML = `<div class="loading-state">Loading…</div>`;
   loader();
   window.scrollTo(0, 0);
@@ -535,7 +542,9 @@ async function runRoomSearch() {
           </div>
         `).join("")}
       </div>
-    ` : `<div class="empty-state">No rooms available for those dates — try a different branch or date range.</div>`;
+    ` : `<div class="empty-state">No rooms available for those dates — try a different branch or date range.
+        <button type="button" class="btn btn-outline" style="margin-top:10px;" onclick="joinWaitlistForSearch()">Notify me if something opens up</button>
+      </div>`;
   } catch (err) {
     resultsEl.innerHTML = "";
     showNotice("searchNotice", err.message);
@@ -609,6 +618,17 @@ async function submitBookingForm(e, room) {
 /* ============================================================
    MY BOOKINGS
    ============================================================ */
+async function joinWaitlistForSearch() {
+  const ctx = _searchContext;
+  if (!ctx) return;
+  try {
+    await guestApi.joinWaitlist(ctx.branchId, { checkIn: ctx.checkIn, checkOut: ctx.checkOut, guestsCount: ctx.guests });
+    showNotice("searchNotice", "You're on the waitlist — we'll email you if a room opens up for these dates.", "success");
+  } catch (err) {
+    showNotice("searchNotice", err.message);
+  }
+}
+
 async function loadMyBookingsPage() {
   const container = document.getElementById("pageContent");
   container.innerHTML = `
@@ -634,7 +654,8 @@ async function loadMyBookingsPage() {
           ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="cancelMyBooking('${b.branchId}','${b.id}')">Cancel booking</button>` : ""}
           ${b.status === "CHECKED_IN" ? `<button class="btn btn-sm btn-outline" onclick="openFolioModal('${b.id}','${b.room.roomNumber}')">Room charges</button>` : ""}
           ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.name.replace(/'/g, "&#39;")}')">Leave a review</button>` : ""}
-        </div>
+           ${b.status === "CHECKED_OUT" ? `<button class="btn btn-sm btn-outline" onclick="openReviewModal('${b.id}','${b.room.name.replace(/'/g, "&#39;")}')">Leave a review</button>` : ""}
+          </div>
       </div>
     `).join("") : `<div class="empty-state">You haven't booked with us yet. <a href="#" onclick="switchPage('search'); return false;" style="color:var(--brass-dark); font-weight:600;">Find a room →</a></div>`;
   } catch (err) {
@@ -647,6 +668,37 @@ async function cancelMyBooking(branchId, id) {
   try { await guestApi.cancelBooking(branchId, id); loadMyBookingsPage(); }
   catch (err) { showNotice("myBookingsNotice", err.message); }
 }
+
+/* ============================================================
+   ROOM CHARGES (folio) — read-only. Settling the balance is a
+   front-desk action at checkout, not something a guest does here.
+   ============================================================ */
+async function openFolioModal(bookingId, roomNumber) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "folioModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:560px;">
+      <h3>Room ${roomNumber} — charges this stay</h3>
+      <div id="folioModalContent"><div class="loading-state">Loading…</div></div>
+      <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  try {
+    const { charges, balance, currency } = await guestApi.getFolio(bookingId);
+    document.getElementById("folioModalContent").innerHTML = charges.length ? `
+      ${charges.map((c) => `
+        <div class="summary-line">
+          <span>${c.type.replace(/_/g, " ")} — ${new Date(c.createdAt).toLocaleDateString()}</span>
+          <span>&#8358;${Number(c.totalAmount).toLocaleString()}</span>
+        </div>
+      `).join("")}
+      <div class="summary-line total"><span>Balance due at checkout</span><span>&#8358;${Number(balance).toLocaleString()}</span></div>
+    ` : `<div class="empty-state">No charges on this room yet.</div>`;
+  } catch (err) {
+    document.getElementById("folioModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
 
 /* ============================================================
    ROOM CHARGES (folio) — read-only. Settling the balance is a
@@ -1016,6 +1068,7 @@ async function removeFromWishlist(id) {
    createOrder() controller's payload shape per type.
    ============================================================ */
 let _orderCart = []; // [{ id, name, price, quantity }] for line-item types
+let _myActiveBookings = []; // this guest's CHECKED_IN bookings — powers the "charge to room" option below
 
 async function loadOrderPage() {
   const container = document.getElementById("pageContent");
@@ -1025,8 +1078,13 @@ async function loadOrderPage() {
     branchOptions = branches.map((b) => `<option value="${b.id}">${b.name}</option>`).join("");
   } catch { /* handled below */ }
 
+  try {
+    const { bookings } = await guestApi.listMyBookings();
+    _myActiveBookings = bookings.filter((b) => b.status === "CHECKED_IN");
+  } catch { _myActiveBookings = []; }
+
   container.innerHTML = `
-    ${pageHeader("Order Something", "Room service, restaurant, bar, laundry, spa — order directly, pay through Paystack.")}
+    ${pageHeader("Order Something", "Room service, restaurant, bar, laundry, spa — order directly, pay through Paystack, or charge it to your room if you're checked in.")}
     <div class="form-row" style="margin-bottom:20px;">
       <div class="form-field"><label>Branch</label><select id="orBranch" onchange="loadOrderCatalog()">${branchOptions || '<option value="">Couldn\'t load branches</option>'}</select></div>
       <div class="form-field">
@@ -1040,12 +1098,40 @@ async function loadOrderPage() {
         </select>
       </div>
     </div>
+    <div id="orderPaymentChoice"></div>
     <div id="orderNotice"></div>
     <div id="orderCatalog"><div class="loading-state">Pick a branch to see what's available.</div></div>
     <div id="orderCartSummary"></div>
   `;
   _orderCart = [];
   if (branchOptions) loadOrderCatalog();
+}
+
+// Shows the "charge to room" checkbox only when the currently-selected
+// branch matches one of the guest's own CHECKED_IN bookings — mirrors
+// the backend's own requirement exactly, so this can never produce a
+// request the backend would reject.
+function renderOrderPaymentChoice() {
+  const branchId = document.getElementById("orBranch")?.value;
+  const el = document.getElementById("orderPaymentChoice");
+  if (!el) return;
+  const matchingBooking = _myActiveBookings.find((b) => b.branchId === branchId);
+  if (!matchingBooking) { el.innerHTML = ""; return; }
+  el.innerHTML = `
+    <div class="panel" style="margin-bottom:20px;">
+      <label style="display:flex; align-items:center; gap:8px; font-weight:500; cursor:pointer;">
+        <input type="checkbox" id="orChargeToRoom" value="${matchingBooking.id}" onchange="updateOrderSubmitLabel()">
+        Charge this to Room ${matchingBooking.room.roomNumber} instead of paying now
+      </label>
+    </div>
+  `;
+}
+
+function updateOrderSubmitLabel() {
+  const chargeCheckbox = document.getElementById("orChargeToRoom");
+  const btn = document.getElementById("orSubmitBtn");
+  if (!btn) return;
+  btn.textContent = chargeCheckbox && chargeCheckbox.checked ? "Charge to room" : "Place order & pay";
 }
 
 async function loadOrderCatalog() {
@@ -1370,6 +1456,11 @@ function renderProfileTab(tab) {
           <div class="form-field"><label>Phone</label><input type="text" id="pfPhone" value="${p.phone || ""}"></div>
         </div>
         <div class="form-field"><label>Email</label><input type="email" id="pfEmail" value="${p.email || ""}" required></div>
+        <div class="form-row">
+          <div class="form-field"><label>Birthday <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="date" id="pfDob" value="${p.dateOfBirth ? p.dateOfBirth.slice(0, 10) : ""}"></div>
+          <div class="form-field"><label>Anniversary <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="date" id="pfAnniversary" value="${p.anniversaryDate ? p.anniversaryDate.slice(0, 10) : ""}"></div>
+        </div>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin:-6px 0 14px;">Share either and we'll send a little something when they come around.</p>
         <button type="submit" class="btn btn-primary" id="pfSubmitBtn">Save changes</button>
       </form>`;
     document.getElementById("profileForm").addEventListener("submit", async (e) => {
@@ -1377,7 +1468,9 @@ function renderProfileTab(tab) {
       const btn = document.getElementById("pfSubmitBtn"); btn.disabled = true;
       try {
         const { profile } = await guestApi.updateProfile({ name: document.getElementById("pfName").value,
-          phone: document.getElementById("pfPhone").value, email: document.getElementById("pfEmail").value });
+          phone: document.getElementById("pfPhone").value, email: document.getElementById("pfEmail").value,
+          dateOfBirth: document.getElementById("pfDob").value || null,
+          anniversaryDate: document.getElementById("pfAnniversary").value || null });
         window._guestProfile = profile;
         const session = getGuest(); session.name = profile.name; setSession(getToken(), getRefreshToken(), session); renderNav();
         showNotice("profileNotice", "Profile updated.", "success");
@@ -1512,6 +1605,92 @@ async function submitDisableTwoFactor() {
 }
 
 /* ============================================================
+   ACTIVITY TRACKER — structured session timeline + stuck detection.
+   See patch-039/041 notes for the design reasoning.
+   ============================================================ */
+const ACTIVITY_SESSION_ID = (() => {
+  let id = sessionStorage.getItem("activitySessionId");
+  if (!id) { id = crypto.randomUUID(); sessionStorage.setItem("activitySessionId", id); }
+  return id;
+})();
+
+let _activityQueue = [];
+let _stuckTracker = new Map(); // targetLabel -> { count, firstClickAt }
+const STUCK_WINDOW_MS = 8000;
+const STUCK_THRESHOLD = 2;
+
+function queueActivityEvent(event) {
+  _activityQueue.push({ ...event, path: window.location.pathname });
+  if (_activityQueue.length >= 20) flushActivityQueue();
+}
+
+async function flushActivityQueue(useKeepalive = false) {
+  if (!_activityQueue.length) return;
+  const events = _activityQueue.splice(0, _activityQueue.length);
+  try {
+    await fetch(`${API_BASE}/activity/events`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) },
+      body: JSON.stringify({ sessionId: ACTIVITY_SESSION_ID, events }),
+      keepalive: useKeepalive, // true only on page-unload flush — lets the request survive navigation, unlike a normal fetch
+    });
+  } catch {
+    // Tracking must never surface an error to the guest — silently drop
+    // this batch. The 5-second interval + unload flush below mean a
+    // single lost batch is a minor gap in the timeline, not a crisis.
+  }
+}
+setInterval(() => flushActivityQueue(false), 5000);
+window.addEventListener("pagehide", () => flushActivityQueue(true));
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushActivityQueue(true); });
+
+async function reportStuck(targetLabel, clickCount) {
+  try {
+    await fetch(`${API_BASE}/activity/stuck`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}) },
+      body: JSON.stringify({ sessionId: ACTIVITY_SESSION_ID, targetLabel, path: window.location.pathname, clickCount, windowSeconds: STUCK_WINDOW_MS / 1000 }),
+    });
+  } catch { /* same fail-silent reasoning as above */ }
+}
+
+function trackedLabelFor(el) {
+  const tracked = el.closest("[data-track]");
+  if (tracked) return tracked.getAttribute("data-track");
+  if (el.id) return `#${el.id}`;
+  const text = (el.textContent || "").trim().slice(0, 60);
+  return text || el.tagName.toLowerCase();
+}
+
+document.addEventListener("click", (e) => {
+  const interactive = e.target.closest("button, a, [role=button], input[type=submit]");
+  if (!interactive) return;
+  const label = trackedLabelFor(interactive);
+  if (label === "ignore") return;
+
+  queueActivityEvent({ type: "CLICK", targetLabel: label });
+
+  const now = Date.now();
+  const entry = _stuckTracker.get(label);
+  if (entry && now - entry.firstClickAt <= STUCK_WINDOW_MS) {
+    entry.count += 1;
+    if (entry.count === STUCK_THRESHOLD) {
+      reportStuck(label, entry.count);
+      queueActivityEvent({ type: "STUCK", targetLabel: label, message: `${entry.count} clicks within ${STUCK_WINDOW_MS / 1000}s` });
+    }
+  } else {
+    _stuckTracker.set(label, { count: 1, firstClickAt: now });
+  }
+}, true); // capture phase — sees the click even if a handler further down calls stopPropagation()
+
+window.addEventListener("error", (e) => {
+  queueActivityEvent({ type: "ERROR", message: (e.message || "Unknown error").slice(0, 500) });
+});
+window.addEventListener("unhandledrejection", (e) => {
+  queueActivityEvent({ type: "ERROR", message: `Unhandled promise rejection: ${String(e.reason).slice(0, 500)}` });
+});
+
+/* ============================================================
    SHARED / BOOT
    ============================================================ */
 function showNotice(containerId, message, type = "error") {
@@ -1520,6 +1699,41 @@ function showNotice(containerId, message, type = "error") {
   setTimeout(() => { if (el) el.innerHTML = ""; }, 4500);
 }
 function showAuth() { document.getElementById("authScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
+
+/** Called once, on page load, before anything else — checks whether this
+ * page load IS a guest landing back from Paystack checkout. If so,
+ * verifies directly with Paystack via the backend (not trusting the
+ * URL alone — that endpoint independently confirms with Paystack's own
+ * API), instead of leaving confirmation entirely up to the webhook. The
+ * URL is cleaned immediately so a page refresh can't re-trigger this. */
+async function checkForPaymentReturn() {
+  const params = new URLSearchParams(window.location.search);
+  const reference = params.get("reference") || params.get("trxref");
+  if (!reference) return;
+
+  // Clean the URL right away, before the network call — if the guest
+  // refreshes mid-verification, we don't want to re-submit the same
+  // reference (harmless since the backend is idempotent, but pointless).
+  window.history.replaceState({}, "", window.location.pathname);
+
+  try {
+    const { confirmed } = await guestApi.verifyPaystackPayment(reference);
+    if (confirmed) {
+      showNotice("orderNotice", "Payment confirmed! Your booking/order is now active.", "success");
+    } else {
+      // Verified with Paystack directly, and Paystack itself says it
+      // didn't succeed — genuinely not paid (cancelled, failed, etc.),
+      // not just "still waiting."
+      showNotice("orderNotice", "We couldn't confirm that payment. If you were charged, contact support and we'll sort it out.");
+    }
+  } catch (err) {
+    // Network/server hiccup on OUR side calling Paystack — the hourly
+    // background reconciliation job (reconcileStuckOrderPayments) is
+    // the safety net for exactly this case, so this isn't a dead end,
+    // just not instant. Say so rather than leaving the guest guessing.
+    showNotice("orderNotice", "We're still confirming your payment — this can take a few minutes. Check My Bookings shortly.");
+  }
+}
 
 /** Page-independent — deliberately not tied to any page's own notice
  * container, since switchPage()'s loader() runs async and the container
@@ -1591,6 +1805,7 @@ document.getElementById("mobileNavToggle").addEventListener("click", () => {
 
 // Boot
 hydratePlatformName();
+checkForPaymentReturn();
 if (getToken() && getGuest()) { showApp(); } else { showAuth(); }
 </script>
 </body>

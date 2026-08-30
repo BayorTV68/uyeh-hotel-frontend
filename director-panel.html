@@ -573,6 +573,9 @@ const adminApi = {
 
   // Branches — Director only
   listBranches: () => adminRequest("/director/branches"),
+  listBugSignals: (resolved) => adminRequest(`/director/bug-signals${resolved ? "?resolved=true" : ""}`),
+  getBugSignalTimeline: (id) => adminRequest(`/director/bug-signals/${id}/timeline`),
+  resolveBugSignal: (id) => adminRequest(`/director/bug-signals/${id}/resolve`, { method: "PATCH" }),
   createBranch: (payload) => adminRequest("/director/branches", { method: "POST", body: JSON.stringify(payload) }),
   updateBranch: (id, payload) => adminRequest(`/director/branches/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
 
@@ -782,6 +785,7 @@ const NAV_GROUPS = [
       { page: "managers", label: "Managers", icon: "fa-user-tie" },
       { page: "corporate", label: "Corporate Accounts", icon: "fa-briefcase" },
       { page: "auditlog", label: "Audit Log", icon: "fa-clipboard-list" },
+      { page: "bugsignals", label: "Bug Signals", icon: "fa-bug", badgeId: "bugSignalsNavBadge" },
       { page: "analytics", label: "Analytics", icon: "fa-chart-line" },
     ],
   },
@@ -926,6 +930,7 @@ const PAGE_LOADERS = {
   transactions: loadTransactionsPage,
   promocodes: loadPromoCodesPage,
   auditlog: loadAuditLogPage,
+  bugsignals: loadBugSignalsPage,
   analytics: loadAnalyticsPage,
   settings: loadSettingsPage,
   sitesettings: loadSiteSettingsPage,
@@ -3319,6 +3324,144 @@ async function loadAnalyticsPage() {
     showNotice("analyticsNotice", err.message);
   }
 }
+
+
+/* ============================================================
+   BUG SIGNALS — the actionable queue from the guest activity
+   tracker. "View timeline" is the actual replay: the full ordered
+   sequence of what that guest did, reconstructed from every
+   PAGE_VIEW/CLICK/API_CALL/ERROR event in that session.
+   ============================================================ */
+let _bugSignalsShowResolved = false;
+
+async function loadBugSignalsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Bug Signals", "Guests who got stuck clicking the same thing repeatedly — usually means something broke.")}
+    <div class="panel" style="margin-bottom:16px; display:flex; gap:10px; align-items:center;">
+      <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+        <input type="checkbox" id="bsShowResolved" onchange="_bugSignalsShowResolved=this.checked; refreshBugSignals();">
+        Show resolved
+      </label>
+    </div>
+    <div id="bugSignalsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>When</th><th>Guest</th><th>Page</th><th>Stuck on</th><th>Clicks</th><th>Actions</th></tr></thead>
+        <tbody id="bugSignalsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await refreshBugSignals();
+  _bugSignalsPollInterval && clearInterval(_bugSignalsPollInterval);
+  _bugSignalsPollInterval = setInterval(refreshBugSignalsBadgeOnly, 30000);
+}
+
+async function refreshBugSignals() {
+  try {
+    const { signals } = await adminApi.listBugSignals(_bugSignalsShowResolved);
+    document.getElementById("bugSignalsBody").innerHTML = signals.length ? signals.map((s) => `
+      <tr>
+        <td>${new Date(s.createdAt).toLocaleString()}</td>
+        <td>${s.guest ? escapeHtmlLocal(s.guest.name) : "Anonymous"}</td>
+        <td><code>${escapeHtmlLocal(s.path)}</code></td>
+        <td>${escapeHtmlLocal(s.targetLabel)}</td>
+        <td>${s.clickCount}× in ${s.windowSeconds}s</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick="openTimelineModal('${s.id}')">View timeline</button>
+          ${!s.resolvedAt ? `<button class="btn btn-sm btn-outline" onclick="markBugSignalResolved('${s.id}')">Mark resolved</button>` : `<span class="badge badge-resolved">Resolved</span>`}
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">${_bugSignalsShowResolved ? "No resolved signals." : "Nothing stuck right now."}</td></tr>`;
+
+    const unresolvedCount = _bugSignalsShowResolved ? 0 : signals.length;
+    updateBugSignalsBadge(unresolvedCount);
+  } catch (err) {
+    document.getElementById("bugSignalsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+
+// Lightweight version for the background poll — only touches the badge,
+// never re-renders the table out from under someone reading it.
+async function refreshBugSignalsBadgeOnly() {
+  try {
+    const { signals } = await adminApi.listBugSignals(false);
+    updateBugSignalsBadge(signals.length);
+  } catch { /* silent — this is a background poll, not a user action */ }
+}
+
+function updateBugSignalsBadge(count) {
+  const el = document.getElementById("bugSignalsNavBadge");
+  if (!el) return;
+  el.textContent = count;
+  el.style.display = count ? "flex" : "none";
+  el.classList.toggle("visible", count > 0);
+}
+
+async function markBugSignalResolved(id) {
+  try {
+    await adminApi.resolveBugSignal(id);
+    showNotice("bugSignalsNotice", "Marked resolved.", "success");
+    refreshBugSignals();
+  } catch (err) {
+    showNotice("bugSignalsNotice", err.message);
+  }
+}
+
+const ACTIVITY_EVENT_ICONS = { PAGE_VIEW: "fa-file", CLICK: "fa-hand-pointer", API_CALL: "fa-arrows-turn-to-dots", ERROR: "fa-triangle-exclamation", STUCK: "fa-bug" };
+
+async function openTimelineModal(signalId) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "timelineModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:640px; max-height:80vh; overflow-y:auto;">
+      <h3>Session timeline</h3>
+      <div id="timelineModalContent"><div class="loading-state">Loading…</div></div>
+      <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('timelineModal').remove()">Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  try {
+    const { signal, events } = await adminApi.getBugSignalTimeline(signalId);
+    document.getElementById("timelineModalContent").innerHTML = `
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:14px;">
+        ${signal.guest ? escapeHtmlLocal(signal.guest.name) : "Anonymous guest"} — stuck on <strong>${escapeHtmlLocal(signal.targetLabel)}</strong>
+      </p>
+      <div style="border-left:2px solid var(--border); padding-left:16px;">
+        ${events.map((e) => `
+          <div style="margin-bottom:14px; position:relative;">
+            <i class="fa-solid ${ACTIVITY_EVENT_ICONS[e.type] || "fa-circle"}" style="position:absolute; left:-22px; top:2px; color:var(--text-muted); font-size:0.8rem;"></i>
+            <div style="font-size:0.78rem; color:var(--text-muted);">${new Date(e.createdAt).toLocaleTimeString()}</div>
+            <div>${describeActivityEvent(e)}</div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  } catch (err) {
+    document.getElementById("timelineModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+function describeActivityEvent(e) {
+  switch (e.type) {
+    case "PAGE_VIEW": return `Viewed <code>${escapeHtmlLocal(e.path)}</code>`;
+    case "CLICK": return `Clicked <strong>${escapeHtmlLocal(e.targetLabel || "something")}</strong>`;
+    case "API_CALL": return `${e.method || ""} request — <span style="color:${e.statusCode >= 400 ? "#b3261e" : "inherit"};">${e.statusCode || "?"}</span> (${e.durationMs ?? "?"}ms)`;
+    case "ERROR": return `<span style="color:#b3261e;">Error:</span> ${escapeHtmlLocal(e.message || "")}`;
+    case "STUCK": return `<span style="color:#b3261e; font-weight:600;">Stuck:</span> ${escapeHtmlLocal(e.message || "")}`;
+    default: return e.type;
+  }
+}
+
+// Small local escaper — if this file already defines a shared escapeHtml
+// helper elsewhere, delete this and use that one instead; this exists
+// only so the patch doesn't assume one that might not be there.
+function escapeHtmlLocal(str) {
+  const div = document.createElement("div");
+  div.textContent = str == null ? "" : String(str);
+  return div.innerHTML;
+}
+
+let _bugSignalsPollInterval = null;
 
 /* ============================================================
    AUDIT LOG — Director only
