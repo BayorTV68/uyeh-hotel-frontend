@@ -36,7 +36,7 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); line-height: 1.55; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-body); background: var(--ink); color: var(--ivory); line-height: 1.55; -webkit-font-smoothing: antialiased; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
@@ -115,7 +115,7 @@ html.has-cursor, html.has-cursor a, html.has-cursor button { cursor: none; }
    drift + mouse-parallax transform never fights the grain/gradient
    overlays below. Renders nothing but the solid ink color when the
    Director hasn't set a hero image yet. */
-.hero-bg { position: absolute; inset: -8%; z-index: -2; background-image: var(--hero-image, none); background-size: cover; background-position: 70% center; transform: translate3d(0, 0, 0) scale(1.08); will-change: transform; }
+.hero-bg { position: absolute; inset: -8%; z-index: -2; width: 116%; height: 116%; object-fit: cover; object-position: 70% center; transform: translate3d(0, 0, 0) scale(1.08); will-change: transform; background: var(--ink); }
 .hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.16) 0, transparent 45%), radial-gradient(circle at 85% 75%, rgba(47, 93, 90, 0.4) 0, transparent 50%), linear-gradient(180deg, rgba(20,24,31,0.15) 0%, rgba(20,24,31,0.55) 100%); pointer-events: none; }
 .hero .wrap { position: relative; }
 .hero-content { max-width: 620px; }
@@ -196,10 +196,10 @@ html.has-cursor, html.has-cursor a, html.has-cursor button { cursor: none; }
 /* ---- Section scaffolding ---- */
 section { padding: 96px 0; }
 .section-head { max-width: 640px; margin-bottom: 56px; }
-.section-head .eyebrow { color: var(--teal); opacity: 1; transform: none; transition: none; }
-.section-head .eyebrow::before { background: var(--teal); }
-.section-head h2 { font-size: clamp(1.9rem, 3.5vw, 2.6rem); color: var(--ink); }
-.section-head p { color: var(--text-muted); margin-top: 14px; font-size: 1.02rem; }
+.section-head .eyebrow { color: var(--brass-light); opacity: 1; transform: none; transition: none; }
+.section-head .eyebrow::before { background: var(--brass); }
+.section-head h2 { font-size: clamp(1.9rem, 3.5vw, 2.6rem); color: var(--ivory); }
+.section-head p { color: rgba(237, 230, 214, 0.65); margin-top: 14px; font-size: 1.02rem; }
 
 /* Word-cascade mask reveal — used on every section h2. Each word sits
    in its own overflow-hidden mask; the inner span slides up from
@@ -234,16 +234,15 @@ h2.is-visible .mask-word-inner { transform: translateY(0); }
 /* Skeleton loading state — replaces the plain "Loading…" text with a
    shimmering placeholder shaped like the real cards. */
 .skeleton-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; }
-.skeleton-card { height: 280px; border-radius: 4px; background: linear-gradient(100deg, rgba(107,99,85,0.06) 30%, rgba(107,99,85,0.14) 50%, rgba(107,99,85,0.06) 70%); background-size: 200% 100%; animation: shimmer 1.6s ease-in-out infinite; }
+.skeleton-card { height: 280px; border-radius: 4px; background: linear-gradient(100deg, rgba(237,230,214,0.04) 30%, rgba(237,230,214,0.1) 50%, rgba(237,230,214,0.04) 70%); background-size: 200% 100%; animation: shimmer 1.6s ease-in-out infinite; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton-card { animation: none; background-position: 0 0; } }
 
-/* ---- Amenities band ---- */
-.amenities-band { background: var(--ink); color: var(--text-on-ink); }
-.amenities-band .section-head h2 { color: var(--ivory); }
-.amenities-band .section-head p { color: rgba(237, 230, 214, 0.65); }
-.amenities-band .section-head .eyebrow { color: var(--brass-light); }
-.amenities-band .section-head .eyebrow::before { background: var(--brass); }
+/* ---- Amenities band — a hair lighter than the page's own --ink so it
+   still reads as a distinct band now that every section is dark, without
+   the harder light/dark seam this had when it was the page's one dark
+   moment against an otherwise ivory page. ---- */
+.amenities-band { background: var(--ink-soft); color: var(--text-on-ink); }
 .amenity-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 40px; }
 .amenity-item .key-tag { margin-bottom: 20px; }
 .amenity-item h4 { font-size: 1.15rem; margin-bottom: 10px; color: var(--ivory); }
@@ -261,14 +260,14 @@ h2.is-visible .mask-word-inner { transform: translateY(0); }
 .trust-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 36px; }
 .trust-item .key-tag { margin-bottom: 18px; }
 .trust-item h4 { font-size: 1.05rem; margin-bottom: 8px; }
-.trust-item p { color: var(--text-muted); font-size: 0.9rem; }
+.trust-item p { color: rgba(237, 230, 214, 0.6); font-size: 0.9rem; }
 
 /* ---- CTA banner ---- */
 .cta-banner { background: linear-gradient(135deg, var(--teal) 0%, var(--ink) 100%); color: var(--ivory); text-align: center; padding: 90px 0; }
 .cta-banner h2 { color: var(--ivory); font-size: clamp(1.9rem, 3.5vw, 2.6rem); margin-bottom: 16px; }
 .cta-banner p { color: rgba(237,230,214,0.7); max-width: 46ch; margin: 0 auto 32px; font-size: 1.02rem; }
 
-.loading-state, .empty-state { padding: 48px 0; text-align: center; color: var(--text-muted); }
+.loading-state, .empty-state { padding: 48px 0; text-align: center; color: rgba(237, 230, 214, 0.55); }
 
 /* ---- Subtle grain texture — used on dark/tonal sections for warmth
    instead of relying on photography we don't have yet ---- */
@@ -289,7 +288,7 @@ h2.is-visible .mask-word-inner { transform: translateY(0); }
 
 /* ---- Signature Experiences ---- */
 .experience-grid { display: grid; grid-template-columns: 1.3fr 1fr; grid-template-rows: auto auto; gap: 24px; }
-.experience-card { position: relative; border-radius: 4px; overflow: hidden; color: var(--ivory); min-height: 280px; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px; isolation: isolate; }
+.experience-card { position: relative; border-radius: 4px; overflow: hidden; color: var(--ivory); min-height: 280px; display: flex; flex-direction: column; justify-content: flex-end; padding: 32px; isolation: isolate; border: 1px solid rgba(237, 230, 214, 0.08); }
 .experience-card::before { content: ""; position: absolute; inset: 0; z-index: -1; transition: transform 0.7s var(--ease-out); }
 .experience-card:hover::before { transform: scale(1.08); }
 .experience-card::after { content: ""; position: absolute; inset: 0; z-index: -1; background: linear-gradient(180deg, rgba(20,24,31,0) 0%, rgba(20,24,31,0.75) 100%); }
@@ -349,7 +348,7 @@ footer a:hover { color: var(--brass-light); }
 </nav>
 
 <header class="hero grain">
-  <div class="hero-bg" id="heroBg"></div>
+  <video class="hero-bg" id="heroBg" muted loop autoplay playsinline></video>
   <div class="wrap">
     <div class="hero-content">
       <p class="hero-intro-blur" id="heroBlur">Before anything else — a word on how<br>we like to welcome people.</p>
@@ -377,7 +376,7 @@ footer a:hover { color: var(--brass-light); }
   <div class="scroll-cue" id="scrollCue"><span>Scroll</span><span class="line"></span></div>
 </header>
 <div class="tide-divider">
-  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
+  <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" style="fill: var(--ink);"/></svg>
 </div>
 
 <div class="marquee" aria-hidden="true">
@@ -691,8 +690,8 @@ footer a:hover { color: var(--brass-light); }
         footerBrand.textContent = name;
       }
 
-      if (settings.heroImageUrl) {
-        document.documentElement.style.setProperty("--hero-image", `url("${settings.heroImageUrl}")`);
+      if (settings.heroVideoUrl) {
+        document.getElementById("heroBg").src = settings.heroVideoUrl;
       }
 
       if (settings.brand) {

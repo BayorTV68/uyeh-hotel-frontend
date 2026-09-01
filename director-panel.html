@@ -488,27 +488,13 @@ async function adminUpload(path, file) {
   return data;
 }
 
-async function adminUpload(path, file) {
+// Same shape as adminUpload, but the field name matches what
+// uploadVideo.single("video") on the backend actually expects — reusing
+// adminUpload here would silently send a video under a field named
+// "image", which the video route was never told to look for.
+async function adminUploadVideo(path, file) {
   const form = new FormData();
-  form.append("image", file);
-  const res = await fetch(`${API_BASE}${path}`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${getToken()}` },
-    body: form,
-  });
-  if (res.status === 401) {
-    clearSession();
-    showLogin();
-    throw new Error("Session expired");
-  }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
-  return data;
-}
-
-async function adminUpload(path, file) {
-  const form = new FormData();
-  form.append("image", file);
+  form.append("video", file);
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${getToken()}` },
@@ -3799,6 +3785,39 @@ function switchSiteSettingsTab(tab) {
   renderSiteSettingsTab(tab);
 }
 
+async function uploadHeroVideo(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const status = document.getElementById("heroVideoUploadStatus");
+  status.textContent = "Uploading — this can take a moment for larger files…";
+  try {
+    const { settings } = await adminUploadVideo("/director/settings/hero-video", file);
+    window._siteSettings = settings;
+    // The video is already saved server-side the moment this resolves —
+    // nothing left for the main Save button to do for this field, so
+    // don't leave an "unsaved changes" bar showing because of it.
+    _siteSettingsDirty = false;
+    document.getElementById("siteSettingsSaveBar").classList.remove("show");
+    renderSiteSettingsTab("identity");
+    showNotice("siteSettingsNotice", "Hero video uploaded.", "success");
+  } catch (err) {
+    status.textContent = "";
+    showNotice("siteSettingsNotice", err.message);
+  }
+}
+
+async function removeHeroVideo() {
+  if (!confirm("Remove the hero video? The public homepage hero will show nothing until a new one is uploaded.")) return;
+  try {
+    const { settings } = await adminRequest("/director/settings/hero-video", { method: "DELETE" });
+    window._siteSettings = settings;
+    renderSiteSettingsTab("identity");
+    showNotice("siteSettingsNotice", "Hero video removed.", "success");
+  } catch (err) {
+    showNotice("siteSettingsNotice", err.message);
+  }
+}
+
 function discardSiteSettingsChanges() {
   _siteSettingsDirty = false;
   document.getElementById("siteSettingsSaveBar").classList.remove("show");
@@ -3844,7 +3863,24 @@ function renderSiteSettingsTab(tab) {
         <div class="form-field"><label>Logo URL</label><input type="text" name="logoUrl" value="${s.logoUrl || ""}"></div>
         <div class="form-field"><label>Favicon URL</label><input type="text" name="faviconUrl" value="${s.faviconUrl || ""}"></div>
       </div>
-      <div class="form-field"><label>Hero image URL</label><input type="text" name="heroImageUrl" value="${s.heroImageUrl || ""}"></div>
+      <div class="form-field"><label>Hero image URL <span style="color:var(--text-muted); font-weight:400;">(used for link-preview cards, not the homepage hero)</span></label><input type="text" name="heroImageUrl" value="${s.heroImageUrl || ""}"></div>
+      <div class="form-field">
+        <label>Hero video</label>
+        ${s.heroVideoUrl ? `
+          <video src="${s.heroVideoUrl}" muted loop autoplay playsinline style="width:100%; max-width:360px; border-radius:8px; display:block; margin-bottom:8px; background:#000;"></video>
+          <div style="display:flex; gap:8px;">
+            <label class="btn btn-outline" style="cursor:pointer;">Replace<input type="file" accept="video/*" style="display:none;" onchange="uploadHeroVideo(this)"></label>
+            <button type="button" class="btn btn-danger" onclick="removeHeroVideo()">Remove</button>
+          </div>
+        ` : `
+          <label class="btn btn-outline" style="cursor:pointer; display:inline-block;">
+            <i class="fas fa-upload"></i> Upload hero video
+            <input type="file" accept="video/*" style="display:none;" onchange="uploadHeroVideo(this)">
+          </label>
+          <p style="font-size:0.78rem; color:var(--text-muted); margin-top:6px;">The public homepage hero is video-only — nothing shows there until one is uploaded here.</p>
+        `}
+        <div id="heroVideoUploadStatus" style="font-size:0.8rem; margin-top:6px; color:var(--text-muted);"></div>
+      </div>
       <div class="form-row">
         <div class="form-field"><label>Instagram URL</label><input type="text" id="ssSocialInstagram" value="${s.socialLinks?.instagram || ""}"></div>
         <div class="form-field"><label>Facebook URL</label><input type="text" id="ssSocialFacebook" value="${s.socialLinks?.facebook || ""}"></div>
