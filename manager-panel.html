@@ -3011,5 +3011,1696 @@ document.getElementById("ticketsBellBtn").addEventListener("click", () => switch
 // Boot
 if (getToken() && getStaff()) { showApp(); } else { showLogin(); }
 </script>
+<script>
+/* ============================================================
+   OXYGEN HOTEL · MANAGER PANEL — CAPABILITY EXPANSION LAYER
+   Adds full coverage of the branch-scoped /api/manager surface:
+   front desk (check-in / check-out / assign / transfer / refund /
+   invoice), housekeeping board & tasks, maintenance work orders,
+   rates & channel mapping, spa scheduling & resources, stock
+   transfers & purchase-order receiving, order desk (lines, void,
+   split, close, reopen, walk-in orders), invoices & refunds,
+   roster & departments, event attendees & ticket scanning, and the
+   full report/export set.
+
+   Director-only actions are deliberately absent:
+     · PATCH /manager/transactions/:id/refund   (Director only)
+     · upcoming-event approval / rejection      (Director only)
+     · newsletter sending                       (Director only)
+     · staff activation/deactivation            (Director only)
+     · brand / payout / policy branch fields    (Director only)
+   Every call below is branch-scoped server-side; this panel never
+   sends a branchId of its own.
+   ============================================================ */
+
+/* ---------- permission-aware visibility ---------- */
+// Managers pass every requireBranchAccess() check server-side, so they see
+// everything for their own branch. Staff-type sessions are filtered by their
+// granted permission list so nothing is shown that would 403.
+function hasPermission(perm) {
+  const s = getStaff();
+  if (!s) return false;
+  const role = String(s.type || s.role || "").toUpperCase();
+  if (role === "MANAGER" || role === "DIRECTOR") return true;
+  if (!perm) return true;
+  return Array.isArray(s.permissions) && s.permissions.includes(perm);
+}
+
+/* ---------- extra API surface ---------- */
+Object.assign(managerApi, {
+  // Front desk / bookings
+  assignRoom: (id, roomId) => adminRequest(`/manager/bookings/${id}/assign-room`, { method: "POST", body: JSON.stringify(roomId ? { roomId } : {}) }),
+  checkInBooking: (id, payload) => adminRequest(`/manager/bookings/${id}/check-in`, { method: "POST", body: JSON.stringify(payload) }),
+  checkOutBooking: (id, payload) => adminRequest(`/manager/bookings/${id}/check-out`, { method: "POST", body: JSON.stringify(payload || {}) }),
+  transferBooking: (id, payload) => adminRequest(`/manager/bookings/${id}/transfer`, { method: "POST", body: JSON.stringify(payload) }),
+  refundBooking: (id, payload) => adminRequest(`/manager/bookings/${id}/refund`, { method: "POST", body: JSON.stringify(payload) }),
+  createBookingInvoice: (id, kind) => adminRequest(`/manager/bookings/${id}/invoice`, { method: "POST", body: JSON.stringify({ kind }) }),
+  getGroupBooking: (id) => adminRequest(`/manager/group-bookings/${id}`),
+  updateGroupBookingStatus: (id, status) => adminRequest(`/manager/group-bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  // Housekeeping board, tasks, maintenance
+  getHousekeepingBoard: () => adminRequest("/manager/housekeeping/board"),
+  createHousekeepingTask: (payload) => adminRequest("/manager/housekeeping/tasks", { method: "POST", body: JSON.stringify(payload) }),
+  updateHousekeepingTask: (id, payload) => adminRequest(`/manager/housekeeping/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  listMaintenance: (status) => adminRequest(`/manager/maintenance${status ? `?status=${status}` : ""}`),
+  createMaintenance: (payload) => adminRequest("/manager/maintenance", { method: "POST", body: JSON.stringify(payload) }),
+  updateMaintenance: (id, payload) => adminRequest(`/manager/maintenance/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  // Rates & channels
+  getRates: (roomTypeId, from, to) => adminRequest(`/manager/room-types/${roomTypeId}/rates?from=${from}&to=${to}`),
+  putRates: (roomTypeId, payload) => adminRequest(`/manager/room-types/${roomTypeId}/rates`, { method: "PUT", body: JSON.stringify(payload) }),
+  clearRates: (roomTypeId, payload) => adminRequest(`/manager/room-types/${roomTypeId}/rates`, { method: "DELETE", body: JSON.stringify(payload) }),
+  createChannelMapping: (payload) => adminRequest("/manager/channels", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Spa scheduling
+  getSpaSchedule: (date) => adminRequest(`/manager/spa/schedule${date ? `?date=${date}` : ""}`),
+  listSpaResources: () => adminRequest("/manager/spa/resources"),
+  createSpaResource: (payload) => adminRequest("/manager/spa/resources", { method: "POST", body: JSON.stringify(payload) }),
+  blockSpaResource: (id, payload) => adminRequest(`/manager/spa/resources/${id}/block`, { method: "POST", body: JSON.stringify(payload) }),
+
+  // Stock logistics
+  transferStock: (payload) => adminRequest("/manager/stock/transfer", { method: "POST", body: JSON.stringify(payload) }),
+  receivePurchaseOrder: (id, lines) => adminRequest(`/manager/purchase-orders/${id}/receive`, { method: "POST", body: JSON.stringify({ lines }) }),
+
+  // Events & tickets
+  listEventAttendees: (id) => adminRequest(`/manager/events/${id}/attendees`),
+  attendeesExportUrl: (id, format) => `${API_BASE}/manager/events/${id}/attendees?format=${format}&token=${getToken()}`,
+  redeemTicket: (code) => adminRequest("/manager/tickets/redeem", { method: "POST", body: JSON.stringify({ code }) }),
+
+  // Order desk
+  getOrder: (id) => adminRequest(`/manager/orders/${id}`),
+  createStaffOrder: (payload) => adminRequest("/manager/orders", { method: "POST", body: JSON.stringify(payload) }),
+  searchGuests: (q) => adminRequest(`/manager/guests/search?q=${encodeURIComponent(q)}`),
+  addOrderLine: (id, payload) => adminRequest(`/manager/orders/${id}/lines`, { method: "POST", body: JSON.stringify(payload) }),
+  updateOrderLine: (orderId, lineId, payload) => adminRequest(`/manager/orders/${orderId}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  voidOrderLine: (orderId, lineId, payload) => adminRequest(`/manager/orders/${orderId}/lines/${lineId}/void`, { method: "POST", body: JSON.stringify(payload) }),
+  splitOrder: (id, assignments) => adminRequest(`/manager/orders/${id}/split`, { method: "POST", body: JSON.stringify({ assignments }) }),
+  closeOrder: (id) => adminRequest(`/manager/orders/${id}/close`, { method: "POST" }),
+  reopenOrder: (id, reason) => adminRequest(`/manager/orders/${id}/reopen`, { method: "POST", body: JSON.stringify({ reason }) }),
+
+  // Invoices & refunds (no Director-only transaction refund here, by design)
+  listInvoices: (filters = {}) => adminRequest(`/manager/invoices?${new URLSearchParams(filters)}`),
+  getInvoice: (id) => adminRequest(`/manager/invoices/${id}`),
+  creditNote: (id, payload) => adminRequest(`/manager/invoices/${id}/credit-note`, { method: "POST", body: JSON.stringify(payload) }),
+  sendInvoice: (id, email) => adminRequest(`/manager/invoices/${id}/send`, { method: "POST", body: JSON.stringify(email ? { email } : {}) }),
+  corporateInvoice: (id, payload) => adminRequest(`/manager/corporate-accounts/${id}/invoice`, { method: "POST", body: JSON.stringify(payload) }),
+  listRefunds: (status) => adminRequest(`/manager/refunds${status ? `?status=${status}` : ""}`),
+  retryRefund: (id) => adminRequest(`/manager/refunds/${id}/retry`, { method: "POST" }),
+
+  // People
+  createDepartment: (payload) => adminRequest("/manager/departments", { method: "POST", body: JSON.stringify(payload) }),
+  getRoster: (from, to) => adminRequest(`/manager/roster?from=${from}&to=${to}`),
+  saveRoster: (shifts) => adminRequest("/manager/roster", { method: "POST", body: JSON.stringify({ shifts }) }),
+  publishRoster: (from, to) => adminRequest("/manager/roster/publish", { method: "POST", body: JSON.stringify({ from, to }) }),
+
+  // Reports & exports
+  foodCostReport: (from, to) => adminRequest(`/manager/reports/food-cost?from=${from}&to=${to}`),
+  performanceReport: (from, to) => adminRequest(`/manager/reports/performance?from=${from}&to=${to}`),
+  nightAuditReport: (date) => adminRequest(`/manager/reports/night-audit${date ? `?date=${date}` : ""}`),
+  exportUrl: (kind, params) => `${API_BASE}/manager/exports/${kind}?${new URLSearchParams(params)}&token=${getToken()}`,
+});
+
+/* ---------- shared helpers for the new pages ---------- */
+function mp8Esc(v) { return String(v == null ? "" : v).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function mp8Money(n, cur) { if (n == null || n === "") return "—"; return `${cur || "NGN"} ${Number(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function mp8Date(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
+function mp8DateTime(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+function mp8Today(offsetDays = 0) { const d = new Date(); d.setDate(d.getDate() + offsetDays); return d.toISOString().slice(0, 10); }
+function mp8Badge(v) { return `<span class="badge badge-${String(v || "").toLowerCase()}">${mp8Esc(String(v || "—").replace(/_/g, " ").toLowerCase())}</span>`; }
+function mp8Options(list, selected) { return list.map((v) => `<option value="${v}"${v === selected ? " selected" : ""}>${mp8Esc(String(v).replace(/_/g, " "))}</option>`).join(""); }
+
+function mp8CloseModal() { const el = document.getElementById("mp8Modal"); if (el) el.remove(); }
+function mp8OpenModal(title, bodyHtml, actionsHtml, width = 560) {
+  mp8CloseModal();
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "mp8Modal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:${width}px;">
+      <div class="modal-header"><h3>${mp8Esc(title)}</h3><button class="modal-close" onclick="mp8CloseModal()">&times;</button></div>
+      <div id="mp8ModalNotice"></div>
+      <div class="modal-body">${bodyHtml}</div>
+      <div class="modal-actions">${actionsHtml || `<button class="btn btn-outline" onclick="mp8CloseModal()">Close</button>`}</div>
+    </div>`;
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) mp8CloseModal(); });
+  document.body.appendChild(overlay);
+}
+function mp8ModalNotice(message, type = "error") {
+  const el = document.getElementById("mp8ModalNotice");
+  if (el) el.innerHTML = `<div class="notice ${type}" style="margin:0 20px;">${mp8Esc(message)}</div>`;
+}
+function mp8Val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ""; }
+function mp8Checked(id) { const el = document.getElementById(id); return !!(el && el.checked); }
+function mp8Notice(containerId, message, type = "error") { showNotice(containerId, mp8Esc(message), type); }
+function mp8Empty(colspan, text) { return `<tr><td colspan="${colspan}"><div class="empty-state">${mp8Esc(text)}</div></td></tr>`; }
+function mp8Error(container, err) {
+  document.getElementById(container).innerHTML = `<div class="notice error">${mp8Esc(err.message || "Something went wrong")}</div>`;
+}
+
+/* ============================================================
+   FRONT DESK — arrivals, in-house, departures, and the full
+   check-in / check-out / assign / transfer / refund / invoice set
+   ============================================================ */
+let _fdBookings = [];
+let _fdRooms = [];
+
+async function loadFrontDeskPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Front Desk", "Arrivals, in-house guests and departures for your branch")}
+    <div class="panel">
+      <div class="panel-header">
+        <div class="tabs" id="fdTabs">
+          <button class="tab active" data-fd="ARRIVALS" onclick="fdSwitchTab('ARRIVALS', this)">Arrivals</button>
+          <button class="tab" data-fd="INHOUSE" onclick="fdSwitchTab('INHOUSE', this)">In-house</button>
+          <button class="tab" data-fd="DEPARTURES" onclick="fdSwitchTab('DEPARTURES', this)">Departures</button>
+          <button class="tab" data-fd="ALL" onclick="fdSwitchTab('ALL', this)">All bookings</button>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="fdRefresh()"><i class="fas fa-rotate"></i> Refresh</button>
+      </div>
+      <div id="fdNotice"></div>
+      <div id="fdTable"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await fdRefresh();
+}
+let _fdTab = "ARRIVALS";
+function fdSwitchTab(tab, btn) {
+  _fdTab = tab;
+  document.querySelectorAll("#fdTabs .tab").forEach((b) => b.classList.toggle("active", b === btn));
+  fdRender();
+}
+async function fdRefresh() {
+  try {
+    const [b, r] = await Promise.all([managerApi.listBookings(), managerApi.listRooms()]);
+    _fdBookings = b.bookings || []; _fdRooms = r.rooms || [];
+    fdRender();
+  } catch (err) { mp8Error("fdTable", err); }
+}
+function fdRender() {
+  const today = mp8Today();
+  const rows = _fdBookings.filter((b) => {
+    const ci = (b.checkIn || "").slice(0, 10), co = (b.checkOut || "").slice(0, 10);
+    if (_fdTab === "ARRIVALS") return ci <= today && ["PENDING", "CONFIRMED"].includes(b.status);
+    if (_fdTab === "INHOUSE") return b.status === "CHECKED_IN";
+    if (_fdTab === "DEPARTURES") return b.status === "CHECKED_IN" && co <= today;
+    return true;
+  });
+  document.getElementById("fdTable").innerHTML = `
+    <div class="table-wrap"><table>
+      <thead><tr><th>Guest</th><th>Room</th><th>Stay</th><th>Status</th><th>Amount</th><th style="text-align:right;">Actions</th></tr></thead>
+      <tbody>${rows.length ? rows.map((b) => {
+        const canPay = hasPermission("manage_payments");
+        const actions = [];
+        actions.push(`<button class="btn btn-outline btn-sm" onclick="openFolioModal('${b.id}')">Folio</button>`);
+        if (["PENDING", "CONFIRMED"].includes(b.status)) {
+          actions.push(`<button class="btn btn-outline btn-sm" onclick="fdOpenAssignRoom('${b.id}')">Assign room</button>`);
+          actions.push(`<button class="btn btn-primary btn-sm" onclick="fdOpenCheckIn('${b.id}')">Check in</button>`);
+        }
+        if (b.status === "CHECKED_IN") actions.push(`<button class="btn btn-primary btn-sm" onclick="fdOpenCheckOut('${b.id}')">Check out</button>`);
+        if (["PENDING", "CONFIRMED"].includes(b.status)) actions.push(`<button class="btn btn-outline btn-sm" onclick="fdOpenTransfer('${b.id}')">Transfer</button>`);
+        if (canPay) {
+          actions.push(`<button class="btn btn-outline btn-sm" onclick="fdOpenRefund('${b.id}')">Refund</button>`);
+          actions.push(`<button class="btn btn-outline btn-sm" onclick="fdOpenInvoice('${b.id}')">Invoice</button>`);
+        }
+        if (["PENDING", "CONFIRMED"].includes(b.status)) actions.push(`<button class="btn btn-outline btn-sm" onclick="fdMarkNoShow('${b.id}')">No-show</button>`);
+        return `<tr>
+          <td><b>${mp8Esc(b.guest?.name || "—")}</b><div class="cell-sub">${mp8Esc(b.guest?.email || "")}${b.guestTier ? ` · ${mp8Esc(b.guestTier)}` : ""}</div></td>
+          <td>${mp8Esc(b.room?.roomNumber || "unassigned")}<div class="cell-sub">${mp8Esc(b.room?.name || "")}</div></td>
+          <td>${mp8Date(b.checkIn)} → ${mp8Date(b.checkOut)}</td>
+          <td>${mp8Badge(b.status)}</td>
+          <td>${mp8Money(b.totalAmount, b.currency)}</td>
+          <td style="text-align:right;"><div class="row-actions">${actions.join("")}</div></td>
+        </tr>`;
+      }).join("") : mp8Empty(6, "Nothing in this list right now.")}</tbody>
+    </table></div>`;
+}
+function fdBooking(id) { return _fdBookings.find((b) => b.id === id) || {}; }
+function fdRoomOptions(selected) {
+  return `<option value="">Auto-assign / keep current</option>` + _fdRooms
+    .filter((r) => r.status === "ACTIVE")
+    .map((r) => `<option value="${r.id}"${r.id === selected ? " selected" : ""}>${mp8Esc(r.roomNumber)} — ${mp8Esc(r.name)} (${mp8Esc(String(r.housekeepingStatus || "").toLowerCase())})</option>`).join("");
+}
+
+function fdOpenAssignRoom(id) {
+  mp8OpenModal("Assign room", `
+    <div class="form-field"><label>Room</label><select id="fdAssignRoom">${fdRoomOptions()}</select>
+      <span class="form-hint">Leave on auto-assign to let the system pick a clean, available unit of the booked type.</span></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="fdAssignRoomConfirm('${id}')">Assign</button>`);
+}
+async function fdAssignRoomConfirm(id) {
+  try { await managerApi.assignRoom(id, mp8Val("fdAssignRoom") || undefined); mp8CloseModal(); await fdRefresh(); mp8Notice("fdNotice", "Room assigned.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+function fdOpenCheckIn(id) {
+  const b = fdBooking(id);
+  mp8OpenModal(`Check in — ${b.guest?.name || ""}`, `
+    <div class="form-row">
+      <div class="form-field"><label>Guest full name (as on ID) *</label><input id="ciName" value="${mp8Esc(b.guest?.name || "")}" /></div>
+      <div class="form-field"><label>ID type *</label><select id="ciIdType">${mp8Options(["PASSPORT", "NATIONAL_ID", "DRIVERS_LICENSE", "VOTERS_CARD"])}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>ID number *</label><input id="ciIdNumber" placeholder="Document number" /></div>
+      <div class="form-field"><label>Room</label><select id="ciRoom">${fdRoomOptions(b.roomId)}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Deposit amount</label><input id="ciDepositAmount" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+      <div class="form-field"><label>Deposit method</label><select id="ciDepositMethod"><option value="">—</option>${mp8Options(["CASH", "CARD", "TRANSFER", "PAYSTACK", "STRIPE"])}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Deposit reference</label><input id="ciDepositRef" placeholder="Optional" /></div>
+      <div class="form-field"><label>Early check-in fee</label><input id="ciEarlyFee" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+    </div>
+    <div class="form-field"><label>Keys issued</label><input id="ciKeys" placeholder="e.g. Key A, Key B — comma separated" /></div>
+    <div class="checkbox-item"><input type="checkbox" id="ciOverrideHK" /><label for="ciOverrideHK">Override housekeeping status (room not yet cleared)</label></div>
+    <p class="form-hint">Prepayment and clean-room rules are enforced by the system — if it blocks the arrival, the reason is shown here.</p>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="fdCheckInConfirm('${id}')">Complete check-in</button>`, 640);
+}
+async function fdCheckInConfirm(id) {
+  const payload = {
+    registration: { fullName: mp8Val("ciName"), idType: mp8Val("ciIdType"), idNumber: mp8Val("ciIdNumber") },
+    overrideHousekeeping: mp8Checked("ciOverrideHK"),
+  };
+  if (!payload.registration.fullName || !payload.registration.idNumber) return mp8ModalNotice("Guest name and ID number are required.");
+  const roomId = mp8Val("ciRoom"); if (roomId) payload.roomId = roomId;
+  const depositAmount = mp8Val("ciDepositAmount");
+  if (depositAmount) payload.deposit = { amount: Number(depositAmount), method: mp8Val("ciDepositMethod") || "CASH", reference: mp8Val("ciDepositRef") || undefined };
+  const fee = mp8Val("ciEarlyFee"); if (fee) payload.earlyCheckInFee = Number(fee);
+  const keys = mp8Val("ciKeys");
+  if (keys) payload.keys = keys.split(",").map((k) => ({ label: k.trim(), issuedTo: payload.registration.fullName })).filter((k) => k.label);
+  try { await managerApi.checkInBooking(id, payload); mp8CloseModal(); await fdRefresh(); mp8Notice("fdNotice", "Guest checked in.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+function fdOpenCheckOut(id) {
+  const b = fdBooking(id);
+  const canPay = hasPermission("manage_payments");
+  mp8OpenModal(`Check out — ${b.guest?.name || ""}`, `
+    <div class="form-field"><label>Late check-out fee</label><input id="coLateFee" type="number" min="0" step="0.01" placeholder="0.00" /></div>
+    <div class="checkbox-item"><input type="checkbox" id="coSettleDeposit" checked /><label for="coSettleDeposit">Apply the deposit against the folio</label></div>
+    <div class="checkbox-item"><input type="checkbox" id="coKeys" /><label for="coKeys">Accept missing keys</label></div>
+    ${canPay ? `<div class="checkbox-item"><input type="checkbox" id="coOutstanding" /><label for="coOutstanding">Allow departure with an outstanding balance</label></div>`
+      : `<p class="form-hint">Departing with an unpaid balance needs payment rights — settle the folio first.</p>`}
+    <p class="form-hint">Unsettled room charges or keys still out will block the departure; the reason appears here.</p>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="fdCheckOutConfirm('${id}')">Complete check-out</button>`);
+}
+async function fdCheckOutConfirm(id) {
+  const payload = { settleWithDeposit: mp8Checked("coSettleDeposit"), acceptMissingKeys: mp8Checked("coKeys") };
+  if (document.getElementById("coOutstanding")) payload.allowOutstanding = mp8Checked("coOutstanding");
+  const fee = mp8Val("coLateFee"); if (fee) payload.lateCheckOutFee = Number(fee);
+  try {
+    const res = await managerApi.checkOutBooking(id, payload);
+    mp8CloseModal(); await fdRefresh();
+    mp8Notice("fdNotice", res.invoice ? "Checked out — folio invoice raised." : "Guest checked out.", "success");
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+
+function fdOpenTransfer(id) {
+  mp8OpenModal("Transfer stay to another branch", `
+    <div class="form-field"><label>Destination branch ID *</label><input id="tfBranch" placeholder="Branch identifier" />
+      <span class="form-hint">The stay moves out of your branch. Only do this with the receiving branch's agreement.</span></div>
+    <div class="form-field"><label>Destination room type ID</label><input id="tfRoomType" placeholder="Optional — same type by default" /></div>
+    <div class="form-field"><label>Reason *</label><textarea id="tfReason" rows="3" placeholder="Why is the guest being moved?"></textarea></div>
+    <div class="form-field"><label>Cost absorbed by</label><select id="tfAbsorbed">${mp8Options(["HOTEL", "GUEST"])}</select></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="fdTransferConfirm('${id}')">Transfer stay</button>`);
+}
+async function fdTransferConfirm(id) {
+  const toBranchId = mp8Val("tfBranch"), reason = mp8Val("tfReason");
+  if (!toBranchId || !reason) return mp8ModalNotice("Destination branch and reason are required.");
+  const payload = { toBranchId, reason, absorbedBy: mp8Val("tfAbsorbed") };
+  const rt = mp8Val("tfRoomType"); if (rt) payload.toRoomTypeId = rt;
+  try { await managerApi.transferBooking(id, payload); mp8CloseModal(); await fdRefresh(); mp8Notice("fdNotice", "Stay transferred.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+function fdOpenRefund(id) {
+  mp8OpenModal("Refund this stay", `
+    <div class="form-field"><label>Amount *</label><input id="rfAmount" type="number" min="0.01" step="0.01" /></div>
+    <div class="form-field"><label>Reason * (at least 5 characters)</label><textarea id="rfReason" rows="3"></textarea></div>
+    <div class="form-field"><label>Approval code</label><input id="rfApproval" placeholder="Optional" /></div>
+    <p class="form-hint">Partial refunds only, capped at the remaining refundable balance.</p>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-danger" onclick="fdRefundConfirm('${id}')">Issue refund</button>`);
+}
+async function fdRefundConfirm(id) {
+  const amount = Number(mp8Val("rfAmount")), reason = mp8Val("rfReason");
+  if (!(amount > 0)) return mp8ModalNotice("Enter an amount greater than zero.");
+  if (reason.length < 5) return mp8ModalNotice("Give a reason of at least 5 characters.");
+  try {
+    const res = await managerApi.refundBooking(id, { amount, reason, approvalCode: mp8Val("rfApproval") || undefined });
+    mp8CloseModal(); await fdRefresh();
+    mp8Notice("fdNotice", `Refund recorded. Remaining refundable: ${mp8Money(res.remainingRefundable)}`, "success");
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+
+function fdOpenInvoice(id) {
+  mp8OpenModal("Raise an invoice", `
+    <div class="form-field"><label>Invoice type</label><select id="ivKind"><option value="FOLIO">Folio — stay plus every charge</option><option value="BOOKING">Booking — the stay only</option></select></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="fdInvoiceConfirm('${id}')">Raise invoice</button>`);
+}
+async function fdInvoiceConfirm(id) {
+  try { await managerApi.createBookingInvoice(id, mp8Val("ivKind")); mp8CloseModal(); mp8Notice("fdNotice", "Invoice raised — find it under Invoices.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+async function fdMarkNoShow(id) {
+  if (!confirm("Mark this booking as a no-show?")) return;
+  try { await managerApi.updateBookingStatus(id, "NO_SHOW"); await fdRefresh(); mp8Notice("fdNotice", "Marked as no-show.", "success"); }
+  catch (err) { mp8Notice("fdNotice", err.message); }
+}
+
+// The bookings list must never push a stay straight into CHECKED_IN/CHECKED_OUT —
+// arrivals and departures have their own guarded process flows.
+async function advanceBooking(id, status) {
+  if (status === "CHECKED_IN" || status === "CHECKED_OUT") {
+    if (!_fdBookings.length) { try { _fdBookings = (await managerApi.listBookings()).bookings || []; _fdRooms = (await managerApi.listRooms()).rooms || []; } catch { /* modal still opens */ } }
+    return status === "CHECKED_IN" ? fdOpenCheckIn(id) : fdOpenCheckOut(id);
+  }
+  try { await managerApi.updateBookingStatus(id, status); if (typeof refreshBookingsTable === "function") refreshBookingsTable(); }
+  catch (err) { showNotice("bookingsNotice", err.message); }
+}
+
+/* ============================================================
+   HOUSEKEEPING BOARD & TASKS
+   ============================================================ */
+let _hkBoard = null;
+async function loadHousekeepingBoardPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Housekeeping Board", "Room readiness, open tasks and work orders at a glance",
+      `<button class="btn btn-primary" onclick="hkOpenTaskModal()"><i class="fas fa-plus"></i> New task</button>`)}
+    <div id="hkbNotice"></div>
+    <div id="hkbSummary" class="stats-grid"></div>
+    <div class="panel"><div id="hkbBody"><div class="loading-state">Loading…</div></div></div>`;
+  await hkRefreshBoard();
+}
+async function hkRefreshBoard() {
+  try {
+    _hkBoard = await managerApi.getHousekeepingBoard();
+    const s = _hkBoard.summary || {};
+    document.getElementById("hkbSummary").innerHTML = [
+      ["Clean", s.clean], ["Dirty", s.dirty], ["Being cleaned", s.cleaning],
+      ["Occupied", s.occupied], ["Out of order", s.outOfOrder], ["Open tasks", s.openTasks], ["Work orders", s.openWorkOrders],
+    ].map(([label, value]) => `<div class="stat-card"><div class="stat-label">${label}</div><div class="stat-value">${value ?? 0}</div></div>`).join("");
+    const rooms = _hkBoard.rooms || [];
+    document.getElementById("hkbBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Room</th><th>Readiness</th><th>Tasks</th><th>Work orders</th><th style="text-align:right;">Actions</th></tr></thead>
+        <tbody>${rooms.length ? rooms.map((r) => `
+          <tr>
+            <td><b>${mp8Esc(r.roomNumber)}</b><div class="cell-sub">${mp8Esc(r.name || "")}</div></td>
+            <td>${mp8Badge(r.housekeepingStatus)}</td>
+            <td>${(r.tasks || []).length ? (r.tasks || []).map((t) => `
+                <div class="cell-sub" style="margin-bottom:4px;">${mp8Esc(String(t.type || "").replace(/_/g, " "))} ${mp8Badge(t.status)}
+                  <button class="btn btn-outline btn-sm" onclick="hkOpenTaskUpdate('${t.id}','${t.status}')">Update</button></div>`).join("") : `<span class="cell-sub">—</span>`}</td>
+            <td>${(r.workOrders || []).length ? (r.workOrders || []).map((w) => `<div class="cell-sub">${mp8Esc(w.title)} ${mp8Badge(w.status)}</div>`).join("") : `<span class="cell-sub">—</span>`}</td>
+            <td style="text-align:right;"><div class="row-actions">
+              <button class="btn btn-outline btn-sm" onclick="hkOpenTaskModal('${r.id}')">Task</button>
+              <button class="btn btn-outline btn-sm" onclick="moOpenCreate('${r.id}')">Work order</button>
+            </div></td>
+          </tr>`).join("") : mp8Empty(5, "No rooms found for this branch.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("hkbBody", err); }
+}
+async function hkOpenTaskModal(roomId) {
+  let staff = [];
+  try { staff = (await managerApi.listStaff()).staff || []; } catch { /* assignment optional */ }
+  const rooms = (_hkBoard?.rooms || []);
+  mp8OpenModal("New housekeeping task", `
+    <div class="form-row">
+      <div class="form-field"><label>Room *</label><select id="hkRoom">${rooms.map((r) => `<option value="${r.id}"${r.id === roomId ? " selected" : ""}>${mp8Esc(r.roomNumber)}</option>`).join("")}</select></div>
+      <div class="form-field"><label>Task type *</label><select id="hkType">${mp8Options(["DEPARTURE_CLEAN", "STAYOVER_SERVICE", "DEEP_CLEAN", "TURNDOWN", "INSPECTION", "LINEN_CHANGE"])}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Priority</label><select id="hkPriority">${mp8Options(["LOW", "NORMAL", "HIGH", "URGENT"], "NORMAL")}</select></div>
+      <div class="form-field"><label>Assign to</label><select id="hkAssignee"><option value="">Unassigned</option>${staff.map((s) => `<option value="${s.id}">${mp8Esc(s.name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="form-field"><label>Notes</label><textarea id="hkNotes" rows="3"></textarea></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="hkCreateTaskConfirm()">Create task</button>`);
+}
+async function hkCreateTaskConfirm() {
+  const payload = { roomId: mp8Val("hkRoom"), type: mp8Val("hkType"), priority: mp8Val("hkPriority"), notes: mp8Val("hkNotes") || undefined };
+  const assignee = mp8Val("hkAssignee"); if (assignee) payload.assignedToId = assignee;
+  if (!payload.roomId) return mp8ModalNotice("Pick a room.");
+  try { await managerApi.createHousekeepingTask(payload); mp8CloseModal(); await hkRefreshBoard(); mp8Notice("hkbNotice", "Task created.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+const HK_NEXT = {
+  PENDING: ["ASSIGNED", "IN_PROGRESS", "CANCELLED"],
+  ASSIGNED: ["IN_PROGRESS", "PENDING", "CANCELLED"],
+  IN_PROGRESS: ["AWAITING_INSPECTION", "COMPLETED", "CANCELLED"],
+  AWAITING_INSPECTION: ["COMPLETED", "IN_PROGRESS"],
+};
+async function hkOpenTaskUpdate(id, current) {
+  let staff = [];
+  try { staff = (await managerApi.listStaff()).staff || []; } catch { /* optional */ }
+  const next = HK_NEXT[current] || [];
+  mp8OpenModal("Update task", `
+    <p class="form-hint">Current state: <b>${mp8Esc(String(current).replace(/_/g, " ").toLowerCase())}</b></p>
+    <div class="form-field"><label>Move to</label><select id="hkuStatus"><option value="">Leave unchanged</option>${mp8Options(next)}</select>
+      ${next.length ? "" : `<span class="form-hint">This task is finished — no further moves are possible.</span>`}</div>
+    <div class="form-field"><label>Assign to</label><select id="hkuAssignee"><option value="">Leave unchanged</option>${staff.map((s) => `<option value="${s.id}">${mp8Esc(s.name)}</option>`).join("")}</select></div>
+    <div class="form-field"><label>Notes</label><textarea id="hkuNotes" rows="2"></textarea></div>
+    <div class="checkbox-item"><input type="checkbox" id="hkuInspection" /><label for="hkuInspection">Inspection passed</label></div>
+    <div class="form-field"><label>Inspection notes</label><textarea id="hkuInspectionNotes" rows="2"></textarea></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="hkUpdateTaskConfirm('${id}')">Save</button>`);
+}
+async function hkUpdateTaskConfirm(id) {
+  const payload = {};
+  const status = mp8Val("hkuStatus"); if (status) payload.status = status;
+  const assignee = mp8Val("hkuAssignee"); if (assignee) payload.assignedToId = assignee;
+  const notes = mp8Val("hkuNotes"); if (notes) payload.notes = notes;
+  if (mp8Checked("hkuInspection")) payload.inspectionPassed = true;
+  const inspectionNotes = mp8Val("hkuInspectionNotes"); if (inspectionNotes) payload.inspectionNotes = inspectionNotes;
+  try { await managerApi.updateHousekeepingTask(id, payload); mp8CloseModal(); await hkRefreshBoard(); mp8Notice("hkbNotice", "Task updated.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   MAINTENANCE WORK ORDERS
+   ============================================================ */
+async function loadMaintenancePage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Maintenance", "Work orders for rooms and shared areas at your branch",
+      `<button class="btn btn-primary" onclick="moOpenCreate()"><i class="fas fa-plus"></i> New work order</button>`)}
+    <div class="panel">
+      <div class="panel-header">
+        <select id="moStatusFilter" onchange="moRefresh()" style="max-width:220px;">
+          <option value="">Open work orders</option>${mp8Options(["OPEN", "ASSIGNED", "IN_PROGRESS", "BLOCKED", "RESOLVED", "CLOSED"])}
+        </select>
+      </div>
+      <div id="moNotice"></div>
+      <div id="moBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await moRefresh();
+}
+async function moRefresh() {
+  try {
+    const { workOrders } = await managerApi.listMaintenance(mp8Val("moStatusFilter") || undefined);
+    document.getElementById("moBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Work order</th><th>Room</th><th>Priority</th><th>Status</th><th>Off sale</th><th>Ready by</th><th style="text-align:right;">Actions</th></tr></thead>
+        <tbody>${(workOrders || []).length ? workOrders.map((w) => `
+          <tr>
+            <td><b>${mp8Esc(w.title)}</b><div class="cell-sub">${mp8Esc(w.category || "OTHER")} · ${mp8Esc((w.description || "").slice(0, 80))}</div></td>
+            <td>${mp8Esc(w.room?.roomNumber || "—")}</td>
+            <td>${mp8Badge(w.priority)}</td>
+            <td>${mp8Badge(w.status)}</td>
+            <td>${w.blocksSale ? "Yes" : "No"}</td>
+            <td>${mp8Date(w.estimatedReadyAt)}</td>
+            <td style="text-align:right;"><button class="btn btn-outline btn-sm" onclick="moOpenUpdate('${w.id}','${w.status}')">Update</button></td>
+          </tr>`).join("") : mp8Empty(7, "No work orders match this filter.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("moBody", err); }
+}
+async function moOpenCreate(roomId) {
+  let rooms = [];
+  try { rooms = (await managerApi.listRooms()).rooms || []; } catch { /* room optional */ }
+  mp8OpenModal("New work order", `
+    <div class="form-field"><label>Title *</label><input id="moTitle" placeholder="e.g. Air conditioning not cooling" /></div>
+    <div class="form-field"><label>Description *</label><textarea id="moDesc" rows="3"></textarea></div>
+    <div class="form-row">
+      <div class="form-field"><label>Room</label><select id="moRoom"><option value="">Shared area / none</option>${rooms.map((r) => `<option value="${r.id}"${r.id === roomId ? " selected" : ""}>${mp8Esc(r.roomNumber)}</option>`).join("")}</select></div>
+      <div class="form-field"><label>Category</label><select id="moCategory">${mp8Options(["PLUMBING", "ELECTRICAL", "HVAC", "FURNITURE", "APPLIANCE", "OTHER"], "OTHER")}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Priority</label><select id="moPriority">${mp8Options(["LOW", "NORMAL", "HIGH", "URGENT"], "NORMAL")}</select></div>
+      <div class="form-field"><label>Expected ready</label><input id="moReady" type="datetime-local" /></div>
+    </div>
+    <div class="checkbox-item"><input type="checkbox" id="moBlocks" /><label for="moBlocks">Take the room off sale until this is resolved</label></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="moCreateConfirm()">Create</button>`);
+}
+async function moCreateConfirm() {
+  const payload = {
+    title: mp8Val("moTitle"), description: mp8Val("moDesc"),
+    category: mp8Val("moCategory"), priority: mp8Val("moPriority"), blocksSale: mp8Checked("moBlocks"),
+  };
+  if (!payload.title || !payload.description) return mp8ModalNotice("Title and description are required.");
+  const roomId = mp8Val("moRoom"); if (roomId) payload.roomId = roomId;
+  const ready = mp8Val("moReady"); if (ready) payload.estimatedReadyAt = new Date(ready).toISOString();
+  try { await managerApi.createMaintenance(payload); mp8CloseModal(); if (document.getElementById("moBody")) await moRefresh(); else await hkRefreshBoard(); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+async function moOpenUpdate(id, current) {
+  let staff = [];
+  try { staff = (await managerApi.listStaff()).staff || []; } catch { /* optional */ }
+  mp8OpenModal("Update work order", `
+    <div class="form-row">
+      <div class="form-field"><label>Status</label><select id="mouStatus">${mp8Options(["OPEN", "ASSIGNED", "IN_PROGRESS", "BLOCKED", "RESOLVED", "CLOSED"], current)}</select></div>
+      <div class="form-field"><label>Assign to</label><select id="mouAssignee"><option value="">Leave unchanged</option>${staff.map((s) => `<option value="${s.id}">${mp8Esc(s.name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Vendor</label><input id="mouVendor" placeholder="External contractor" /></div>
+      <div class="form-field"><label>Actual cost</label><input id="mouCost" type="number" min="0" step="0.01" /></div>
+    </div>
+    <div class="form-field"><label>Expected ready</label><input id="mouReady" type="datetime-local" /></div>
+    <div class="form-field"><label>Resolution</label><textarea id="mouResolution" rows="3"></textarea></div>
+    <div class="checkbox-item"><input type="checkbox" id="mouBlocks" /><label for="mouBlocks">Keep the room off sale</label></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="moUpdateConfirm('${id}')">Save</button>`);
+}
+async function moUpdateConfirm(id) {
+  const payload = { status: mp8Val("mouStatus"), blocksSale: mp8Checked("mouBlocks") };
+  const assignee = mp8Val("mouAssignee"); if (assignee) payload.assignedToId = assignee;
+  const vendor = mp8Val("mouVendor"); if (vendor) payload.vendorName = vendor;
+  const cost = mp8Val("mouCost"); if (cost) payload.costActual = Number(cost);
+  const ready = mp8Val("mouReady"); if (ready) payload.estimatedReadyAt = new Date(ready).toISOString();
+  const resolution = mp8Val("mouResolution"); if (resolution) payload.resolution = resolution;
+  try { await managerApi.updateMaintenance(id, payload); mp8CloseModal(); await moRefresh(); mp8Notice("moNotice", "Work order updated.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   RATES & CHANNELS
+   ============================================================ */
+let _rtTypes = [];
+async function loadRatesPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Rates & Channels", "Read a date range, write a date range — for your branch's room types")}
+    <div id="ratesNotice"></div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Rate calendar</h3></div>
+      <div class="form-row">
+        <div class="form-field"><label>Room type</label><select id="rtSelect"><option value="">Loading…</option></select></div>
+        <div class="form-field"><label>From</label><input id="rtFrom" type="date" value="${mp8Today()}" /></div>
+        <div class="form-field"><label>To</label><input id="rtTo" type="date" value="${mp8Today(30)}" /></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;">
+        <button class="btn btn-outline" onclick="ratesLoadCalendar()">Load calendar</button>
+        <button class="btn btn-primary" onclick="ratesOpenBulk()">Update this range</button>
+        <button class="btn btn-danger" onclick="ratesOpenClear()">Clear overrides</button>
+      </div>
+      <div id="ratesBody"><div class="empty-state">Pick a room type and load the calendar.</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Channel mapping</h3></div>
+      <div class="form-row">
+        <div class="form-field"><label>Room type</label><select id="chRoomType"></select></div>
+        <div class="form-field"><label>Channel</label><input id="chChannel" placeholder="e.g. BOOKING_COM" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>External ID</label><input id="chExternal" placeholder="Channel's own room ID" /></div>
+        <div class="form-field"><label>iCal import URL</label><input id="chIcal" placeholder="https://…" /></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;"><button class="btn btn-primary" onclick="ratesCreateChannel()">Create mapping</button></div>
+      <div id="chResult"></div>
+    </div>`;
+  try {
+    const { rooms } = await managerApi.listRooms();
+    const seen = new Map();
+    (rooms || []).forEach((r) => { if (r.roomTypeId && !seen.has(r.roomTypeId)) seen.set(r.roomTypeId, r.name || r.roomNumber); });
+    _rtTypes = [...seen.entries()].map(([id, name]) => ({ id, name }));
+    const opts = _rtTypes.length ? _rtTypes.map((t) => `<option value="${t.id}">${mp8Esc(t.name)}</option>`).join("") : `<option value="">No room types found</option>`;
+    document.getElementById("rtSelect").innerHTML = opts;
+    document.getElementById("chRoomType").innerHTML = opts;
+  } catch (err) { mp8Notice("ratesNotice", err.message); }
+}
+async function ratesLoadCalendar() {
+  const id = mp8Val("rtSelect"); if (!id) return mp8Notice("ratesNotice", "Pick a room type first.");
+  document.getElementById("ratesBody").innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const res = await managerApi.getRates(id, mp8Val("rtFrom"), mp8Val("rtTo"));
+    const rates = res.rates || [];
+    document.getElementById("ratesBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Price</th><th>Min nights</th><th>Allotment</th><th>Stop sell</th><th>CTA / CTD</th></tr></thead>
+        <tbody>${rates.length ? rates.map((r) => `
+          <tr>
+            <td>${mp8Date(r.date)}</td><td>${mp8Money(r.price, r.currency)}</td>
+            <td>${r.minNights ?? "—"}</td><td>${r.allotment ?? "—"}</td>
+            <td>${r.stopSell ? "Yes" : "No"}</td>
+            <td>${r.closedToArrival ? "CTA" : "—"} / ${r.closedToDeparture ? "CTD" : "—"}</td>
+          </tr>`).join("") : mp8Empty(6, "No overrides in this range — the base price applies.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("ratesBody", err); }
+}
+function ratesOpenBulk() {
+  const id = mp8Val("rtSelect"); if (!id) return mp8Notice("ratesNotice", "Pick a room type first.");
+  mp8OpenModal("Update rates for a range", `
+    <div class="form-row">
+      <div class="form-field"><label>From *</label><input id="rbFrom" type="date" value="${mp8Val("rtFrom")}" /></div>
+      <div class="form-field"><label>To *</label><input id="rbTo" type="date" value="${mp8Val("rtTo")}" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Price per night</label><input id="rbPrice" type="number" min="0" step="0.01" placeholder="Leave blank to keep" /></div>
+      <div class="form-field"><label>Rate plan ID</label><input id="rbPlan" placeholder="Optional" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Minimum nights</label><input id="rbMin" type="number" min="1" step="1" /></div>
+      <div class="form-field"><label>Allotment</label><input id="rbAllot" type="number" min="0" step="1" /></div>
+    </div>
+    <div class="form-field"><label>Days of week</label>
+      <div class="checkbox-grid">${["0", "1", "2", "3", "4", "5", "6"].map((d, i) => `<div class="checkbox-item"><input type="checkbox" id="rbDow${d}" value="${d}" /><label for="rbDow${d}">${["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]}</label></div>`).join("")}</div>
+      <span class="form-hint">Leave all unchecked to apply to every day in the range.</span></div>
+    <div class="checkbox-item"><input type="checkbox" id="rbStop" /><label for="rbStop">Stop sell</label></div>
+    <div class="checkbox-item"><input type="checkbox" id="rbCta" /><label for="rbCta">Closed to arrival</label></div>
+    <div class="checkbox-item"><input type="checkbox" id="rbCtd" /><label for="rbCtd">Closed to departure</label></div>
+    <div class="form-field"><label>Note</label><input id="rbNote" placeholder="Why this change?" /></div>
+    <p class="form-hint">Ranges longer than two years are rejected.</p>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="ratesBulkConfirm('${id}')">Apply</button>`, 620);
+}
+async function ratesBulkConfirm(id) {
+  const payload = { from: mp8Val("rbFrom"), to: mp8Val("rbTo"), stopSell: mp8Checked("rbStop"), closedToArrival: mp8Checked("rbCta"), closedToDeparture: mp8Checked("rbCtd") };
+  if (!payload.from || !payload.to) return mp8ModalNotice("Both dates are required.");
+  const price = mp8Val("rbPrice"); if (price) payload.price = Number(price);
+  const plan = mp8Val("rbPlan"); if (plan) payload.ratePlanId = plan;
+  const min = mp8Val("rbMin"); if (min) payload.minNights = Number(min);
+  const allot = mp8Val("rbAllot"); if (allot) payload.allotment = Number(allot);
+  const dow = ["0", "1", "2", "3", "4", "5", "6"].filter((d) => mp8Checked(`rbDow${d}`)).map(Number);
+  if (dow.length) payload.daysOfWeek = dow;
+  const note = mp8Val("rbNote"); if (note) payload.note = note;
+  try { const res = await managerApi.putRates(id, payload); mp8CloseModal(); await ratesLoadCalendar(); mp8Notice("ratesNotice", `Updated ${res.nights ?? ""} night(s).`, "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function ratesOpenClear() {
+  const id = mp8Val("rtSelect"); if (!id) return mp8Notice("ratesNotice", "Pick a room type first.");
+  mp8OpenModal("Clear rate overrides", `
+    <div class="form-row">
+      <div class="form-field"><label>From *</label><input id="rcFrom" type="date" value="${mp8Val("rtFrom")}" /></div>
+      <div class="form-field"><label>To *</label><input id="rcTo" type="date" value="${mp8Val("rtTo")}" /></div>
+    </div>
+    <div class="form-field"><label>Rate plan ID</label><input id="rcPlan" placeholder="Optional" /></div>
+    <p class="form-hint">The base room price applies again for these dates.</p>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-danger" onclick="ratesClearConfirm('${id}')">Clear</button>`);
+}
+async function ratesClearConfirm(id) {
+  try { await managerApi.clearRates(id, { from: mp8Val("rcFrom"), to: mp8Val("rcTo"), ratePlanId: mp8Val("rcPlan") || undefined }); mp8CloseModal(); await ratesLoadCalendar(); mp8Notice("ratesNotice", "Overrides cleared.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+async function ratesCreateChannel() {
+  const payload = { roomTypeId: mp8Val("chRoomType"), channel: mp8Val("chChannel") };
+  if (!payload.roomTypeId || !payload.channel) return mp8Notice("ratesNotice", "Room type and channel are required.");
+  const ext = mp8Val("chExternal"); if (ext) payload.externalId = ext;
+  const ical = mp8Val("chIcal"); if (ical) payload.icalImportUrl = ical;
+  try {
+    const res = await managerApi.createChannelMapping(payload);
+    document.getElementById("chResult").innerHTML = `<div class="notice success">Mapping created.${res.exportUrl ? ` Availability feed: <code>${mp8Esc(res.exportUrl)}</code>` : ""}</div>`;
+  } catch (err) { mp8Notice("ratesNotice", err.message); }
+}
+
+/* ============================================================
+   SPA SCHEDULE & RESOURCES
+   ============================================================ */
+async function loadSpaSchedulePage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Spa Schedule", "Appointments, therapists, rooms and equipment",
+      `<button class="btn btn-primary" onclick="spaOpenResourceModal()"><i class="fas fa-plus"></i> New resource</button>`)}
+    <div id="spaSchNotice"></div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Day schedule</h3>
+        <input id="spaSchDate" type="date" value="${mp8Today()}" onchange="spaRefreshSchedule()" style="max-width:200px;" /></div>
+      <div id="spaSchBody"><div class="loading-state">Loading…</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Resources</h3></div>
+      <div id="spaResBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await Promise.all([spaRefreshSchedule(), spaRefreshResources()]);
+}
+async function spaRefreshSchedule() {
+  try {
+    const res = await managerApi.getSpaSchedule(mp8Val("spaSchDate"));
+    const appts = res.appointments || res.schedule || [];
+    document.getElementById("spaSchBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Time</th><th>Treatment</th><th>Guest</th><th>Resource</th><th>Status</th></tr></thead>
+        <tbody>${appts.length ? appts.map((a) => `
+          <tr><td>${mp8DateTime(a.scheduledFor || a.startsAt)}</td>
+            <td>${mp8Esc(a.treatment?.name || a.treatmentName || "—")}</td>
+            <td>${mp8Esc(a.guest?.name || a.order?.guest?.name || "—")}</td>
+            <td>${mp8Esc(a.resource?.name || "—")}${a.roomResource ? ` · ${mp8Esc(a.roomResource.name)}` : ""}</td>
+            <td>${mp8Badge(a.status || "BOOKED")}</td></tr>`).join("") : mp8Empty(5, "No appointments for this day.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("spaSchBody", err); }
+}
+async function spaRefreshResources() {
+  try {
+    const { resources } = await managerApi.listSpaResources();
+    document.getElementById("spaResBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Resource</th><th>Kind</th><th>Active</th><th style="text-align:right;">Actions</th></tr></thead>
+        <tbody>${(resources || []).length ? resources.map((r) => `
+          <tr><td><b>${mp8Esc(r.name)}</b></td><td>${mp8Badge(r.kind)}</td><td>${r.isActive ? "Yes" : "No"}</td>
+            <td style="text-align:right;"><button class="btn btn-outline btn-sm" onclick="spaOpenBlock('${r.id}','${mp8Esc(r.name)}')">Block time</button></td></tr>`).join("") : mp8Empty(4, "No resources yet — add a therapist or treatment room.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("spaResBody", err); }
+}
+async function spaOpenResourceModal() {
+  let treatments = [], staff = [];
+  try { treatments = (await managerApi.listSpaTreatments()).treatments || []; } catch { /* optional */ }
+  try { staff = (await managerApi.listStaff()).staff || []; } catch { /* optional */ }
+  mp8OpenModal("New spa resource", `
+    <div class="form-row">
+      <div class="form-field"><label>Name *</label><input id="srName" placeholder="e.g. Room 2 / Ada O." /></div>
+      <div class="form-field"><label>Kind *</label><select id="srKind">${mp8Options(["THERAPIST", "ROOM", "EQUIPMENT"])}</select></div>
+    </div>
+    <div class="form-field"><label>Linked staff member</label><select id="srStaff"><option value="">None</option>${staff.map((s) => `<option value="${s.id}">${mp8Esc(s.name)}</option>`).join("")}</select></div>
+    <div class="form-field"><label>Treatments this resource can deliver</label>
+      <div class="checkbox-grid">${treatments.map((t) => `<div class="checkbox-item"><input type="checkbox" class="srTreatment" value="${t.id}" id="srT${t.id}" /><label for="srT${t.id}">${mp8Esc(t.name)}</label></div>`).join("") || `<span class="form-hint">No treatments yet.</span>`}</div>
+      <span class="form-hint">Leave all unchecked to allow every treatment.</span></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="spaCreateResourceConfirm()">Create</button>`);
+}
+async function spaCreateResourceConfirm() {
+  const payload = { name: mp8Val("srName"), kind: mp8Val("srKind") };
+  if (!payload.name) return mp8ModalNotice("Name is required.");
+  const staffId = mp8Val("srStaff"); if (staffId) payload.staffId = staffId;
+  const treatmentIds = [...document.querySelectorAll(".srTreatment:checked")].map((el) => el.value);
+  if (treatmentIds.length) payload.treatmentIds = treatmentIds;
+  try { await managerApi.createSpaResource(payload); mp8CloseModal(); await spaRefreshResources(); mp8Notice("spaSchNotice", "Resource created.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function spaOpenBlock(id, name) {
+  mp8OpenModal(`Block time — ${name}`, `
+    <div class="form-row">
+      <div class="form-field"><label>From *</label><input id="sbStart" type="datetime-local" /></div>
+      <div class="form-field"><label>To *</label><input id="sbEnd" type="datetime-local" /></div>
+    </div>
+    <div class="form-field"><label>Reason</label><input id="sbReason" placeholder="Maintenance, training, leave…" /></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="spaBlockConfirm('${id}')">Block</button>`);
+}
+async function spaBlockConfirm(id) {
+  const startsAt = mp8Val("sbStart"), endsAt = mp8Val("sbEnd");
+  if (!startsAt || !endsAt) return mp8ModalNotice("Both times are required.");
+  try { await managerApi.blockSpaResource(id, { startsAt: new Date(startsAt).toISOString(), endsAt: new Date(endsAt).toISOString(), reason: mp8Val("sbReason") || undefined }); mp8CloseModal(); await spaRefreshSchedule(); mp8Notice("spaSchNotice", "Time blocked.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   STOCK LOGISTICS — inter-branch transfers & PO receiving
+   ============================================================ */
+async function loadStockLogisticsPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Stock Movements", "Send stock to another branch or receive a purchase order")}
+    <div id="slNotice"></div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Transfer stock out</h3></div>
+      <div class="form-row">
+        <div class="form-field"><label>Item *</label><select id="slItem"><option value="">Loading…</option></select></div>
+        <div class="form-field"><label>Quantity *</label><input id="slQty" type="number" min="1" step="1" /></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Destination branch ID *</label><input id="slBranch" placeholder="Branch identifier" /></div>
+        <div class="form-field"><label>Note</label><input id="slNote" placeholder="Optional" /></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;"><button class="btn btn-primary" onclick="slTransferConfirm()">Send transfer</button></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Receive a purchase order</h3></div>
+      <div class="form-field"><label>Purchase order ID *</label><input id="slPo" placeholder="Purchase order identifier" /></div>
+      <div id="slPoLines"></div>
+      <div class="modal-actions" style="justify-content:flex-start;">
+        <button class="btn btn-outline" onclick="slAddPoLine()"><i class="fas fa-plus"></i> Add line</button>
+        <button class="btn btn-primary" onclick="slReceiveConfirm()">Receive</button>
+      </div>
+      <p class="form-hint">Each line needs the purchase-order line ID and the quantity actually delivered; unit cost updates the weighted average.</p>
+    </div>`;
+  slAddPoLine();
+  try {
+    const { items } = await managerApi.listStockItems();
+    document.getElementById("slItem").innerHTML = (items || []).map((i) => `<option value="${i.id}">${mp8Esc(i.name)} — ${i.quantity} ${mp8Esc(i.unit || "")}</option>`).join("") || `<option value="">No stock items</option>`;
+  } catch (err) { mp8Notice("slNotice", err.message); }
+}
+async function slTransferConfirm() {
+  const payload = { stockItemId: mp8Val("slItem"), toBranchId: mp8Val("slBranch"), quantity: Number(mp8Val("slQty")), note: mp8Val("slNote") || undefined };
+  if (!payload.stockItemId || !payload.toBranchId || !(payload.quantity > 0)) return mp8Notice("slNotice", "Item, destination branch and a quantity above zero are required.");
+  try { await managerApi.transferStock(payload); mp8Notice("slNotice", "Transfer recorded.", "success"); }
+  catch (err) { mp8Notice("slNotice", err.message); }
+}
+let _slLineSeq = 0;
+function slAddPoLine() {
+  const n = ++_slLineSeq;
+  document.getElementById("slPoLines").insertAdjacentHTML("beforeend", `
+    <div class="form-row" id="slLine${n}">
+      <div class="form-field"><label>Line ID</label><input class="slLineId" placeholder="PO line identifier" /></div>
+      <div class="form-field"><label>Quantity received</label><input class="slLineQty" type="number" min="0" step="1" /></div>
+      <div class="form-field"><label>Unit cost</label><input class="slLineCost" type="number" min="0" step="0.01" /></div>
+      <div class="form-field" style="max-width:60px;align-self:end;"><button class="btn btn-outline btn-sm" onclick="document.getElementById('slLine${n}').remove()">&times;</button></div>
+    </div>`);
+}
+async function slReceiveConfirm() {
+  const poId = mp8Val("slPo"); if (!poId) return mp8Notice("slNotice", "Purchase order ID is required.");
+  const ids = [...document.querySelectorAll(".slLineId")], qtys = [...document.querySelectorAll(".slLineQty")], costs = [...document.querySelectorAll(".slLineCost")];
+  const lines = ids.map((el, i) => ({ lineId: el.value.trim(), quantityReceived: Number(qtys[i].value), unitCost: costs[i].value ? Number(costs[i].value) : undefined }))
+    .filter((l) => l.lineId && Number.isFinite(l.quantityReceived));
+  if (!lines.length) return mp8Notice("slNotice", "Add at least one line with an ID and a quantity.");
+  try { await managerApi.receivePurchaseOrder(poId, lines); mp8Notice("slNotice", "Purchase order received — stock and costs updated.", "success"); }
+  catch (err) { mp8Notice("slNotice", err.message); }
+}
+
+/* ============================================================
+   ORDER DESK — walk-in orders, lines, void/comp, split, close
+   ============================================================ */
+let _odOrders = [];
+async function loadOrderDeskPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Order Desk", "Restaurant, bar, room service, laundry and spa orders",
+      `<button class="btn btn-primary" onclick="odOpenNewOrder()"><i class="fas fa-plus"></i> New order</button>`)}
+    <div class="panel">
+      <div class="panel-header">
+        <div class="form-row" style="margin:0;">
+          <div class="form-field"><label>Type</label><select id="odType" onchange="odRefresh()"><option value="">All types</option>${mp8Options(["ROOM_SERVICE", "RESTAURANT", "BAR", "SPA", "LAUNDRY", "EVENT_TICKET", "UPCOMING_EVENT_TICKET", "OTHER"])}</select></div>
+          <div class="form-field"><label>Status</label><select id="odStatus" onchange="odRefresh()"><option value="">All statuses</option>${mp8Options(["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"])}</select></div>
+        </div>
+      </div>
+      <div id="odNotice"></div>
+      <div id="odBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await odRefresh();
+}
+async function odRefresh() {
+  const filters = {};
+  const t = mp8Val("odType"); if (t) filters.type = t;
+  const s = mp8Val("odStatus"); if (s) filters.status = s;
+  try {
+    const { orders } = await managerApi.listOrders(filters);
+    _odOrders = orders || [];
+    document.getElementById("odBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Order</th><th>Type</th><th>Guest</th><th>Total</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
+        <tbody>${_odOrders.length ? _odOrders.map((o) => `
+          <tr>
+            <td><b>#${mp8Esc(String(o.id).slice(0, 8))}</b><div class="cell-sub">${mp8DateTime(o.createdAt)}</div></td>
+            <td>${mp8Badge(o.type)}</td>
+            <td>${mp8Esc(o.guest?.name || "—")}${o.room ? `<div class="cell-sub">Room ${mp8Esc(o.room.roomNumber)}</div>` : ""}</td>
+            <td>${mp8Money(o.totalAmount, o.currency)}</td>
+            <td>${mp8Badge(o.status)}</td>
+            <td style="text-align:right;"><div class="row-actions">
+              <button class="btn btn-outline btn-sm" onclick="odOpenDetail('${o.id}')">Open</button>
+              <select class="btn-sm" onchange="odSetStatus('${o.id}', this.value)" style="max-width:150px;">
+                <option value="">Move to…</option>${mp8Options(["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"])}
+              </select>
+            </div></td>
+          </tr>`).join("") : mp8Empty(6, "No orders match this filter.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("odBody", err); }
+}
+async function odSetStatus(id, status) {
+  if (!status) return;
+  try { await managerApi.updateOrderStatus(id, status); await odRefresh(); mp8Notice("odNotice", "Order updated.", "success"); }
+  catch (err) { mp8Notice("odNotice", err.message); }
+}
+async function odOpenDetail(id) {
+  mp8OpenModal("Order", `<div class="loading-state">Loading…</div>`, "", 720);
+  try {
+    const { order } = await managerApi.getOrder(id);
+    odRenderDetail(order);
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+function odRenderDetail(order) {
+  const lines = order.lines || [];
+  const canAmend = hasPermission("manage_orders");
+  const canPay = hasPermission("manage_payments");
+  mp8OpenModal(`Order #${String(order.id).slice(0, 8)} · ${String(order.type || "").replace(/_/g, " ")}`, `
+    <div class="summary-line"><span>Guest</span><span>${mp8Esc(order.guest?.name || "—")}</span></div>
+    <div class="summary-line"><span>Status</span><span>${mp8Badge(order.status)}${order.paymentStatus ? ` ${mp8Badge(order.paymentStatus)}` : ""}</span></div>
+    <div class="summary-line total"><span>Total</span><span>${mp8Money(order.totalAmount, order.currency)}</span></div>
+    <div class="table-wrap" style="margin-top:12px;"><table>
+      <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Course</th><th>Split</th><th>State</th>${canAmend ? `<th style="text-align:right;">Actions</th>` : ""}</tr></thead>
+      <tbody>${lines.length ? lines.map((l) => `
+        <tr>
+          <td>${mp8Esc(l.itemName || "—")}<div class="cell-sub">${mp8Esc(l.notes || "")}</div></td>
+          <td>${l.quantity}</td><td>${mp8Money(l.unitPrice, order.currency)}</td>
+          <td>${l.courseNumber ?? "—"}</td><td>${mp8Esc(l.splitGroup || "—")}</td>
+          <td>${mp8Badge(l.status || "ACTIVE")}</td>
+          ${canAmend ? `<td style="text-align:right;"><div class="row-actions">
+            <button class="btn btn-outline btn-sm" onclick="odOpenEditLine('${order.id}','${l.id}',${l.quantity})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="odOpenVoidLine('${order.id}','${l.id}')">Void</button>
+          </div></td>` : ""}
+        </tr>`).join("") : mp8Empty(canAmend ? 7 : 6, "No lines on this order.")}</tbody>
+    </table></div>
+    ${canAmend ? `<p class="form-hint">Prices can never be edited on a line — void or comp it and add a replacement.</p>` : `<p class="form-hint">Amending lines needs order rights.</p>`}`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Close</button>
+     ${canAmend ? `<button class="btn btn-outline" onclick="odOpenAddLine('${order.id}','${order.type}')">Add item</button>
+       <button class="btn btn-outline" onclick="odOpenSplit('${order.id}')">Split bill</button>
+       <button class="btn btn-primary" onclick="odCloseOrder('${order.id}')">Close order</button>` : ""}
+     ${canPay ? `<button class="btn btn-outline" onclick="odOpenReopen('${order.id}')">Reopen</button>` : ""}`, 760);
+}
+async function odOpenAddLine(orderId, type) {
+  const laundry = type === "LAUNDRY";
+  let items = [];
+  try { items = laundry ? (await managerApi.listLaundryItems()).items || [] : (await managerApi.listMenuItems()).items || []; } catch { /* handled below */ }
+  mp8OpenModal("Add item to order", `
+    <div class="form-field"><label>${laundry ? "Laundry item" : "Menu item"} *</label>
+      <select id="olItem">${items.map((i) => `<option value="${i.id}">${mp8Esc(i.name)} — ${mp8Money(i.price, i.currency)}</option>`).join("") || `<option value="">Nothing available</option>`}</select></div>
+    <div class="form-row">
+      <div class="form-field"><label>Quantity</label><input id="olQty" type="number" min="1" step="1" value="1" /></div>
+      <div class="form-field"><label>Course</label><input id="olCourse" type="number" min="1" step="1" placeholder="Optional" /></div>
+    </div>
+    <div class="form-field"><label>Split group</label><input id="olSplit" placeholder="Optional, e.g. A" /></div>
+    <div class="form-field"><label>Notes</label><input id="olNotes" placeholder="Allergies, preparation…" /></div>`,
+    `<button class="btn btn-outline" onclick="odOpenDetail('${orderId}')">Back</button>
+     <button class="btn btn-primary" onclick="odAddLineConfirm('${orderId}', ${laundry})">Add</button>`);
+}
+async function odAddLineConfirm(orderId, laundry) {
+  const payload = { quantity: Number(mp8Val("olQty")) || 1 };
+  const itemId = mp8Val("olItem"); if (!itemId) return mp8ModalNotice("Pick an item.");
+  payload[laundry ? "laundryItemId" : "menuItemId"] = itemId;
+  const course = mp8Val("olCourse"); if (course) payload.courseNumber = Number(course);
+  const split = mp8Val("olSplit"); if (split) payload.splitGroup = split;
+  const notes = mp8Val("olNotes"); if (notes) payload.notes = notes;
+  try { await managerApi.addOrderLine(orderId, payload); await odOpenDetail(orderId); await odRefresh(); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function odOpenEditLine(orderId, lineId, quantity) {
+  mp8OpenModal("Edit line", `
+    <div class="form-row">
+      <div class="form-field"><label>Quantity</label><input id="oeQty" type="number" min="1" step="1" value="${quantity}" /></div>
+      <div class="form-field"><label>Course</label><input id="oeCourse" type="number" min="1" step="1" /></div>
+    </div>
+    <div class="form-field"><label>Split group</label><input id="oeSplit" /></div>
+    <div class="form-field"><label>Notes</label><input id="oeNotes" /></div>`,
+    `<button class="btn btn-outline" onclick="odOpenDetail('${orderId}')">Back</button>
+     <button class="btn btn-primary" onclick="odEditLineConfirm('${orderId}','${lineId}')">Save</button>`);
+}
+async function odEditLineConfirm(orderId, lineId) {
+  const payload = {};
+  const qty = mp8Val("oeQty"); if (qty) payload.quantity = Number(qty);
+  const course = mp8Val("oeCourse"); if (course) payload.courseNumber = Number(course);
+  const split = mp8Val("oeSplit"); if (split) payload.splitGroup = split;
+  const notes = mp8Val("oeNotes"); if (notes) payload.notes = notes;
+  try { await managerApi.updateOrderLine(orderId, lineId, payload); await odOpenDetail(orderId); await odRefresh(); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function odOpenVoidLine(orderId, lineId) {
+  mp8OpenModal("Void or comp line", `
+    <div class="form-field"><label>Reason * (at least 3 characters)</label><textarea id="ovReason" rows="3"></textarea></div>
+    <div class="checkbox-item"><input type="checkbox" id="ovComp" /><label for="ovComp">Comp this item (guest keeps it, house pays)</label></div>`,
+    `<button class="btn btn-outline" onclick="odOpenDetail('${orderId}')">Back</button>
+     <button class="btn btn-danger" onclick="odVoidLineConfirm('${orderId}','${lineId}')">Confirm</button>`);
+}
+async function odVoidLineConfirm(orderId, lineId) {
+  const reason = mp8Val("ovReason");
+  if (reason.length < 3) return mp8ModalNotice("A reason of at least 3 characters is required.");
+  try { await managerApi.voidOrderLine(orderId, lineId, { reason, comp: mp8Checked("ovComp") }); await odOpenDetail(orderId); await odRefresh(); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+async function odOpenSplit(orderId) {
+  try {
+    const { order } = await managerApi.getOrder(orderId);
+    const lines = (order.lines || []).filter((l) => (l.status || "ACTIVE") === "ACTIVE");
+    mp8OpenModal("Split the bill", `
+      <p class="form-hint">Give each item a group label. Tax and service are recalculated per group.</p>
+      ${lines.map((l) => `
+        <div class="form-row"><div class="form-field"><label>${mp8Esc(l.itemName)} × ${l.quantity}</label>
+          <input class="osGroup" data-line="${l.id}" value="${mp8Esc(l.splitGroup || "A")}" /></div></div>`).join("") || `<div class="empty-state">No active lines to split.</div>`}`,
+      `<button class="btn btn-outline" onclick="odOpenDetail('${orderId}')">Back</button>
+       <button class="btn btn-primary" onclick="odSplitConfirm('${orderId}')">Split</button>`, 620);
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+async function odSplitConfirm(orderId) {
+  const assignments = [...document.querySelectorAll(".osGroup")].map((el) => ({ lineId: el.getAttribute("data-line"), group: el.value.trim() })).filter((a) => a.group);
+  if (!assignments.length) return mp8ModalNotice("Label at least one item.");
+  try {
+    const res = await managerApi.splitOrder(orderId, assignments);
+    mp8CloseModal();
+    mp8Notice("odNotice", `Bill split into ${Object.keys(res.split || {}).length} group(s). Total ${mp8Money(res.splitTotal)}.`, "success");
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+async function odCloseOrder(orderId) {
+  try { await managerApi.closeOrder(orderId); mp8CloseModal(); await odRefresh(); mp8Notice("odNotice", "Order closed.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function odOpenReopen(orderId) {
+  mp8OpenModal("Reopen order", `
+    <div class="form-field"><label>Reason *</label><textarea id="orReason" rows="3"></textarea></div>
+    <p class="form-hint">Paid or settled orders cannot be reopened.</p>`,
+    `<button class="btn btn-outline" onclick="odOpenDetail('${orderId}')">Back</button>
+     <button class="btn btn-primary" onclick="odReopenConfirm('${orderId}')">Reopen</button>`);
+}
+async function odReopenConfirm(orderId) {
+  const reason = mp8Val("orReason"); if (!reason) return mp8ModalNotice("A reason is required.");
+  try { await managerApi.reopenOrder(orderId, reason); mp8CloseModal(); await odRefresh(); mp8Notice("odNotice", "Order reopened.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+async function odOpenNewOrder() {
+  mp8OpenModal("New order", `
+    <div class="form-row">
+      <div class="form-field"><label>Type *</label><select id="noType" onchange="odNewOrderItems()">${mp8Options(["RESTAURANT", "BAR", "ROOM_SERVICE", "LAUNDRY", "SPA"])}</select></div>
+      <div class="form-field"><label>Guest search</label><input id="noGuestQuery" placeholder="Name or email (2+ characters)" oninput="odGuestSearch()" /></div>
+    </div>
+    <div class="form-field"><label>Existing guest</label><select id="noGuest"><option value="">New guest — enter details below</option></select></div>
+    <div class="form-row">
+      <div class="form-field"><label>Guest name</label><input id="noGuestName" /></div>
+      <div class="form-field"><label>Guest email</label><input id="noGuestEmail" type="email" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Room</label><select id="noRoom"><option value="">None</option></select></div>
+      <div class="form-field"><label>Promo code</label><input id="noPromo" /></div>
+    </div>
+    <div class="checkbox-item"><input type="checkbox" id="noChargeRoom" /><label for="noChargeRoom">Charge to the room (needs an in-house stay)</label></div>
+    <div id="noItemsBox"><div class="loading-state">Loading items…</div></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="odCreateOrderConfirm()">Create order</button>`, 700);
+  try {
+    const { rooms } = await managerApi.listRooms();
+    document.getElementById("noRoom").innerHTML = `<option value="">None</option>` + (rooms || []).map((r) => `<option value="${r.id}">${mp8Esc(r.roomNumber)}</option>`).join("");
+  } catch { /* room optional */ }
+  odNewOrderItems();
+}
+async function odGuestSearch() {
+  const q = mp8Val("noGuestQuery"); if (q.length < 2) return;
+  try {
+    const { guests } = await managerApi.searchGuests(q);
+    document.getElementById("noGuest").innerHTML = `<option value="">New guest — enter details below</option>` +
+      (guests || []).map((g) => `<option value="${g.id}">${mp8Esc(g.name)} — ${mp8Esc(g.email || "")}</option>`).join("");
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+async function odNewOrderItems() {
+  const type = mp8Val("noType");
+  const box = document.getElementById("noItemsBox"); if (!box) return;
+  box.innerHTML = `<div class="loading-state">Loading items…</div>`;
+  try {
+    if (type === "SPA") {
+      const { treatments } = await managerApi.listSpaTreatments();
+      box.innerHTML = `
+        <div class="form-row">
+          <div class="form-field"><label>Treatment *</label><select id="noTreatment">${(treatments || []).map((t) => `<option value="${t.id}">${mp8Esc(t.name)} — ${mp8Money(t.price, t.currency)}</option>`).join("")}</select></div>
+          <div class="form-field"><label>Appointment time *</label><input id="noScheduledAt" type="datetime-local" /></div>
+        </div>`;
+      return;
+    }
+    const laundry = type === "LAUNDRY";
+    const res = laundry ? await managerApi.listLaundryItems() : await managerApi.listMenuItems(type === "BAR" ? "DRINK" : "FOOD");
+    const items = res.items || [];
+    box.innerHTML = `<label class="form-label">Items *</label>
+      ${items.map((i) => `<div class="form-row" style="align-items:center;">
+        <div class="form-field"><label>${mp8Esc(i.name)} — ${mp8Money(i.price, i.currency)}</label>
+          <input class="noQty" data-item="${i.id}" data-kind="${laundry ? "laundry" : "menu"}" type="number" min="0" step="1" value="0" /></div></div>`).join("") || `<div class="empty-state">Nothing available for this order type.</div>`}`;
+  } catch (err) { box.innerHTML = `<div class="notice error">${mp8Esc(err.message)}</div>`; }
+}
+async function odCreateOrderConfirm() {
+  const type = mp8Val("noType");
+  const payload = { type, chargeToRoom: mp8Checked("noChargeRoom") };
+  const existing = mp8Val("noGuest");
+  if (existing) payload.existingGuestId = existing;
+  else {
+    const name = mp8Val("noGuestName"), email = mp8Val("noGuestEmail");
+    if (!name || !email) return mp8ModalNotice("Pick an existing guest or enter a name and email.");
+    payload.guest = { name, email };
+  }
+  const roomId = mp8Val("noRoom"); if (roomId) payload.roomId = roomId;
+  const promo = mp8Val("noPromo"); if (promo) payload.promoCode = promo;
+  if (type === "SPA") {
+    payload.treatmentId = mp8Val("noTreatment");
+    const at = mp8Val("noScheduledAt");
+    if (!payload.treatmentId || !at) return mp8ModalNotice("Treatment and appointment time are required.");
+    payload.scheduledAt = new Date(at).toISOString();
+  } else {
+    const lines = [...document.querySelectorAll(".noQty")].filter((el) => Number(el.value) > 0)
+      .map((el) => (el.getAttribute("data-kind") === "laundry"
+        ? { laundryItemId: el.getAttribute("data-item"), quantity: Number(el.value) }
+        : { menuItemId: el.getAttribute("data-item"), quantity: Number(el.value) }));
+    if (!lines.length) return mp8ModalNotice("Add at least one item.");
+    payload.lines = lines;
+  }
+  try { await managerApi.createStaffOrder(payload); mp8CloseModal(); await odRefresh(); mp8Notice("odNotice", "Order created.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   INVOICES
+   ============================================================ */
+async function loadInvoicesPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Invoices", "Issued documents for stays, folios, orders and corporate accounts",
+      `<button class="btn btn-outline" onclick="invOpenCorporate()">Corporate invoice</button>`)}
+    <div class="panel">
+      <div class="panel-header">
+        <div class="form-row" style="margin:0;">
+          <div class="form-field"><label>Status</label><select id="invStatus" onchange="invRefresh()"><option value="">All</option>${mp8Options(["DRAFT", "ISSUED", "PAID", "PARTIALLY_PAID", "VOID"])}</select></div>
+          <div class="form-field"><label>Kind</label><select id="invKind" onchange="invRefresh()"><option value="">All</option>${mp8Options(["BOOKING", "FOLIO", "ORDER", "CORPORATE", "CREDIT_NOTE"])}</select></div>
+          <div class="form-field"><label>From</label><input id="invFrom" type="date" onchange="invRefresh()" /></div>
+          <div class="form-field"><label>To</label><input id="invTo" type="date" onchange="invRefresh()" /></div>
+        </div>
+      </div>
+      <div id="invNotice"></div>
+      <div id="invBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await invRefresh();
+}
+async function invRefresh() {
+  const filters = { limit: 100 };
+  ["status", "kind", "from", "to"].forEach((k) => { const v = mp8Val(`inv${k[0].toUpperCase()}${k.slice(1)}`); if (v) filters[k] = v; });
+  try {
+    const { invoices } = await managerApi.listInvoices(filters);
+    document.getElementById("invBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Number</th><th>Kind</th><th>Guest / account</th><th>Issued</th><th>Total</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
+        <tbody>${(invoices || []).length ? invoices.map((i) => `
+          <tr>
+            <td><b>${mp8Esc(i.number || String(i.id).slice(0, 8))}</b></td>
+            <td>${mp8Badge(i.kind)}</td>
+            <td>${mp8Esc(i.guestName || i.corporateAccount?.name || "—")}</td>
+            <td>${mp8Date(i.issuedAt || i.createdAt)}</td>
+            <td>${mp8Money(i.total ?? i.totalAmount, i.currency)}</td>
+            <td>${mp8Badge(i.status)}</td>
+            <td style="text-align:right;"><div class="row-actions">
+              <button class="btn btn-outline btn-sm" onclick="invOpenDetail('${i.id}')">View</button>
+              <button class="btn btn-outline btn-sm" onclick="invOpenSend('${i.id}')">Send</button>
+              <button class="btn btn-outline btn-sm" onclick="invOpenCreditNote('${i.id}')">Credit note</button>
+            </div></td>
+          </tr>`).join("") : mp8Empty(7, "No invoices match this filter.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("invBody", err); }
+}
+async function invOpenDetail(id) {
+  mp8OpenModal("Invoice", `<div class="loading-state">Loading…</div>`, "", 680);
+  try {
+    const { invoice } = await managerApi.getInvoice(id);
+    mp8OpenModal(`Invoice ${invoice.number || String(invoice.id).slice(0, 8)}`, `
+      <div class="summary-line"><span>Kind</span><span>${mp8Badge(invoice.kind)}</span></div>
+      <div class="summary-line"><span>Status</span><span>${mp8Badge(invoice.status)}</span></div>
+      <div class="summary-line"><span>Issued</span><span>${mp8Date(invoice.issuedAt || invoice.createdAt)}</span></div>
+      <div class="table-wrap" style="margin-top:12px;"><table>
+        <thead><tr><th>Description</th><th>Qty</th><th>Amount</th></tr></thead>
+        <tbody>${(invoice.lines || []).length ? invoice.lines.map((l) => `<tr><td>${mp8Esc(l.description || l.itemName || "—")}</td><td>${l.quantity ?? 1}</td><td>${mp8Money(l.amount ?? l.total, invoice.currency)}</td></tr>`).join("") : mp8Empty(3, "No lines recorded.")}</tbody>
+      </table></div>
+      <div class="summary-line total"><span>Total</span><span>${mp8Money(invoice.total ?? invoice.totalAmount, invoice.currency)}</span></div>`,
+      `<button class="btn btn-outline" onclick="mp8CloseModal()">Close</button>
+       <button class="btn btn-primary" onclick="invOpenSend('${invoice.id}')">Send to guest</button>`, 680);
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+function invOpenSend(id) {
+  mp8OpenModal("Send invoice", `
+    <div class="form-field"><label>Email</label><input id="isEmail" type="email" placeholder="Leave blank to use the guest's address" /></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="invSendConfirm('${id}')">Send</button>`);
+}
+async function invSendConfirm(id) {
+  try { await managerApi.sendInvoice(id, mp8Val("isEmail") || undefined); mp8CloseModal(); mp8Notice("invNotice", "Invoice sent.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function invOpenCreditNote(id) {
+  mp8OpenModal("Raise a credit note", `
+    <div class="form-field"><label>Reason *</label><textarea id="cnReason" rows="3"></textarea></div>
+    <div class="form-field"><label>Amount</label><input id="cnAmount" type="number" min="0" step="0.01" placeholder="Leave blank to credit the full invoice" /></div>
+    <p class="form-hint">Issued invoices are never edited — a credit note negates them.</p>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-danger" onclick="invCreditNoteConfirm('${id}')">Raise credit note</button>`);
+}
+async function invCreditNoteConfirm(id) {
+  const reason = mp8Val("cnReason"); if (!reason) return mp8ModalNotice("A reason is required.");
+  const amount = mp8Val("cnAmount");
+  try { await managerApi.creditNote(id, { reason, amount: amount ? Number(amount) : undefined }); mp8CloseModal(); await invRefresh(); mp8Notice("invNotice", "Credit note raised.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+function invOpenCorporate() {
+  mp8OpenModal("Corporate period invoice", `
+    <div class="form-field"><label>Corporate account ID *</label><input id="ciAccount" /></div>
+    <div class="form-row">
+      <div class="form-field"><label>Period start *</label><input id="ciStart" type="date" /></div>
+      <div class="form-field"><label>Period end *</label><input id="ciEnd" type="date" /></div>
+    </div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="invCorporateConfirm()">Raise invoice</button>`);
+}
+async function invCorporateConfirm() {
+  const id = mp8Val("ciAccount"), periodStart = mp8Val("ciStart"), periodEnd = mp8Val("ciEnd");
+  if (!id || !periodStart || !periodEnd) return mp8ModalNotice("Account and both dates are required.");
+  try { await managerApi.corporateInvoice(id, { periodStart, periodEnd }); mp8CloseModal(); await invRefresh(); mp8Notice("invNotice", "Corporate invoice raised.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   REFUNDS — view and retry failed provider refunds.
+   Reversing a transaction outright stays a Director action.
+   ============================================================ */
+async function loadRefundsPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Refunds", "Every refund decision made at this branch")}
+    <div class="panel">
+      <div class="panel-header">
+        <select id="refStatus" onchange="refRefresh()" style="max-width:220px;">
+          <option value="">All statuses</option>${mp8Options(["PENDING", "PROCESSING", "COMPLETED", "FAILED", "MANUAL"])}
+        </select>
+      </div>
+      <div id="refNotice"></div>
+      <div id="refBody"><div class="loading-state">Loading…</div></div>
+      <p class="form-hint">Reversing a settled transaction is a Director action and isn't available here. Stay refunds are issued from Front Desk.</p>
+    </div>`;
+  await refRefresh();
+}
+async function refRefresh() {
+  try {
+    const { refunds } = await managerApi.listRefunds(mp8Val("refStatus") || undefined);
+    document.getElementById("refBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Guest</th><th>Amount</th><th>Reason</th><th>Status</th><th style="text-align:right;">Actions</th></tr></thead>
+        <tbody>${(refunds || []).length ? refunds.map((r) => `
+          <tr>
+            <td>${mp8Date(r.createdAt)}</td>
+            <td>${mp8Esc(r.booking?.guest?.name || r.guestName || "—")}</td>
+            <td>${mp8Money(r.amount, r.currency)}</td>
+            <td>${mp8Esc((r.reason || "").slice(0, 60))}</td>
+            <td>${mp8Badge(r.status)}</td>
+            <td style="text-align:right;">${r.status === "FAILED" ? `<button class="btn btn-outline btn-sm" onclick="refRetry('${r.id}')">Retry</button>` : "—"}</td>
+          </tr>`).join("") : mp8Empty(6, "No refunds recorded.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("refBody", err); }
+}
+async function refRetry(id) {
+  try { await managerApi.retryRefund(id); await refRefresh(); mp8Notice("refNotice", "Refund retried.", "success"); }
+  catch (err) { mp8Notice("refNotice", err.message); }
+}
+
+/* ============================================================
+   ROSTER & DEPARTMENTS
+   ============================================================ */
+async function loadRosterPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Roster", "Plan and publish shifts for your branch",
+      `<button class="btn btn-primary" onclick="rosOpenShiftModal()"><i class="fas fa-plus"></i> Add shift</button>`)}
+    <div class="panel">
+      <div class="panel-header">
+        <div class="form-row" style="margin:0;">
+          <div class="form-field"><label>From</label><input id="rosFrom" type="date" value="${mp8Today()}" onchange="rosRefresh()" /></div>
+          <div class="form-field"><label>To</label><input id="rosTo" type="date" value="${mp8Today(7)}" onchange="rosRefresh()" /></div>
+        </div>
+        <button class="btn btn-outline" onclick="rosPublish()">Publish this range</button>
+      </div>
+      <div id="rosNotice"></div>
+      <div id="rosBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await rosRefresh();
+}
+async function rosRefresh() {
+  try {
+    const { shifts } = await managerApi.getRoster(mp8Val("rosFrom"), mp8Val("rosTo"));
+    document.getElementById("rosBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Staff</th><th>Shift</th><th>Role</th><th>Department</th><th>Published</th></tr></thead>
+        <tbody>${(shifts || []).length ? shifts.map((s) => `
+          <tr><td>${mp8Date(s.date)}</td><td>${mp8Esc(s.staff?.name || s.staffId)}</td>
+            <td>${mp8Esc(s.startTime || "")} – ${mp8Esc(s.endTime || "")}</td>
+            <td>${mp8Esc(s.role || "—")}</td><td>${mp8Esc(s.department?.name || "—")}</td>
+            <td>${s.publishedAt ? mp8Date(s.publishedAt) : "Draft"}</td></tr>`).join("") : mp8Empty(6, "No shifts planned in this range.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("rosBody", err); }
+}
+async function rosOpenShiftModal() {
+  let staff = [], departments = [];
+  try { staff = (await managerApi.listStaff()).staff || []; } catch { /* required below */ }
+  try { departments = (await managerApi.getDepartments()).departments || []; } catch { /* optional */ }
+  mp8OpenModal("Add shift", `
+    <div class="form-row">
+      <div class="form-field"><label>Staff *</label><select id="rsStaff">${staff.map((s) => `<option value="${s.id}">${mp8Esc(s.name)}</option>`).join("")}</select></div>
+      <div class="form-field"><label>Date *</label><input id="rsDate" type="date" value="${mp8Today()}" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Start *</label><input id="rsStart" type="time" value="08:00" /></div>
+      <div class="form-field"><label>End *</label><input id="rsEnd" type="time" value="16:00" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Role</label><input id="rsRole" placeholder="e.g. Front desk" /></div>
+      <div class="form-field"><label>Department</label><select id="rsDept"><option value="">None</option>${departments.map((d) => `<option value="${d.id}">${mp8Esc(d.name)}</option>`).join("")}</select></div>
+    </div>
+    <div class="form-field"><label>Notes</label><input id="rsNotes" /></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="rosSaveShift()">Save shift</button>`);
+}
+async function rosSaveShift() {
+  const shift = { staffId: mp8Val("rsStaff"), date: mp8Val("rsDate"), startTime: mp8Val("rsStart"), endTime: mp8Val("rsEnd") };
+  if (!shift.staffId || !shift.date) return mp8ModalNotice("Staff member and date are required.");
+  const role = mp8Val("rsRole"); if (role) shift.role = role;
+  const dept = mp8Val("rsDept"); if (dept) shift.departmentId = dept;
+  const notes = mp8Val("rsNotes"); if (notes) shift.notes = notes;
+  try { await managerApi.saveRoster([shift]); mp8CloseModal(); await rosRefresh(); mp8Notice("rosNotice", "Shift saved.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+async function rosPublish() {
+  if (!confirm("Publish the roster for this range? Affected staff are notified.")) return;
+  try { const res = await managerApi.publishRoster(mp8Val("rosFrom"), mp8Val("rosTo")); await rosRefresh(); mp8Notice("rosNotice", `Published ${res.published ?? 0} shift(s); ${res.notified ?? 0} staff notified.`, "success"); }
+  catch (err) { mp8Notice("rosNotice", err.message); }
+}
+
+async function loadDepartmentsPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Departments", "Escalation owners and notification routing for your branch",
+      `<button class="btn btn-primary" onclick="deptOpenModal()"><i class="fas fa-plus"></i> New department</button>`)}
+    <div class="panel"><div id="deptNotice"></div><div id="deptBody"><div class="loading-state">Loading…</div></div></div>`;
+  await deptRefresh();
+}
+async function deptRefresh() {
+  try {
+    const { departments } = await managerApi.getDepartments();
+    document.getElementById("deptBody").innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Department</th><th>Code</th><th>Notify</th><th>Escalates after</th></tr></thead>
+        <tbody>${(departments || []).length ? departments.map((d) => `
+          <tr><td><b>${mp8Esc(d.name || d.label || "—")}</b></td><td>${mp8Esc(d.code || d.key || "—")}</td>
+            <td>${mp8Esc(d.notifyEmail || "—")}</td><td>${d.escalationHours != null ? `${d.escalationHours}h` : "—"}</td></tr>`).join("") : mp8Empty(4, "No departments defined yet.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("deptBody", err); }
+}
+function deptOpenModal() {
+  mp8OpenModal("New department", `
+    <div class="form-row">
+      <div class="form-field"><label>Name *</label><input id="dpName" /></div>
+      <div class="form-field"><label>Code *</label><input id="dpCode" placeholder="e.g. FRONT_DESK" /></div>
+    </div>
+    <div class="form-row">
+      <div class="form-field"><label>Notification email</label><input id="dpEmail" type="email" /></div>
+      <div class="form-field"><label>Escalate after (hours)</label><input id="dpHours" type="number" min="1" step="1" /></div>
+    </div>
+    <div class="form-field"><label>Department head (staff ID)</label><input id="dpManager" placeholder="Optional" /></div>`,
+    `<button class="btn btn-outline" onclick="mp8CloseModal()">Cancel</button>
+     <button class="btn btn-primary" onclick="deptCreateConfirm()">Create</button>`);
+}
+async function deptCreateConfirm() {
+  const payload = { name: mp8Val("dpName"), code: mp8Val("dpCode") };
+  if (!payload.name || !payload.code) return mp8ModalNotice("Name and code are required.");
+  const email = mp8Val("dpEmail"); if (email) payload.notifyEmail = email;
+  const hours = mp8Val("dpHours"); if (hours) payload.escalationHours = Number(hours);
+  const managerId = mp8Val("dpManager"); if (managerId) payload.managerId = managerId;
+  try { await managerApi.createDepartment(payload); mp8CloseModal(); await deptRefresh(); mp8Notice("deptNotice", "Department created.", "success"); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   TICKET SCANNING & EVENT ATTENDEES
+   ============================================================ */
+async function loadTicketScanPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Ticket Desk", "Redeem event tickets at the door and check the attendee list")}
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Redeem a ticket</h3></div>
+      <div class="form-row">
+        <div class="form-field"><label>Ticket code</label><input id="tsCode" placeholder="Scan or type the code" onkeydown="if(event.key==='Enter')tsRedeem()" /></div>
+        <div class="form-field" style="align-self:end;"><button class="btn btn-primary" onclick="tsRedeem()">Redeem</button></div>
+      </div>
+      <div id="tsResult"></div>
+    </div>
+    <div class="panel">
+      <div class="panel-header"><h3 class="panel-title">Attendees</h3>
+        <select id="tsEvent" onchange="tsLoadAttendees()" style="max-width:280px;"><option value="">Loading events…</option></select></div>
+      <div id="tsAttendeeActions"></div>
+      <div id="tsAttendees"><div class="empty-state">Pick an event to see its attendee list.</div></div>
+    </div>`;
+  try {
+    const { events } = await managerApi.listEvents();
+    document.getElementById("tsEvent").innerHTML = `<option value="">Select an event</option>` +
+      (events || []).map((e) => `<option value="${e.id}">${mp8Esc(e.name)} — ${mp8Date(e.startsAt)}</option>`).join("");
+  } catch (err) { document.getElementById("tsAttendees").innerHTML = `<div class="notice error">${mp8Esc(err.message)}</div>`; }
+}
+async function tsRedeem() {
+  const code = mp8Val("tsCode"); if (!code) return;
+  const box = document.getElementById("tsResult");
+  try {
+    const res = await managerApi.redeemTicket(code);
+    box.innerHTML = `<div class="notice ${res.ok ? "success" : "error"}">${mp8Esc(res.message || (res.ok ? "Ticket accepted" : "Ticket refused"))}${res.reason ? ` (${mp8Esc(res.reason)})` : ""}</div>`;
+  } catch (err) { box.innerHTML = `<div class="notice error">${mp8Esc(err.message)}</div>`; }
+  document.getElementById("tsCode").value = ""; document.getElementById("tsCode").focus();
+}
+async function tsLoadAttendees() {
+  const id = mp8Val("tsEvent");
+  const box = document.getElementById("tsAttendees");
+  document.getElementById("tsAttendeeActions").innerHTML = "";
+  if (!id) { box.innerHTML = `<div class="empty-state">Pick an event to see its attendee list.</div>`; return; }
+  box.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const res = await managerApi.listEventAttendees(id);
+    document.getElementById("tsAttendeeActions").innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Tickets sold</div><div class="stat-value">${res.total ?? 0}</div></div>
+        <div class="stat-card"><div class="stat-label">Redeemed</div><div class="stat-value">${res.redeemed ?? 0}</div></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;">
+        <a class="btn btn-outline" href="${managerApi.attendeesExportUrl(id, "csv")}" target="_blank" rel="noopener">Download CSV</a>
+        <a class="btn btn-outline" href="${managerApi.attendeesExportUrl(id, "xlsx")}" target="_blank" rel="noopener">Download Excel</a>
+      </div>`;
+    box.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Code</th><th>Guest</th><th>Status</th><th>Redeemed</th></tr></thead>
+        <tbody>${(res.tickets || []).length ? res.tickets.map((t) => `
+          <tr><td><code>${mp8Esc(t.code)}</code></td><td>${mp8Esc(t.guestName || t.order?.guest?.name || "—")}</td>
+            <td>${mp8Badge(t.status)}</td><td>${mp8DateTime(t.redeemedAt)}</td></tr>`).join("") : mp8Empty(4, "No tickets issued yet.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("tsAttendees", err); }
+}
+
+/* ============================================================
+   REPORTS — performance, food cost, night audit, exports
+   ============================================================ */
+async function loadPerformancePage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Performance", "Occupancy and revenue for a date range you choose")}
+    <div class="panel">
+      <div class="panel-header">
+        <div class="form-row" style="margin:0;">
+          <div class="form-field"><label>From</label><input id="perfFrom" type="date" value="${mp8Today(-30)}" /></div>
+          <div class="form-field"><label>To</label><input id="perfTo" type="date" value="${mp8Today()}" /></div>
+          <div class="form-field" style="align-self:end;"><button class="btn btn-primary" onclick="perfRefresh()">Run</button></div>
+        </div>
+      </div>
+      <div id="perfBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await perfRefresh();
+}
+async function perfRefresh() {
+  const body = document.getElementById("perfBody");
+  body.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const res = await managerApi.performanceReport(mp8Val("perfFrom"), mp8Val("perfTo"));
+    const r = res.report || res;
+    const cards = Object.entries(r).filter(([, v]) => typeof v === "number" || typeof v === "string");
+    body.innerHTML = `
+      <div class="stats-grid">${cards.map(([k, v]) => `
+        <div class="stat-card"><div class="stat-label">${mp8Esc(k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()))}</div>
+          <div class="stat-value">${typeof v === "number" && /revenue|adr|revpar|amount/i.test(k) ? mp8Money(v) : mp8Esc(v)}</div></div>`).join("")}</div>
+      ${Array.isArray(r.days) ? `<div class="table-wrap"><table>
+        <thead><tr><th>Date</th><th>Occupancy</th><th>Rooms sold</th><th>Revenue</th></tr></thead>
+        <tbody>${r.days.map((d) => `<tr><td>${mp8Date(d.date)}</td><td>${d.occupancyPercent != null ? `${d.occupancyPercent}%` : "—"}</td><td>${d.roomsSold ?? "—"}</td><td>${mp8Money(d.revenue)}</td></tr>`).join("")}</tbody>
+      </table></div>` : ""}`;
+  } catch (err) { mp8Error("perfBody", err); }
+}
+async function loadFoodCostPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Food Cost", "What the kitchen consumed against what it sold")}
+    <div class="panel">
+      <div class="panel-header">
+        <div class="form-row" style="margin:0;">
+          <div class="form-field"><label>From</label><input id="fcFrom" type="date" value="${mp8Today(-30)}" /></div>
+          <div class="form-field"><label>To</label><input id="fcTo" type="date" value="${mp8Today()}" /></div>
+          <div class="form-field" style="align-self:end;"><button class="btn btn-primary" onclick="fcRefresh()">Run</button></div>
+        </div>
+      </div>
+      <div id="fcBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await fcRefresh();
+}
+async function fcRefresh() {
+  const body = document.getElementById("fcBody");
+  body.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const res = await managerApi.foodCostReport(mp8Val("fcFrom"), mp8Val("fcTo"));
+    const r = res.report || res;
+    const rows = r.items || r.lines || [];
+    body.innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card"><div class="stat-label">Cost of goods</div><div class="stat-value">${mp8Money(r.costOfGoods ?? r.totalCost)}</div></div>
+        <div class="stat-card"><div class="stat-label">Revenue</div><div class="stat-value">${mp8Money(r.revenue ?? r.totalRevenue)}</div></div>
+        <div class="stat-card"><div class="stat-label">Food cost</div><div class="stat-value">${r.foodCostPercent != null ? `${Number(r.foodCostPercent).toFixed(1)}%` : "—"}</div></div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Item</th><th>Consumed</th><th>Cost</th><th>Revenue</th></tr></thead>
+        <tbody>${rows.length ? rows.map((i) => `<tr><td>${mp8Esc(i.name || i.itemName || "—")}</td><td>${i.quantity ?? i.consumed ?? "—"}</td><td>${mp8Money(i.cost)}</td><td>${mp8Money(i.revenue)}</td></tr>`).join("") : mp8Empty(4, "Nothing consumed in this range.")}</tbody>
+      </table></div>`;
+  } catch (err) { mp8Error("fcBody", err); }
+}
+async function loadNightAuditPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Night Audit", "The end-of-day position for your branch")}
+    <div class="panel">
+      <div class="panel-header"><input id="naDate" type="date" value="${mp8Today()}" onchange="naRefresh()" style="max-width:200px;" /></div>
+      <div id="naBody"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  await naRefresh();
+}
+async function naRefresh() {
+  const body = document.getElementById("naBody");
+  body.innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const res = await managerApi.nightAuditReport(mp8Val("naDate"));
+    const r = res.report || res;
+    body.innerHTML = `
+      <div class="stats-grid">${Object.entries(r).filter(([, v]) => typeof v === "number").map(([k, v]) => `
+        <div class="stat-card"><div class="stat-label">${mp8Esc(k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase()))}</div>
+          <div class="stat-value">${/revenue|amount|cash|total|balance/i.test(k) ? mp8Money(v) : v}</div></div>`).join("")}</div>
+      ${Array.isArray(r.discrepancies) && r.discrepancies.length ? `<div class="notice error">${r.discrepancies.map((d) => mp8Esc(typeof d === "string" ? d : JSON.stringify(d))).join("<br>")}</div>` : `<div class="notice success">No discrepancies flagged for this date.</div>`}`;
+  } catch (err) { mp8Error("naBody", err); }
+}
+async function loadExportsPage() {
+  document.getElementById("pageContent").innerHTML = `
+    ${pageHeader("Exports", "Download branch data for bookings, performance and tax")}
+    <div class="panel">
+      <div class="form-row">
+        <div class="form-field"><label>From</label><input id="exFrom" type="date" value="${mp8Today(-30)}" /></div>
+        <div class="form-field"><label>To</label><input id="exTo" type="date" value="${mp8Today()}" /></div>
+        <div class="form-field"><label>Format</label><select id="exFormat"><option value="csv">CSV</option><option value="xlsx">Excel</option></select></div>
+      </div>
+      <div class="modal-actions" style="justify-content:flex-start;">
+        <button class="btn btn-outline" onclick="exDownload('bookings')">Bookings</button>
+        <button class="btn btn-outline" onclick="exDownload('performance')">Performance</button>
+        <button class="btn btn-outline" onclick="exDownload('tax')">Tax</button>
+      </div>
+      <p class="form-hint">Very large ranges are capped by the system; narrow the dates if a download looks short.</p>
+    </div>`;
+}
+function exDownload(kind) {
+  const url = managerApi.exportUrl(kind, { from: mp8Val("exFrom"), to: mp8Val("exTo"), format: mp8Val("exFormat") });
+  window.open(url, "_blank", "noopener");
+}
+
+/* ============================================================
+   GROUP BOOKING DETAIL — status progression
+   ============================================================ */
+async function gbOpenDetail(id) {
+  mp8OpenModal("Group booking", `<div class="loading-state">Loading…</div>`, "", 640);
+  try {
+    const res = await managerApi.getGroupBooking(id);
+    const g = res.groupBooking || res.group || res;
+    mp8OpenModal(`Group — ${g.groupName || ""}`, `
+      <div class="summary-line"><span>Status</span><span>${mp8Badge(g.status)}</span></div>
+      <div class="summary-line"><span>Stay</span><span>${mp8Date(g.checkIn)} → ${mp8Date(g.checkOut)}</span></div>
+      <div class="summary-line"><span>Rooms</span><span>${g.rooms ?? (g.bookings || []).length}</span></div>
+      <div class="summary-line"><span>Rooming list due</span><span>${mp8Date(g.roomingListDeadline)}</span></div>
+      <div class="form-field" style="margin-top:14px;"><label>Move status to</label>
+        <select id="gbStatus">${mp8Options(["PENDING", "CONFIRMED", "CHECKED_IN", "CHECKED_OUT", "CANCELLED"], g.status)}</select></div>`,
+      `<button class="btn btn-outline" onclick="mp8CloseModal()">Close</button>
+       <button class="btn btn-primary" onclick="gbSetStatus('${id}')">Save status</button>`, 640);
+  } catch (err) { mp8ModalNotice(err.message); }
+}
+async function gbSetStatus(id) {
+  try { await managerApi.updateGroupBookingStatus(id, mp8Val("gbStatus")); mp8CloseModal(); if (typeof loadGroupBookingsPage === "function") loadGroupBookingsPage(); }
+  catch (err) { mp8ModalNotice(err.message); }
+}
+
+/* ============================================================
+   NAV + ROUTER WIRING
+   ============================================================ */
+function mp8NavInsert(groupId, items, afterPage) {
+  const group = NAV_GROUPS.find((g) => g.id === groupId);
+  if (!group) { NAV_GROUPS.push({ id: groupId, label: groupId, icon: "fa-circle", items }); return; }
+  const at = afterPage ? group.items.findIndex((i) => i.page === afterPage) + 1 : group.items.length;
+  group.items.splice(at, 0, ...items);
+}
+mp8NavInsert("operations", [
+  { page: "frontdesk", label: "Front Desk", icon: "fa-bell-concierge", permission: "manage_bookings" },
+], undefined);
+mp8NavInsert("operations", [
+  { page: "hkboard", label: "Housekeeping Board", icon: "fa-clipboard-check", permission: "manage_rooms" },
+  { page: "maintenance", label: "Maintenance", icon: "fa-screwdriver-wrench", permission: "manage_rooms" },
+], "housekeeping");
+mp8NavInsert("operations", [
+  { page: "rates", label: "Rates & Channels", icon: "fa-calendar-days", permission: "manage_rooms" },
+], "rooms");
+mp8NavInsert("operations", [
+  { page: "spaschedule", label: "Spa Schedule", icon: "fa-clock", permission: "manage_bookings" },
+], "spa");
+mp8NavInsert("operations", [
+  { page: "orderdesk", label: "Order Desk", icon: "fa-cash-register", permission: "manage_orders" },
+], "orders");
+mp8NavInsert("operations", [
+  { page: "stocklogistics", label: "Stock Movements", icon: "fa-truck-ramp-box", permission: "manage_stock" },
+], "stock");
+mp8NavInsert("operations", [
+  { page: "ticketdesk", label: "Ticket Desk", icon: "fa-qrcode", permission: "manage_events" },
+], "events");
+mp8NavInsert("finance", [
+  { page: "invoices", label: "Invoices", icon: "fa-file-invoice-dollar", permission: "manage_payments" },
+  { page: "refunds", label: "Refunds", icon: "fa-rotate-left", permission: "manage_payments" },
+]);
+mp8NavInsert("people", [
+  { page: "roster", label: "Roster", icon: "fa-calendar-week", permission: "manage_staff" },
+  { page: "departments", label: "Departments", icon: "fa-sitemap", permission: "manage_staff" },
+]);
+mp8NavInsert("reports", [
+  { page: "performance", label: "Performance", icon: "fa-gauge-high", permission: "view_reports" },
+  { page: "foodcost", label: "Food Cost", icon: "fa-carrot", permission: "view_reports" },
+  { page: "nightaudit", label: "Night Audit", icon: "fa-moon", permission: "view_reports" },
+  { page: "exports", label: "Exports", icon: "fa-file-export", permission: "view_reports" },
+]);
+
+Object.assign(PAGE_LOADERS, {
+  frontdesk: loadFrontDeskPage,
+  hkboard: loadHousekeepingBoardPage,
+  maintenance: loadMaintenancePage,
+  rates: loadRatesPage,
+  spaschedule: loadSpaSchedulePage,
+  orderdesk: loadOrderDeskPage,
+  stocklogistics: loadStockLogisticsPage,
+  ticketdesk: loadTicketScanPage,
+  invoices: loadInvoicesPage,
+  refunds: loadRefundsPage,
+  roster: loadRosterPage,
+  departments: loadDepartmentsPage,
+  performance: loadPerformancePage,
+  foodcost: loadFoodCostPage,
+  nightaudit: loadNightAuditPage,
+  exports: loadExportsPage,
+});
+
+// Sidebar, now permission-aware: a Manager sees the whole branch surface,
+// a Staff-type session only what their granted permissions allow.
+function renderSidebar() {
+  const staff = getStaff();
+  if (!staff) return;
+  document.getElementById("adminAvatar").textContent = (staff.name || "?").charAt(0).toUpperCase();
+  document.getElementById("adminName").textContent = staff.name || "";
+  document.getElementById("adminRole").textContent = staff.roleTitle || staff.title || staff.role || staff.type || "";
+  document.getElementById("adminBranch").textContent = staff.branchName || "";
+
+  const groupsHtml = NAV_GROUPS.map((group) => {
+    const visibleItems = group.items.filter((item) => hasPermission(item.permission));
+    if (!visibleItems.length) return "";
+    return `
+      <div class="nav-group open" data-group="${group.id}">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <i class="fas ${group.icon} group-icon"></i>
+          <span class="group-label">${group.label}</span>
+          <i class="fas fa-chevron-down group-chevron"></i>
+        </div>
+        <div class="nav-group-body">
+          ${visibleItems.map((item) => `
+            <div class="nav-item" data-page="${item.page}" onclick="switchPage('${item.page}')">
+              <i class="fas ${item.icon}"></i><span>${item.label}</span>
+              ${item.badgeId ? `<span class="nav-badge" id="${item.badgeId}">0</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>`;
+  }).join("");
+
+  const settingsVisible = hasPermission("manage_settings");
+  document.getElementById("navMenu").innerHTML = `
+    <div class="nav-item-standalone active" data-page="dashboard" onclick="switchPage('dashboard')">
+      <i class="fas fa-house"></i><span>Dashboard</span>
+    </div>
+    <div class="nav-divider"></div>
+    ${groupsHtml}
+    ${settingsVisible ? `
+      <div class="nav-divider"></div>
+      <div class="nav-item-standalone" data-page="branchprofile" onclick="switchPage('branchprofile')">
+        <i class="fas fa-building"></i><span>Branch Profile</span>
+      </div>
+      <div class="nav-item-standalone" data-page="settings" onclick="switchPage('settings')">
+        <i class="fas ${SETTINGS_ITEM.icon}"></i><span>${SETTINGS_ITEM.label}</span>
+      </div>
+    ` : ""}`;
+}
+
+// This layer loads after the original boot line, so re-render the shell for a
+// session that was already restored from storage.
+if (getToken() && getStaff()) { renderSidebar(); switchPage("dashboard"); }
+
+</script>
 </body>
 </html>
