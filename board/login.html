@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff login — Solace House</title>
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<div class="login-screen">
+  <div class="login-card">
+    <div class="brand">Solace <span style="color:var(--brass);">House</span></div>
+    <p class="sub">Staff dashboard</p>
+
+    <div id="notice-area"></div>
+
+    <form id="login-form">
+      <div class="form-field">
+        <label for="email">Email</label>
+        <input type="email" id="email" required autocomplete="username">
+      </div>
+      <div class="form-field">
+        <label for="password">Password</label>
+        <input type="password" id="password" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; margin-top:8px;" id="login-btn">Log in</button>
+    </form>
+  </div>
+</div>
+
+<script src="js/admin-api.js"></script>
+<script>
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("login-btn");
+  const notice = document.getElementById("notice-area");
+  notice.innerHTML = "";
+  btn.disabled = true;
+  btn.textContent = "Logging in…";
+
+  try {
+    const { token, staff } = await adminApi.login(
+      document.getElementById("email").value,
+      document.getElementById("password").value
+    );
+    setSession(token, staff);
+    window.location.href = "dashboard.html";
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+    btn.disabled = false;
+    btn.textContent = "Log in";
+  }
+});
+
+// Already logged in? Skip straight to the dashboard.
+if (getToken() && getStaff()) window.location.href = "dashboard.html";
+</script>
+</body>
+</html>

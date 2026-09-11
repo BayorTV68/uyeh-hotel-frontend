@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="pageTitle">Blog — Our Hotel</title>
-<meta name="description" id="pageDescription" content="News, offers, and stories from Our Hotel.">
+<title id="pageTitle">Blog — uyeh Hotel</title>
+<meta name="description" id="pageDescription" content="News, offers, and stories from uyeh Hotel.">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap');
 
@@ -87,7 +87,7 @@ footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 48px
 
 <nav class="site-nav">
   <div class="wrap">
-    <a href="index.html" class="brand" id="navBrand">Our Hotel</a>
+    <a href="index.html" class="brand" id="navBrand">uyeh Hotel</a>
     <div class="nav-links" id="navLinks">
       <a href="index.html">Home</a>
       <a href="index.html#locations">Locations</a>
@@ -128,7 +128,7 @@ footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 48px
 <footer>
   <div class="wrap">
     <div class="footer-bottom">
-      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Our Hotel</span>. All rights reserved.</span>
+      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Uyeh Hotel</span>. All rights reserved.</span>
       <a href="index.html">&larr; Back to home</a>
     </div>
   </div>
@@ -158,8 +158,8 @@ footer { background: var(--ink); color: rgba(237, 230, 214, 0.55); padding: 48px
   async function hydrateBrand() {
     try {
       const { settings } = await apiRequest("/settings");
-      const name = settings.platformName || "Our Hotel";
-      document.title = document.title.replace("Our Hotel", name);
+      const name = settings.platformName || "uyeh Hotel";
+      document.title = document.title.replace("uyeh Hotel", name);
       document.getElementById("footerCopyrightName").textContent = name;
       const navBrand = document.getElementById("navBrand");
       if (settings.logoUrl) navBrand.innerHTML = `<img class="brand-logo" src="${settings.logoUrl}" alt="${name}">`;

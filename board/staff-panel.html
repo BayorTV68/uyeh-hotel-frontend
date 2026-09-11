@@ -1,0 +1,2296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Staff Panel — Uyeh Hotel</title>
+<meta name="robots" content="noindex, nofollow">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500,600,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* ============================================================
+   Uyeh HOTEL — STAFF PANEL
+   Most restricted tier. Same design tokens as Director/Manager
+   dashboards. No staff management, no settings — a Staff account
+   only ever gets the operational sections a Manager granted them
+   via checkbox permissions at account creation. Single-file SPA.
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --ink: #14181f; --ink-light: #1c2230; --ivory: #f6f1e7; --panel: #ffffff;
+  --border: #e6e0d2; --border-soft: rgba(20,24,31,0.08);
+  --brass: #b98d45; --brass-dark: #96712f; --teal: #2f5d5a; --danger: #a3392a; --info: #3b6ea5;
+  --text-muted: #6b6355; --text-on-dark: #ede6d6; --text-on-dark-muted: rgba(237,230,214,0.6);
+  --font-display: 'Fraunces', serif; --font-body: 'Inter', -apple-system, sans-serif; --radius: 8px;
+}
+
+body { font-family: var(--font-body); background: var(--ivory); color: var(--ink); overflow-x: hidden; font-size: 14px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; }
+a { color: inherit; }
+
+/* LOGIN */
+.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--ink); }
+.login-card { background: var(--panel); padding: 48px 40px; border-radius: var(--radius); width: 100%; max-width: 380px; }
+.login-card .brand { font-family: var(--font-display); font-size: 1.5rem; margin-bottom: 6px; }
+.login-card .brand span { color: var(--brass); }
+.login-card p.sub { color: var(--text-muted); margin-bottom: 28px; font-size: 0.88rem; }
+
+/* SIDEBAR */
+.sidebar { position: fixed; left: 0; top: 0; height: 100vh; width: 270px; background: var(--ink);
+  border-right: 1px solid rgba(237,230,214,0.08); padding: 26px 0; z-index: 1000; overflow-y: auto; transition: transform 0.3s ease; }
+.sidebar-header { padding: 0 26px 22px; border-bottom: 1px solid rgba(237,230,214,0.08); display: flex; align-items: center; gap: 12px; }
+.logo-icon { width: 42px; height: 42px; border-radius: 10px; background: linear-gradient(135deg, var(--brass-dark), var(--brass));
+  display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-weight: 700; color: var(--ink); font-size: 1.1rem; }
+.logo-text { font-family: var(--font-display); font-size: 1.2rem; color: var(--text-on-dark); }
+.logo-text span { color: var(--brass); }
+
+.admin-info { padding: 18px 26px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid rgba(237,230,214,0.08); }
+.admin-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, var(--teal), #3d7873);
+  display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; font-size: 0.95rem; flex-shrink: 0; }
+.admin-details .admin-name { color: var(--text-on-dark); font-size: 0.88rem; font-weight: 600; }
+.admin-details .admin-role { color: var(--brass); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 1px; }
+.admin-details .admin-branch { color: var(--text-on-dark-muted); font-size: 0.74rem; margin-top: 1px; }
+
+.nav-menu { padding: 14px 0; }
+.nav-item-standalone { padding: 11px 26px; display: flex; align-items: center; gap: 12px; color: var(--text-on-dark-muted);
+  cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; font-size: 0.88rem; font-weight: 500; }
+.nav-item-standalone:hover { background: rgba(185,141,69,0.06); color: var(--text-on-dark); }
+.nav-item-standalone.active { background: rgba(185,141,69,0.1); color: var(--brass); border-left-color: var(--brass); }
+.nav-item-standalone i { width: 18px; text-align: center; }
+.nav-divider { height: 1px; background: rgba(237,230,214,0.08); margin: 10px 26px 10px; }
+
+.nav-group { margin-bottom: 2px; }
+.nav-group-header { padding: 10px 26px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; transition: all 0.15s; }
+.nav-group-header:hover { background: rgba(255,255,255,0.02); }
+.nav-group-header .group-icon { width: 18px; text-align: center; font-size: 0.85rem; color: rgba(185,141,69,0.6); }
+.nav-group-header .group-label { flex: 1; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-on-dark-muted); }
+.nav-group-header .group-chevron { font-size: 0.65rem; color: rgba(237,230,214,0.25); transition: transform 0.2s; }
+.nav-group.open > .nav-group-header .group-chevron { transform: rotate(180deg); color: var(--brass); }
+.nav-group.open > .nav-group-header .group-icon, .nav-group.open > .nav-group-header .group-label { color: var(--brass); }
+.nav-group-header .group-badge { font-size: 0.62rem; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: rgba(163,57,42,0.25); color: #e08a7a; display: none; }
+.nav-group-header .group-badge.visible { display: inline-block; }
+.nav-group-body { overflow: hidden; max-height: 0; transition: max-height 0.25s ease; }
+.nav-group.open > .nav-group-body { max-height: 600px; }
+
+.nav-item { padding: 10px 26px 10px 50px; display: flex; align-items: center; gap: 11px; color: var(--text-on-dark-muted);
+  cursor: pointer; border-left: 3px solid transparent; transition: all 0.15s; font-size: 0.84rem; font-weight: 500; position: relative; }
+.nav-item:hover { background: rgba(185,141,69,0.05); color: var(--text-on-dark); }
+.nav-item.active { background: rgba(185,141,69,0.1); color: var(--brass); border-left-color: var(--brass); }
+.nav-item i { width: 16px; text-align: center; font-size: 0.82rem; }
+.nav-item .nav-badge { margin-left: auto; background: rgba(163,57,42,0.25); color: #e08a7a; padding: 1px 7px; border-radius: 9px; font-size: 0.64rem; font-weight: 700; display: none; }
+.nav-item .nav-badge.visible { display: inline-block; }
+
+.sidebar-footer { padding: 16px 26px 0; margin-top: 12px; }
+.logout-link { color: var(--text-on-dark-muted); font-size: 0.82rem; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.logout-link:hover { color: var(--text-on-dark); }
+
+/* MAIN */
+.main-content { margin-left: 270px; min-height: 100vh; }
+.topbar { background: rgba(246,241,231,0.94); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); padding: 16px 36px;
+  display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0; z-index: 100; gap: 16px; }
+.hamburger-btn { display: none; flex-direction: column; gap: 4px; background: none; border: none; cursor: pointer; padding: 6px; }
+.hamburger-btn span { width: 22px; height: 2px; background: var(--ink); border-radius: 2px; }
+.search-bar { flex: 1; max-width: 420px; position: relative; }
+.search-bar input { width: 100%; padding: 10px 16px 10px 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.88rem; font-family: var(--font-body); }
+.search-bar input:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+.search-bar i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); font-size: 0.85rem; }
+.topbar-actions { display: flex; align-items: center; gap: 14px; }
+.topbar-btn { width: 40px; height: 40px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius);
+  display: flex; align-items: center; justify-content: center; cursor: pointer; position: relative; color: var(--ink); }
+
+.page-content { padding: 30px 36px 60px; }
+.page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
+.page-title { font-size: 1.5rem; }
+.page-subtitle { color: var(--text-muted); font-size: 0.88rem; margin-top: 4px; }
+
+.stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
+.stat-card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+.stat-card b { font-family: var(--font-display); font-size: 1.6rem; display: block; }
+.stat-card span { color: var(--text-muted); font-size: 0.8rem; }
+
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; }
+.panel h3 { font-size: 1.05rem; margin-bottom: 14px; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th { text-align: left; padding: 10px 12px; color: var(--text-muted); font-weight: 600; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--border); }
+td { padding: 12px; border-bottom: 1px solid var(--border-soft); vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 0.72rem; font-weight: 600; text-transform: capitalize; }
+.badge-active, .badge-paid, .badge-confirmed, .badge-checked_in, .badge-resolved, .badge-available { background: rgba(47,93,90,0.12); color: var(--teal); }
+.badge-inactive, .badge-cancelled, .badge-refunded { background: rgba(163,57,42,0.1); color: var(--danger); }
+.badge-pending, .badge-open, .badge-maintenance { background: rgba(179,140,43,0.14); color: var(--brass-dark); }
+.badge-in_progress, .badge-cleaning, .badge-occupied { background: rgba(59,110,165,0.12); color: var(--info); }
+
+.btn { font-family: var(--font-body); font-size: 0.84rem; font-weight: 600; padding: 10px 18px; border-radius: var(--radius); border: none; cursor: pointer; transition: opacity 0.15s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--brass); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--ink); }
+.btn-outline:hover:not(:disabled) { background: var(--ivory); }
+.btn-danger { background: rgba(163,57,42,0.1); color: var(--danger); }
+.btn-danger:hover:not(:disabled) { background: rgba(163,57,42,0.18); }
+.btn-sm { padding: 6px 12px; font-size: 0.78rem; margin-right: 6px; }
+
+.loading-state, .empty-state { text-align: center; color: var(--text-muted); padding: 30px; font-size: 0.86rem; }
+.coming-soon { text-align: center; padding: 50px 20px; color: var(--text-muted); }
+.coming-soon i { font-size: 2rem; color: var(--brass); margin-bottom: 12px; display: block; }
+
+.notice { padding: 12px 16px; border-radius: var(--radius); font-size: 0.84rem; margin-bottom: 14px; }
+.notice.error { background: rgba(163,57,42,0.08); color: var(--danger); border: 1px solid rgba(163,57,42,0.2); }
+.notice.success { background: rgba(47,93,90,0.08); color: var(--teal); border: 1px solid rgba(47,93,90,0.2); }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.form-field { margin-bottom: 14px; }
+.form-field label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; color: var(--ink); }
+.form-field input, .form-field select, .form-field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); font-family: var(--font-body); font-size: 0.86rem; background: #fff; }
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { outline: 2px solid var(--brass); outline-offset: 1px; }
+
+.modal-overlay { position: fixed; inset: 0; background: rgba(20,24,31,0.5); display: flex; align-items: center; justify-content: center; z-index: 2000; padding: 20px; }
+.modal { background: var(--panel); border-radius: var(--radius); padding: 28px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; }
+.modal h3 { margin-bottom: 18px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+
+.locked-note { display: flex; align-items: flex-start; gap: 10px; background: rgba(59,110,165,0.06); border: 1px solid rgba(59,110,165,0.18);
+  border-radius: var(--radius); padding: 12px 16px; font-size: 0.82rem; color: var(--info); margin-bottom: 18px; }
+.locked-note i { margin-top: 2px; }
+
+@media (max-width: 900px) {
+  .sidebar { transform: translateX(-100%); }
+  .sidebar.open { transform: translateX(0); }
+  .main-content { margin-left: 0; }
+  .hamburger-btn { display: flex; }
+  .form-row { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div class="login-screen" id="loginScreen">
+  <div class="login-card">
+    <div class="brand">Uyeh <span>Hotel</span></div>
+    <p class="sub">Staff panel — sign in with your staff account.</p>
+    <div id="loginNotice"></div>
+    <form id="loginForm">
+      <div class="form-field"><label>Email</label><input type="email" id="loginEmail" required></div>
+      <div class="form-field"><label>Password</label><input type="password" id="loginPassword" required></div>
+      <button type="submit" class="btn btn-primary" id="loginBtn" style="width:100%; margin-top:6px;">Log in</button>
+    </form>
+
+    <form id="twoFactorForm" style="display:none;">
+      <p class="sub" style="margin-top:0;">Enter the 6-digit code from your authenticator app, or one of your backup codes.</p>
+      <div class="form-field"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required autofocus></div>
+      <button type="submit" class="btn btn-primary" id="twoFactorBtn" style="width:100%; margin-top:6px;">Verify</button>
+      <button type="button" id="twoFactorBackBtn" style="width:100%; margin-top:10px; background:none; border:none; color:var(--text-muted); font-size:0.85rem; cursor:pointer;">&larr; Back to login</button>
+    </form>
+  </div>
+</div>
+
+<div id="appShell" style="display:none;">
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-icon">O</div>
+      <div class="logo-text">Uyeh <span>Hotel</span></div>
+    </div>
+    <div class="admin-info" id="adminInfoBlock" onclick="openSecurityModal()" style="cursor:pointer;" title="Account & security">
+      <div class="admin-avatar" id="adminAvatar">S</div>
+      <div class="admin-details">
+        <div class="admin-name" id="adminName"></div>
+        <div class="admin-role" id="adminRole"></div>
+        <div class="admin-branch" id="adminBranch"></div>
+      </div>
+    </div>
+    <div class="nav-menu" id="navMenu"></div>
+    <div class="sidebar-footer">
+      <div class="logout-link" id="logoutBtn"><i class="fas fa-arrow-right-from-bracket"></i> Log out</div>
+    </div>
+  </div>
+
+  <div class="main-content">
+    <div class="topbar">
+      <button class="hamburger-btn" id="hamburgerBtn"><span></span><span></span><span></span></button>
+      <div class="search-bar"><i class="fas fa-magnifying-glass"></i><input type="text" placeholder="Search…" disabled></div>
+      <div class="topbar-actions">
+        <div class="topbar-btn" id="ticketsBellBtn"><i class="fas fa-bell"></i><span class="nav-badge" id="ticketsBellBadge" style="position:absolute; top:2px; right:2px;">0</span></div>
+      </div>
+    </div>
+    <div class="page-content" id="pageContent"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   CONFIG / SESSION
+   ============================================================ */
+const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+function getToken() { return localStorage.getItem("stf_token"); }
+function getStaff() { try { return JSON.parse(localStorage.getItem("stf_staff")); } catch { return null; } }
+function setSession(token, staff) { localStorage.setItem("stf_token", token); localStorage.setItem("stf_staff", JSON.stringify(staff)); }
+function clearSession() { localStorage.removeItem("stf_token"); localStorage.removeItem("stf_staff"); }
+function hasPermission(perm) { const s = getStaff(); return s && (s.permissions || []).includes(perm); }
+
+/* ============================================================
+   API — every call is scoped server-side to this staff member's
+   own branch AND filtered to their granted permissions. This
+   panel never sends branchId, never touches /admin/staff,
+   /admin/branches, /admin/site-settings, /admin/audit-logs, or
+   /admin/analytics — those routes shouldn't even respond to a
+   STAFF-role token, regardless of what this file does or doesn't
+   render.
+   ============================================================ */
+async function adminRequest(path, options = {}) {
+  const res = await fetch(`${API_BASE}${path}`, {
+    ...options,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}`, ...(options.headers || {}) },
+  });
+  if (res.status === 401) { clearSession(); showLogin(); throw new Error("Session expired"); }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`);
+    err.code = data.code;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+const staffApi = {
+  setupTwoFactor: () => adminRequest("/auth/2fa/setup", { method: "POST" }),
+  enableTwoFactor: (code) => adminRequest("/auth/2fa/enable", { method: "POST", body: JSON.stringify({ code }) }),
+  disableTwoFactor: (password) => adminRequest("/auth/2fa/disable", { method: "POST", body: JSON.stringify({ password }) }),
+  login: (email, password) =>
+    fetch(`${API_BASE}/auth/staff/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) })
+      .then(async (res) => { const data = await res.json(); if (!res.ok) throw new Error(data.error || "Login failed"); return data; }),
+
+  verifyTwoFactor: async (tempToken, code) => {
+    const res = await fetch(`${API_BASE}/auth/login/2fa`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tempToken, code }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Verification failed");
+    if (!data.staff) throw new Error("Unexpected response — no account data returned");
+    return { token: data.token, refreshToken: data.refreshToken, staff: data.staff };
+  },
+
+  listRooms: () => adminRequest("/manager/rooms"),
+  updateRoomStatus: (id, status) => adminRequest(`/manager/rooms/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  listHousekeeping: (status) => adminRequest(`/manager/housekeeping${status ? `?status=${status}` : ""}`),
+  updateHousekeepingStatus: (roomId, housekeepingStatus) => adminRequest(`/manager/housekeeping/${roomId}`, { method: "PATCH", body: JSON.stringify({ housekeepingStatus }) }),
+
+  listMenuItems: (category) => adminRequest(`/manager/menu${category ? `?category=${category}` : ""}`),
+
+  // Laundry & spa catalogs — the routes already existed on the backend;
+  // this panel just never had a way to call them before Place Order.
+  listLaundryItems: () => adminRequest("/manager/laundry-items"),
+  listSpaTreatments: () => adminRequest("/manager/spa-treatments"),
+
+  listStockItems: () => adminRequest("/manager/stock"),
+  listStockMovements: (id) => adminRequest(`/manager/stock/${id}/movements`),
+  recordStockMovement: (id, payload) => adminRequest(`/manager/stock/${id}/movements`, { method: "POST", body: JSON.stringify(payload) }),
+
+  listBookings: (status) => adminRequest(`/manager/bookings${status ? `?status=${status}` : ""}`),
+  updateBookingStatus: (id, status) => adminRequest(`/manager/bookings/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  getFolio: (id) => adminRequest(`/manager/bookings/${id}/folio`),
+  settleFolio: (id, method) => adminRequest(`/manager/bookings/${id}/folio/settle`, { method: "POST", body: JSON.stringify({ method }) }),
+
+  listTickets: (status) => adminRequest(`/manager/tickets${status ? `?status=${status}` : ""}`),
+  assignTicket: (id) => adminRequest(`/manager/tickets/${id}/assign`, { method: "PATCH" }),
+  resolveTicket: (id) => adminRequest(`/manager/tickets/${id}/resolve`, { method: "PATCH" }),
+
+  // Was referenced by the Dashboard's "recorded this month" card but
+  // never actually defined — any manage_payments account crashed the
+  // whole Dashboard on load. The route existed on the backend all along.
+  listTransactions: () => adminRequest("/manager/transactions"),
+  recordTransaction: (payload) => adminRequest("/manager/transactions", { method: "POST", body: JSON.stringify(payload) }),
+
+  // Walk-in orders — placed by staff on a guest's behalf. Permission is
+  // checked per order type on the backend (see server.js), not here.
+  searchGuests: (q) => adminRequest(`/manager/guests/search?q=${encodeURIComponent(q)}`),
+  createWalkInOrder: (payload) => adminRequest("/manager/orders", { method: "POST", body: JSON.stringify(payload) }),
+  listOrders: (status) => adminRequest(`/manager/orders${status ? `?status=${status}` : ""}`),
+  updateOrderStatus: (id, status) => adminRequest(`/manager/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+
+  getReports: () => adminRequest("/manager/reports"),
+
+  // My Shift — the dedicated staff router. Needs no permission at all,
+  // just a valid login.
+  getMyTasks: () => adminRequest("/staff/my-tasks"),
+  getMyShifts: (from) => adminRequest(`/staff/my-shifts${from ? `?from=${from}` : ""}`),
+  clockIn: (shiftId, method) => adminRequest(`/staff/shifts/${shiftId}/clock-in`, { method: "POST", body: JSON.stringify({ method }) }),
+  clockOut: (shiftId, breakMinutes) => adminRequest(`/staff/shifts/${shiftId}/clock-out`, { method: "POST", body: JSON.stringify({ breakMinutes }) }),
+
+  // Check-in / check-out — the real routes, not the generic status flip.
+  checkInBooking: (id, payload) => adminRequest(`/manager/bookings/${id}/check-in`, { method: "POST", body: JSON.stringify(payload) }),
+  checkOutBooking: (id, payload) => adminRequest(`/manager/bookings/${id}/check-out`, { method: "POST", body: JSON.stringify(payload) }),
+  assignRoom: (id, payload) => adminRequest(`/manager/bookings/${id}/assign-room`, { method: "POST", body: JSON.stringify(payload) }),
+
+  // Order line management (manage_orders) — add/void items, close/reopen.
+  getOrder: (id) => adminRequest(`/manager/orders/${id}`),
+  addOrderLine: (orderId, payload) => adminRequest(`/manager/orders/${orderId}/lines`, { method: "POST", body: JSON.stringify(payload) }),
+  voidOrderLine: (orderId, lineId, payload) => adminRequest(`/manager/orders/${orderId}/lines/${lineId}/void`, { method: "POST", body: JSON.stringify(payload) }),
+  closeOrder: (id) => adminRequest(`/manager/orders/${id}/close`, { method: "POST" }),
+  reopenOrder: (id) => adminRequest(`/manager/orders/${id}/reopen`, { method: "POST" }),
+
+  // Events (manage_events) — full CRUD, door scan, attendee counts.
+  listEvents: () => adminRequest("/manager/events"),
+  createEvent: (payload) => adminRequest("/manager/events", { method: "POST", body: JSON.stringify(payload) }),
+  updateEvent: (id, payload) => adminRequest(`/manager/events/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  deleteEvent: (id) => adminRequest(`/manager/events/${id}`, { method: "DELETE" }),
+  getEventAttendees: (id) => adminRequest(`/manager/events/${id}/attendees`),
+  redeemTicket: (code) => adminRequest("/manager/tickets/redeem", { method: "POST", body: JSON.stringify({ code }) }),
+
+  // Ticket detail + reply.
+  getTicketDetail: (id) => adminRequest(`/manager/tickets/${id}`),
+  replyToTicket: (id, message) => adminRequest(`/manager/tickets/${id}/messages`, { method: "POST", body: JSON.stringify({ message }) }),
+
+  // Housekeeping tasks + maintenance work orders.
+  getHousekeepingBoard: () => adminRequest("/manager/housekeeping/board"),
+  createHousekeepingTask: (payload) => adminRequest("/manager/housekeeping/tasks", { method: "POST", body: JSON.stringify(payload) }),
+  updateHousekeepingTask: (id, payload) => adminRequest(`/manager/housekeeping/tasks/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  reportMaintenance: (payload) => adminRequest("/manager/maintenance", { method: "POST", body: JSON.stringify(payload) }),
+  updateMaintenance: (id, payload) => adminRequest(`/manager/maintenance/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  // Stock transfer between branches.
+  transferStock: (payload) => adminRequest("/manager/stock/transfer", { method: "POST", body: JSON.stringify(payload) }),
+};
+
+/* ============================================================
+   NAV CONFIG — operational sections only, gated purely by the
+   permissions a Manager/Director granted this account. No
+   People, no Company, no Settings.
+   ============================================================ */
+const NAV_GROUPS = [
+  {
+    id: "operations", label: "Operations", icon: "fa-th-large",
+    items: [
+      { page: "rooms", label: "Rooms", icon: "fa-bed", permission: "manage_rooms" },
+      { page: "housekeeping", label: "Housekeeping", icon: "fa-broom", permission: "manage_rooms" },
+      { page: "menu", label: "Menu", icon: "fa-utensils", permission: "manage_menu" },
+      { page: "place-order", label: "Place Order", icon: "fa-bell-concierge", permissions: ["manage_menu", "manage_laundry", "manage_spa"] },
+      { page: "orders", label: "Orders", icon: "fa-receipt", permission: "manage_bookings" },
+      { page: "bookings", label: "Bookings", icon: "fa-calendar-check", permission: "manage_bookings" },
+      { page: "stock", label: "Stock", icon: "fa-boxes-stacked", permission: "manage_stock" },
+      { page: "events", label: "Events", icon: "fa-champagne-glasses", permission: "manage_events" },
+    ],
+  },
+  {
+    id: "support", label: "Guest Support", icon: "fa-headset",
+    items: [{ page: "tickets", label: "Tickets", icon: "fa-ticket", permission: "handle_tickets", badgeId: "ticketsNavBadge" }],
+  },
+  {
+    id: "reports", label: "Reports", icon: "fa-chart-line",
+    items: [{ page: "reports", label: "Branch Reports", icon: "fa-chart-line", permission: "view_reports" }],
+  },
+];
+
+function renderSidebar() {
+  const staff = getStaff();
+  if (!staff) return;
+
+  document.getElementById("adminAvatar").textContent = staff.name.charAt(0).toUpperCase();
+  document.getElementById("adminName").textContent = staff.name;
+  document.getElementById("adminRole").textContent = staff.title || "Staff";
+  document.getElementById("adminBranch").textContent = staff.branchName || "";
+
+  const groupsHtml = NAV_GROUPS.map((group) => {
+    const visibleItems = group.items.filter((item) => item.permissions
+      ? item.permissions.some((p) => (staff.permissions || []).includes(p))
+      : (staff.permissions || []).includes(item.permission));
+    if (!visibleItems.length) return "";
+    return `
+      <div class="nav-group open" data-group="${group.id}">
+        <div class="nav-group-header" onclick="toggleNavGroup(this)">
+          <i class="fas ${group.icon} group-icon"></i>
+          <span class="group-label">${group.label}</span>
+          <i class="fas fa-chevron-down group-chevron"></i>
+        </div>
+        <div class="nav-group-body">
+          ${visibleItems.map((item) => `
+            <div class="nav-item" data-page="${item.page}" onclick="switchPage('${item.page}')">
+              <i class="fas ${item.icon}"></i><span>${item.label}</span>
+              ${item.badgeId ? `<span class="nav-badge" id="${item.badgeId}">0</span>` : ""}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  document.getElementById("navMenu").innerHTML = `
+    <div class="nav-item-standalone active" data-page="dashboard" onclick="switchPage('dashboard')">
+      <i class="fas fa-house"></i><span>Dashboard</span>
+    </div>
+    <div class="nav-item-standalone" data-page="my-shift" onclick="switchPage('my-shift')">
+      <i class="fas fa-clock"></i><span>My Shift</span>
+    </div>
+    <div class="nav-divider"></div>
+    ${groupsHtml}
+  `;
+}
+function toggleNavGroup(headerEl) { headerEl.parentElement.classList.toggle("open"); }
+function setActiveNav(page) { document.querySelectorAll(".nav-item, .nav-item-standalone").forEach((el) => el.classList.toggle("active", el.getAttribute("data-page") === page)); }
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+const PAGE_LOADERS = {
+  dashboard: loadDashboardPage,
+  "my-shift": loadMyShiftPage,
+  rooms: loadRoomsPage,
+  housekeeping: loadHousekeepingPage,
+  menu: loadMenuPage,
+  "place-order": loadPlaceOrderPage,
+  orders: loadOrdersQueuePage,
+  bookings: loadBookingsPage,
+  stock: loadStockPage,
+  events: loadEventsPage,
+  tickets: loadTicketsPage,
+  reports: loadReportsPage,
+};
+
+function switchPage(page) {
+  const staff = getStaff();
+  setActiveNav(page);
+  const container = document.getElementById("pageContent");
+
+  // Belt-and-suspenders: even though the nav only ever renders links this
+  // account has permission for, a direct switchPage() call (or a stale
+  // link) still gets blocked here rather than trusting the click alone.
+  const pagePermission = { rooms: "manage_rooms", menu: "manage_menu", bookings: "manage_bookings",
+    stock: "manage_stock", events: "manage_events", tickets: "handle_tickets", reports: "view_reports",
+    orders: "manage_bookings" }[page];
+  const pageAnyPermissions = { "place-order": ["manage_menu", "manage_laundry", "manage_spa"] }[page];
+  if (pagePermission && !hasPermission(pagePermission)) {
+    container.innerHTML = `<div class="empty-state">You don't have access to this section. Ask your Manager to grant it.</div>`;
+    return;
+  }
+  if (pageAnyPermissions && !pageAnyPermissions.some((p) => hasPermission(p))) {
+    container.innerHTML = `<div class="empty-state">You don't have access to this section. Ask your Manager to grant it.</div>`;
+    return;
+  }
+
+  const loader = PAGE_LOADERS[page];
+  if (!loader) { container.innerHTML = `<div class="empty-state">Unknown page.</div>`; return; }
+  container.innerHTML = `<div class="loading-state">Loading…</div>`;
+  loader();
+  if (window.innerWidth <= 900) document.getElementById("sidebar").classList.remove("open");
+}
+function loadComingSoon(title, description) {
+  document.getElementById("pageContent").innerHTML = `
+    <div class="page-header"><div><h1 class="page-title">${title}</h1></div></div>
+    <div class="panel"><div class="coming-soon"><i class="fas fa-hammer"></i><p><b>${title} isn't built yet.</b></p><p style="margin-top:6px;">${description}</p></div></div>
+  `;
+}
+function pageHeader(title, subtitle, actionHtml = "") {
+  return `<div class="page-header"><div><h1 class="page-title">${title}</h1>${subtitle ? `<p class="page-subtitle">${subtitle}</p>` : ""}</div>${actionHtml}</div>`;
+}
+
+/* ============================================================
+   DASHBOARD — this branch, no staff-count card (staff can't see
+   the staff list here at all, unlike the Manager panel)
+   ============================================================ */
+async function loadDashboardPage() {
+  const staff = getStaff();
+  const container = document.getElementById("pageContent");
+  const cards = [];
+  let bookingsPanel = "", ticketsPanel = "";
+
+  try {
+    if (hasPermission("manage_bookings")) {
+      const { bookings } = await staffApi.listBookings();
+      const upcoming = bookings.filter((b) => ["PENDING", "CONFIRMED"].includes(b.status));
+      cards.push({ label: "Upcoming bookings", value: upcoming.length });
+      if (bookings.length) {
+        bookingsPanel = `
+          <div class="panel"><h3>Recent bookings</h3>
+            <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th></tr></thead>
+              <tbody>${bookings.slice(0, 6).map((b) => `
+                <tr><td>${b.guest.name}</td><td>${b.room ? `${b.room.name} — ${b.room.roomNumber}` : `<span style="color:var(--text-muted);">Not assigned</span>`}</td>
+                <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
+                <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+    if (hasPermission("manage_rooms")) {
+      const { rooms } = await staffApi.listRooms();
+      cards.push({ label: "Total rooms", value: rooms.length });
+    }
+    if (hasPermission("handle_tickets")) {
+      const { tickets } = await staffApi.listTickets("OPEN");
+      cards.push({ label: "Open tickets", value: tickets.length });
+      if (tickets.length) {
+        ticketsPanel = `
+          <div class="panel"><h3>Open guest tickets</h3>
+            <table><thead><tr><th>Subject</th><th>Guest</th><th>Priority</th><th>Status</th></tr></thead>
+              <tbody>${tickets.slice(0, 6).map((t) => `
+                <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
+                <td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td></tr>
+              `).join("")}</tbody>
+            </table>
+          </div>`;
+      }
+    }
+    if (hasPermission("manage_payments")) {
+      const { totals } = await staffApi.listTransactions();
+      cards.push({ label: "Recorded this month", value: `\u20a6${Number(totals?.paid || 0).toLocaleString()}` });
+    }
+
+    container.innerHTML = `
+      ${pageHeader("Overview", staff.branchName ? `What's happening at ${staff.branchName} right now.` : "A quick look at what's happening right now.")}
+      <div class="stats-grid">
+        ${cards.length ? cards.map((c) => `<div class="stat-card"><b>${c.value}</b><span>${c.label}</span></div>`).join("")
+          : `<div class="empty-state">Your account doesn't have access to any dashboard sections yet — ask your Manager to grant permissions.</div>`}
+      </div>
+      ${bookingsPanel}${ticketsPanel}
+    `;
+  } catch (err) {
+    container.innerHTML = `${pageHeader("Overview")}<div class="empty-state">Couldn't load your overview (${err.message}).</div>`;
+  }
+}
+
+/* ============================================================
+   MY SHIFT — clock in/out and open tasks. Every staff member gets
+   this regardless of permissions — the backend routes behind it
+   (/api/staff/*) need none.
+   ============================================================ */
+async function loadMyShiftPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("My Shift", "Your upcoming shifts and assigned tasks.")}
+    <div id="myShiftNotice"></div>
+    <div class="panel" style="margin-bottom:20px;">
+      <h3>Shifts</h3>
+      <table><thead><tr><th>Date</th><th>Time</th><th>Status</th><th></th></tr></thead>
+        <tbody id="myShiftsBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h3>My tasks</h3>
+      <table><thead><tr><th>Room</th><th>Type</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+        <tbody id="myTasksBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  await Promise.all([refreshMyShifts(), refreshMyTasks()]);
+}
+
+async function refreshMyShifts() {
+  try {
+    const { shifts } = await staffApi.getMyShifts();
+    document.getElementById("myShiftsBody").innerHTML = shifts.length ? shifts.map((s) => `
+      <tr>
+        <td>${new Date(s.date).toLocaleDateString()}</td>
+        <td>${s.startTime}${s.endTime ? " – " + s.endTime : ""}</td>
+        <td><span class="badge badge-${(s.status || "").toLowerCase()}">${s.status || (s.attendance?.clockOutAt ? "Completed" : s.attendance?.clockInAt ? "Clocked in" : "Scheduled")}</span></td>
+        <td>${!s.attendance?.clockInAt ? `<button class="btn btn-sm btn-primary" onclick="clockInShift('${s.id}')">Clock in</button>`
+          : !s.attendance?.clockOutAt ? `<button class="btn btn-sm btn-outline" onclick="clockOutShift('${s.id}')">Clock out</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No upcoming shifts scheduled.</td></tr>`;
+  } catch (err) { showNotice("myShiftNotice", err.message); }
+}
+async function clockInShift(id) {
+  try { await staffApi.clockIn(id); showNotice("myShiftNotice", "Clocked in.", "success"); refreshMyShifts(); }
+  catch (err) { showNotice("myShiftNotice", err.message); }
+}
+async function clockOutShift(id) {
+  try { await staffApi.clockOut(id); showNotice("myShiftNotice", "Clocked out.", "success"); refreshMyShifts(); }
+  catch (err) { showNotice("myShiftNotice", err.message); }
+}
+
+async function refreshMyTasks() {
+  try {
+    const { tasks } = await staffApi.getMyTasks();
+    const canManage = hasPermission("manage_rooms");
+    const TASK_NEXT = { PENDING: "IN_PROGRESS", ASSIGNED: "IN_PROGRESS", IN_PROGRESS: "COMPLETED" };
+    document.getElementById("myTasksBody").innerHTML = tasks.length ? tasks.map((t) => `
+      <tr>
+        <td>${t.room ? t.room.roomNumber : "—"}</td>
+        <td>${t.type.replace(/_/g, " ")}</td>
+        <td><span class="badge badge-${t.priority.toLowerCase()}">${t.priority}</span></td>
+        <td><span class="badge badge-${t.status.toLowerCase()}">${t.status.replace(/_/g, " ")}</span></td>
+        <td>${canManage && TASK_NEXT[t.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceMyTask('${t.id}','${TASK_NEXT[t.status]}')">${TASK_NEXT[t.status] === "COMPLETED" ? "Complete" : "Start"}</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No tasks assigned to you.</td></tr>`;
+  } catch (err) { showNotice("myShiftNotice", err.message); }
+}
+async function advanceMyTask(id, status) {
+  try { await staffApi.updateHousekeepingTask(id, { status }); refreshMyTasks(); }
+  catch (err) { showNotice("myShiftNotice", err.message); }
+}
+
+/* ============================================================
+   ROOMS — VIEW + status update only. No add/edit, no pricing control,
+   no photos. Every room is now its own complete listing (RoomType was
+   merged into Room) — there's no separate "room types" table anymore.
+   Staff can flag a room's status, nothing else.
+   ============================================================ */
+async function loadRoomsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Rooms", "View rooms and update status.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding, editing, or pricing rooms is limited to Directors. You can update a room's status below.</span></div>
+    <div id="roomsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th></th><th>Room #</th><th>Name</th><th>Tags</th><th>Price</th><th>Floor</th><th>Status</th></tr></thead>
+        <tbody id="roomsBody"><tr><td colspan="7" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  try {
+    const { rooms } = await staffApi.listRooms();
+    document.getElementById("roomsBody").innerHTML = rooms.length ? rooms.map((r) => `
+      <tr>
+        <td>${r.images && r.images[0] ? `<img src="${r.images[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:6px;">` : ""}</td>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>${(r.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+        <td>&#8358;${Number(r.basePrice).toLocaleString()}</td>
+        <td>${r.floor || "—"}</td>
+        <td>
+          <select onchange="updateRoomStatusInline('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
+            <option value="">${r.status}</option>
+            <option value="ACTIVE">Active</option>
+            <option value="MAINTENANCE">Maintenance</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="7" class="empty-state">No rooms yet.</td></tr>`;
+  } catch (err) { showNotice("roomsNotice", err.message); }
+}
+async function updateRoomStatusInline(id, status) {
+  if (!status) return;
+  try { await staffApi.updateRoomStatus(id, status); loadRoomsPage(); }
+  catch (err) { showNotice("roomsNotice", err.message); }
+}
+
+/* ============================================================
+   HOUSEKEEPING — Clean/Dirty/Cleaning/Inspected/Out of Order per
+   room. Separate from the Rooms page's ACTIVE/MAINTENANCE/INACTIVE
+   status above.
+   ============================================================ */
+const HOUSEKEEPING_STATUSES = ["CLEAN", "DIRTY", "CLEANING", "INSPECTED", "OUT_OF_ORDER"];
+const HOUSEKEEPING_LABELS = { CLEAN: "Clean", DIRTY: "Dirty", CLEANING: "Cleaning", INSPECTED: "Inspected", OUT_OF_ORDER: "Out of order" };
+
+async function loadHousekeepingPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Housekeeping", "Track which rooms are ready to hand to a guest right now.")}
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="form-field" style="max-width:260px;">
+        <label>Filter by status</label>
+        <select id="hkStatusFilter" onchange="refreshHousekeeping()">
+          <option value="">All rooms</option>
+          ${HOUSEKEEPING_STATUSES.map((s) => `<option value="${s}">${HOUSEKEEPING_LABELS[s]}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div id="housekeepingNotice"></div>
+    <div class="panel" style="margin-bottom:16px;">
+      <table><thead><tr><th>Room #</th><th>Name</th><th>Floor</th><th>Last updated</th><th>Housekeeping status</th></tr></thead>
+        <tbody id="housekeepingBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="page-header" style="margin-top:8px;">
+      <div><h1 class="page-title" style="font-size:1.15rem;">Tasks &amp; maintenance</h1></div>
+      <div>
+        <button class="btn btn-sm btn-outline" onclick="openTaskModal()">Assign a task</button>
+        <button class="btn btn-sm btn-outline" onclick="openMaintenanceModal()">Report an issue</button>
+      </div>
+    </div>
+    <div class="stats-grid" id="hkBoardStats"></div>
+    <div class="panel" style="margin-bottom:16px;">
+      <h3>Open tasks</h3>
+      <table><thead><tr><th>Room</th><th>Type</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+        <tbody id="hkTasksBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h3>Open maintenance issues</h3>
+      <table><thead><tr><th>Room</th><th>Issue</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+        <tbody id="hkMaintBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="taskModal" style="display:none;">
+      <div class="modal">
+        <h3>Assign a housekeeping task</h3>
+        <div id="taskModalNotice"></div>
+        <form id="taskForm">
+          <div class="form-field"><label>Room</label><select id="tkRoomId" required></select></div>
+          <div class="form-row">
+            <div class="form-field"><label>Task type</label>
+              <select id="tkType">
+                <option value="DEPARTURE_CLEAN">Departure clean</option>
+                <option value="STAYOVER_SERVICE">Stayover service</option>
+                <option value="DEEP_CLEAN">Deep clean</option>
+                <option value="TURNDOWN">Turndown</option>
+                <option value="INSPECTION">Inspection</option>
+                <option value="LINEN_CHANGE">Linen change</option>
+              </select>
+            </div>
+            <div class="form-field"><label>Priority</label>
+              <select id="tkPriority"><option value="NORMAL">Normal</option><option value="LOW">Low</option><option value="HIGH">High</option><option value="URGENT">Urgent</option></select>
+            </div>
+          </div>
+          <div class="form-field"><label>Notes <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="tkNotes"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTaskModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="tkSubmitBtn">Assign</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="maintenanceModal" style="display:none;">
+      <div class="modal">
+        <h3>Report a maintenance issue</h3>
+        <div id="maintenanceModalNotice"></div>
+        <form id="maintenanceForm">
+          <div class="form-field"><label>Room <span style="color:var(--text-muted); font-weight:400;">(optional — leave blank for a common area)</span></label><select id="mtRoomId"><option value="">— Common area —</option></select></div>
+          <div class="form-field"><label>Title</label><input type="text" id="mtTitle" required></div>
+          <div class="form-field"><label>Description</label><textarea id="mtDescription" rows="2" required></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Category</label>
+              <select id="mtCategory"><option value="OTHER">Other</option><option value="PLUMBING">Plumbing</option><option value="ELECTRICAL">Electrical</option><option value="HVAC">HVAC</option><option value="FURNITURE">Furniture</option><option value="APPLIANCE">Appliance</option></select>
+            </div>
+            <div class="form-field"><label>Priority</label>
+              <select id="mtPriority"><option value="NORMAL">Normal</option><option value="LOW">Low</option><option value="HIGH">High</option><option value="URGENT">Urgent</option></select>
+            </div>
+          </div>
+          <div class="form-field"><label style="display:flex; align-items:center; gap:8px; font-weight:400;"><input type="checkbox" id="mtBlocksSale" style="width:auto;"> Take this room off sale until it's fixed</label></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeMaintenanceModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="mtSubmitBtn">Report</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("taskForm").addEventListener("submit", submitTaskForm);
+  document.getElementById("maintenanceForm").addEventListener("submit", submitMaintenanceForm);
+  await refreshHousekeeping();
+  await refreshHousekeepingBoard();
+}
+
+async function refreshHousekeeping() {
+  const statusFilter = document.getElementById("hkStatusFilter")?.value || "";
+  try {
+    const { rooms } = await staffApi.listHousekeeping(statusFilter);
+    document.getElementById("housekeepingBody").innerHTML = rooms.length ? rooms.map((r) => `
+      <tr>
+        <td>${r.roomNumber}</td>
+        <td>${r.name}</td>
+        <td>${r.floor || "—"}</td>
+        <td>${r.housekeepingUpdatedAt ? new Date(r.housekeepingUpdatedAt).toLocaleString() : "—"}</td>
+        <td>
+          <span class="badge badge-${r.housekeepingStatus.toLowerCase()}" style="margin-right:8px;">${HOUSEKEEPING_LABELS[r.housekeepingStatus]}</span>
+          <select onchange="changeHousekeepingStatus('${r.id}', this.value)" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:0.78rem;">
+            <option value="">Change…</option>
+            ${HOUSEKEEPING_STATUSES.filter((s) => s !== r.housekeepingStatus).map((s) => `<option value="${s}">${HOUSEKEEPING_LABELS[s]}</option>`).join("")}
+          </select>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No rooms match this filter.</td></tr>`;
+  } catch (err) { showNotice("housekeepingNotice", err.message); }
+}
+
+async function changeHousekeepingStatus(roomId, housekeepingStatus) {
+  if (!housekeepingStatus) return;
+  try {
+    await staffApi.updateHousekeepingStatus(roomId, housekeepingStatus);
+    showNotice("housekeepingNotice", "Housekeeping status updated.", "success");
+    refreshHousekeeping();
+  } catch (err) {
+    showNotice("housekeepingNotice", err.message);
+    refreshHousekeeping();
+  }
+}
+
+async function refreshHousekeepingBoard() {
+  try {
+    const { summary, rooms } = await staffApi.getHousekeepingBoard();
+    document.getElementById("hkBoardStats").innerHTML = `
+      <div class="stat-card"><b>${summary.openTasks}</b><span>Open tasks</span></div>
+      <div class="stat-card"><b>${summary.openWorkOrders}</b><span>Open issues</span></div>
+      <div class="stat-card"><b>${summary.dirty}</b><span>Dirty rooms</span></div>
+      <div class="stat-card"><b>${summary.outOfOrder}</b><span>Out of order</span></div>
+    `;
+    const canManage = hasPermission("manage_rooms");
+    const TASK_NEXT = { PENDING: "IN_PROGRESS", ASSIGNED: "IN_PROGRESS", IN_PROGRESS: "COMPLETED" };
+    const tasks = rooms.flatMap((r) => r.tasks.map((t) => ({ ...t, roomNumber: r.roomNumber })));
+    document.getElementById("hkTasksBody").innerHTML = tasks.length ? tasks.map((t) => `
+      <tr>
+        <td>${t.roomNumber}</td><td>${t.type.replace(/_/g, " ")}</td>
+        <td><span class="badge badge-${t.priority.toLowerCase()}">${t.priority}</span></td>
+        <td><span class="badge badge-${t.status.toLowerCase()}">${t.status.replace(/_/g, " ")}</span></td>
+        <td>${canManage && TASK_NEXT[t.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceTask('${t.id}','${TASK_NEXT[t.status]}')">${TASK_NEXT[t.status] === "COMPLETED" ? "Complete" : "Start"}</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No open tasks.</td></tr>`;
+
+    const issues = rooms.flatMap((r) => r.workOrders.map((w) => ({ ...w, roomNumber: r.roomNumber })));
+    document.getElementById("hkMaintBody").innerHTML = issues.length ? issues.map((w) => `
+      <tr>
+        <td>${w.roomNumber || "—"}</td><td>${w.title}</td>
+        <td><span class="badge badge-${w.priority.toLowerCase()}">${w.priority}</span></td>
+        <td><span class="badge badge-${w.status.toLowerCase()}">${w.status.replace(/_/g, " ")}</span></td>
+        <td>${canManage ? `<button class="btn btn-sm btn-outline" onclick="resolveMaintenance('${w.id}')">Resolve</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No open issues.</td></tr>`;
+
+    const roomOptions = rooms.map((r) => `<option value="${r.id}">${r.roomNumber}</option>`).join("");
+    document.getElementById("tkRoomId").innerHTML = roomOptions;
+    document.getElementById("mtRoomId").innerHTML += roomOptions;
+  } catch (err) {
+    showNotice("housekeepingNotice", err.message);
+  }
+}
+async function advanceTask(id, status) {
+  try { await staffApi.updateHousekeepingTask(id, { status }); refreshHousekeepingBoard(); }
+  catch (err) { showNotice("housekeepingNotice", err.message); }
+}
+async function resolveMaintenance(id) {
+  try { await staffApi.updateMaintenance(id, { status: "RESOLVED" }); refreshHousekeepingBoard(); }
+  catch (err) { showNotice("housekeepingNotice", err.message); }
+}
+
+function openTaskModal() { document.getElementById("taskForm").reset(); document.getElementById("taskModal").style.display = "flex"; }
+function closeTaskModal() { document.getElementById("taskModal").style.display = "none"; }
+async function submitTaskForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("tkSubmitBtn");
+  btn.disabled = true;
+  try {
+    await staffApi.createHousekeepingTask({
+      roomId: document.getElementById("tkRoomId").value,
+      type: document.getElementById("tkType").value,
+      priority: document.getElementById("tkPriority").value,
+      notes: document.getElementById("tkNotes").value || undefined,
+    });
+    closeTaskModal();
+    showNotice("housekeepingNotice", "Task assigned.", "success");
+    refreshHousekeepingBoard();
+  } catch (err) {
+    showNotice("taskModalNotice", err.message);
+  } finally { btn.disabled = false; }
+}
+
+function openMaintenanceModal() { document.getElementById("maintenanceForm").reset(); document.getElementById("maintenanceModal").style.display = "flex"; }
+function closeMaintenanceModal() { document.getElementById("maintenanceModal").style.display = "none"; }
+async function submitMaintenanceForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("mtSubmitBtn");
+  btn.disabled = true;
+  try {
+    await staffApi.reportMaintenance({
+      roomId: document.getElementById("mtRoomId").value || undefined,
+      title: document.getElementById("mtTitle").value,
+      description: document.getElementById("mtDescription").value,
+      category: document.getElementById("mtCategory").value,
+      priority: document.getElementById("mtPriority").value,
+      blocksSale: document.getElementById("mtBlocksSale").checked,
+    });
+    closeMaintenanceModal();
+    showNotice("housekeepingNotice", "Issue reported.", "success");
+    refreshHousekeepingBoard();
+  } catch (err) {
+    showNotice("maintenanceModalNotice", err.message);
+  } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   STOCK — view the branch's inventory and record movements (entries,
+   adjustments, closing counts). Creating/renaming a stock item, or
+   deleting one, stays a Manager/Director action — not exposed here.
+   Sales are logged automatically by the backend when a linked item
+   sells; nothing to do for those.
+   ============================================================ */
+async function loadStockPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Stock", "View inventory and record entries, adjustments, or a closing count.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding or removing a stock item is limited to Managers and Directors. You can record movements below.</span></div>
+    <div id="stockNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Quantity</th><th>Unit</th><th>Low-stock threshold</th><th></th></tr></thead>
+        <tbody id="stockBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="ledgerModal" style="display:none;">
+      <div class="modal" style="max-width:640px;">
+        <h3 id="ledgerModalTitle">Ledger</h3>
+        <div id="ledgerNotice"></div>
+        <form id="movementForm" style="border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px;">
+          <input type="hidden" id="mvStockItemId">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Movement type</label>
+              <select id="mvType" onchange="toggleMovementFields()">
+                <option value="ENTRY">Entry (stock received)</option>
+                <option value="ADJUSTMENT">Adjustment (breakage, correction)</option>
+                <option value="CLOSING_COUNT">Closing count (physical count)</option>
+              </select>
+            </div>
+            <div class="form-field" id="mvDeltaField"><label>Quantity</label><input type="number" id="mvQuantityDelta" step="1"></div>
+            <div class="form-field" id="mvCountedField" style="display:none;"><label>Counted quantity</label><input type="number" id="mvCountedQuantity" min="0" step="1"></div>
+          </div>
+          <div class="form-field"><label>Note <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="mvNote" placeholder="e.g. delivery from supplier, 2 bottles broken"></div>
+          <button type="submit" class="btn btn-primary btn-sm" id="mvSubmitBtn">Record</button>
+        </form>
+        <div style="max-height:320px; overflow-y:auto;">
+          <table><thead><tr><th>When</th><th>Type</th><th>Change</th><th>Balance</th><th>Note</th><th>By</th></tr></thead>
+            <tbody id="ledgerBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeLedgerModal()">Close</button></div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="transferModal" style="display:none;">
+      <div class="modal">
+        <h3>Transfer stock</h3>
+        <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">You'll need the destination branch's ID — there's no branch picker here yet, so confirm it with your Manager first.</p>
+        <div id="transferNotice"></div>
+        <form id="transferForm">
+          <input type="hidden" id="trStockItemId">
+          <div class="form-field"><label>Destination branch ID</label><input type="text" id="trToBranchId" required></div>
+          <div class="form-field"><label>Quantity</label><input type="number" id="trQuantity" min="1" step="1" required></div>
+          <div class="form-field"><label>Note <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="trNote"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTransferModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="trSubmitBtn">Transfer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("movementForm").addEventListener("submit", submitMovementForm);
+  document.getElementById("transferForm").addEventListener("submit", submitTransferForm);
+  toggleMovementFields();
+  await refreshStock();
+}
+
+function openTransferModal(item) {
+  document.getElementById("transferForm").reset();
+  document.getElementById("trStockItemId").value = item.id;
+  document.getElementById("transferModal").style.display = "flex";
+}
+function closeTransferModal() { document.getElementById("transferModal").style.display = "none"; }
+async function submitTransferForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("trSubmitBtn");
+  btn.disabled = true;
+  try {
+    const { message } = await staffApi.transferStock({
+      stockItemId: document.getElementById("trStockItemId").value,
+      toBranchId: document.getElementById("trToBranchId").value,
+      quantity: Number(document.getElementById("trQuantity").value),
+      note: document.getElementById("trNote").value || undefined,
+    });
+    closeTransferModal();
+    showNotice("stockNotice", message || "Stock transferred.", "success");
+    refreshStock();
+  } catch (err) {
+    showNotice("transferNotice", err.message);
+  } finally { btn.disabled = false; }
+}
+
+async function refreshStock() {
+  try {
+    const { stockItems } = await staffApi.listStockItems();
+    document.getElementById("stockBody").innerHTML = stockItems.length ? stockItems.map((s) => `
+      <tr>
+        <td>${s.name}</td>
+        <td>${s.quantity <= s.lowStockThreshold ? `<span class="badge badge-warning">${s.quantity}</span>` : s.quantity}</td>
+        <td>${s.unit || "—"}</td>
+        <td>${s.lowStockThreshold}</td>
+        <td><button class="btn btn-sm btn-primary" onclick='openLedgerModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Ledger</button><button class="btn btn-sm btn-outline" onclick='openTransferModal(${JSON.stringify(s).replace(/'/g, "&#39;")})'>Transfer</button></td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No stock items yet.</td></tr>`;
+  } catch (err) {
+    showNotice("stockNotice", err.message);
+  }
+}
+
+function toggleMovementFields() {
+  const isClosing = document.getElementById("mvType").value === "CLOSING_COUNT";
+  document.getElementById("mvDeltaField").style.display = isClosing ? "none" : "";
+  document.getElementById("mvCountedField").style.display = isClosing ? "" : "none";
+}
+
+let _ledgerCurrentItem = null;
+async function openLedgerModal(item) {
+  _ledgerCurrentItem = item;
+  document.getElementById("ledgerModalTitle").textContent = `Ledger — ${item.name}`;
+  document.getElementById("mvStockItemId").value = item.id;
+  document.getElementById("movementForm").reset();
+  toggleMovementFields();
+  document.getElementById("ledgerModal").style.display = "flex";
+  await refreshLedger();
+}
+function closeLedgerModal() { document.getElementById("ledgerModal").style.display = "none"; }
+
+async function refreshLedger() {
+  try {
+    const { movements } = await staffApi.listStockMovements(_ledgerCurrentItem.id);
+    document.getElementById("ledgerBody").innerHTML = movements.length ? movements.map((m) => `
+      <tr>
+        <td style="font-size:0.78rem;">${new Date(m.createdAt).toLocaleString()}</td>
+        <td>${m.type}</td>
+        <td style="color:${m.quantityDelta < 0 ? "var(--danger)" : "var(--brass-dark)"};">${m.quantityDelta > 0 ? "+" : ""}${m.quantityDelta}</td>
+        <td>${m.balanceAfter}</td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${m.note || "—"}</td>
+        <td style="font-size:0.78rem;">${m.recordedByType}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No movements yet.</td></tr>`;
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  }
+}
+
+async function submitMovementForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("mvSubmitBtn");
+  btn.disabled = true;
+  try {
+    const type = document.getElementById("mvType").value;
+    const payload = { type, note: document.getElementById("mvNote").value || undefined };
+    if (type === "CLOSING_COUNT") payload.countedQuantity = Number(document.getElementById("mvCountedQuantity").value);
+    else payload.quantityDelta = Number(document.getElementById("mvQuantityDelta").value);
+
+    await staffApi.recordStockMovement(document.getElementById("mvStockItemId").value, payload);
+    document.getElementById("movementForm").reset();
+    toggleMovementFields();
+    await refreshLedger();
+    refreshStock();
+  } catch (err) {
+    showNotice("ledgerNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   MENU — food & drink, view only. (Laundry and spa items have
+   their own real backend endpoints but no page yet in this panel.)
+   ============================================================ */
+const MENU_CATEGORY_LABELS = { FOOD: "Food", DRINK: "Drink" };
+async function loadMenuPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Menu", "Food & drink items currently offered at your branch.")}
+    <div class="locked-note"><i class="fas fa-lock"></i><span>Adding items or changing prices is limited to Managers and Directors.</span></div>
+    <div class="panel">
+      <table><thead><tr><th>Item</th><th>Category</th><th>Tags</th><th>Price</th></tr></thead>
+        <tbody id="menuBody"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  `;
+  try {
+    const { menuItems } = await staffApi.listMenuItems();
+    document.getElementById("menuBody").innerHTML = menuItems.length ? menuItems.map((m) => `
+      <tr><td>${m.name}</td><td>${MENU_CATEGORY_LABELS[m.category] || m.category}</td>
+      <td>${(m.tags || []).map((t) => `<span class="badge">${t}</span>`).join(" ") || "—"}</td>
+      <td>&#8358;${Number(m.price).toLocaleString()}</td></tr>
+    `).join("") : `<tr><td colspan="4" class="empty-state">No menu items yet.</td></tr>`;
+  } catch (err) { document.getElementById("menuBody").innerHTML = `<tr><td colspan="4" class="empty-state">${err.message}</td></tr>`; }
+}
+
+/* ============================================================
+   PLACE ORDER — walk-in orders staff create on a guest's behalf.
+   The order-type dropdown is filtered to only the types this account's
+   own permissions actually cover (manage_menu / manage_laundry /
+   manage_spa) — matching exactly what the backend will accept, so a
+   staff member never fills out a form only to have it 403 at the end.
+   ============================================================ */
+const ORDER_TYPE_PERMISSION = { ROOM_SERVICE: "manage_menu", RESTAURANT: "manage_menu", BAR: "manage_menu", LAUNDRY: "manage_laundry", SPA: "manage_spa" };
+const ORDER_TYPE_LABELS = { ROOM_SERVICE: "Room Service", RESTAURANT: "Restaurant", BAR: "Bar", LAUNDRY: "Laundry", SPA: "Spa" };
+// Mirrors ORDER_TYPE_TO_TRANSACTION_SOURCE in server.js — kept in sync
+// by hand since it isn't exposed through an endpoint.
+const ORDER_TYPE_TRANSACTION_SOURCE = { ROOM_SERVICE: "FOOD", RESTAURANT: "FOOD", BAR: "DRINK", LAUNDRY: "SERVICE", SPA: "SERVICE" };
+
+let _poCart = [];
+let _poSelectedGuestId = null;
+let _poCatalogItems = [];
+
+async function loadPlaceOrderPage() {
+  const availableTypes = Object.keys(ORDER_TYPE_PERMISSION).filter((t) => hasPermission(ORDER_TYPE_PERMISSION[t]));
+  _poCart = []; _poSelectedGuestId = null;
+
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Place Order", "Create an order on behalf of a guest at the counter, phone, or table.")}
+    <div id="placeOrderNotice"></div>
+    ${!availableTypes.length ? `<div class="empty-state">You don't have access to any order type. Ask your Manager to grant it.</div>` : `
+    <div class="panel">
+      <div class="form-row">
+        <div class="form-field">
+          <label>Order type</label>
+          <select id="poType" onchange="onOrderTypeChange()">
+            ${availableTypes.map((t) => `<option value="${t}">${ORDER_TYPE_LABELS[t]}</option>`).join("")}
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Charge to room <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+          <select id="poRoom"><option value="">— Not charging to a room —</option></select>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); margin:18px 0; padding-top:18px;">
+        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.86rem;">Guest</label>
+        <div class="form-field">
+          <label>Search existing guest</label>
+          <input type="text" id="poGuestSearch" placeholder="Name, email, or phone" oninput="searchGuestDebounced()" autocomplete="off">
+          <div id="poGuestResults"></div>
+        </div>
+        <div id="poSelectedGuest" style="display:none; margin:10px 0; padding:10px 14px; background:var(--ivory); border:1px solid var(--border); border-radius:6px;">
+          <b id="poSelectedGuestName"></b> <span id="poSelectedGuestEmail" style="color:var(--text-muted); font-size:0.82rem;"></span>
+          <button type="button" class="btn btn-sm btn-outline" style="margin-left:10px;" onclick="clearSelectedGuest()">Change</button>
+        </div>
+        <div id="poNewGuestFields">
+          <p style="font-size:0.8rem; color:var(--text-muted); margin:10px 0 8px;">No account? Enter their details — a lightweight guest record is created automatically:</p>
+          <div class="form-row">
+            <div class="form-field"><label>Name</label><input type="text" id="poGuestName"></div>
+            <div class="form-field"><label>Email</label><input type="email" id="poGuestEmail"></div>
+            <div class="form-field"><label>Phone <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="text" id="poGuestPhone"></div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); margin:18px 0; padding-top:18px;">
+        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.86rem;">Items</label>
+        <div id="poCatalog"><div class="loading-state">Loading catalog…</div></div>
+      </div>
+
+      <div style="border-top:1px solid var(--border); margin:18px 0; padding-top:18px;">
+        <label style="display:block; margin-bottom:8px; font-weight:600; font-size:0.86rem;">Payment</label>
+        <div class="form-row">
+          <div class="form-field">
+            <label>How is this being paid?</label>
+            <select id="poPayment" onchange="togglePaymentMethodField()">
+              <option value="ROOM">Charge to room</option>
+              <option value="NOW">Paid now at the counter</option>
+              <option value="LATER">Bill later / unpaid for now</option>
+            </select>
+          </div>
+          <div class="form-field" id="poMethodField" style="display:none;">
+            <label>Method</label>
+            <select id="poMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="TRANSFER">Transfer</option></select>
+          </div>
+        </div>
+      </div>
+
+      <div class="summary-line total" style="margin:14px 0;"><span>Total</span><span id="poTotalDisplay">&#8358;0</span></div>
+      <button type="button" class="btn btn-primary" id="poSubmitBtn" onclick="submitWalkInOrder()">Place order</button>
+    </div>
+    `}
+  `;
+  if (!availableTypes.length) return;
+
+  togglePaymentMethodField();
+  try {
+    const { rooms } = await staffApi.listRooms();
+    document.getElementById("poRoom").innerHTML += rooms.map((r) => `<option value="${r.id}">${r.name} — ${r.roomNumber}</option>`).join("");
+  } catch { /* room charging just won't be selectable if this fails */ }
+
+  await onOrderTypeChange();
+}
+
+function togglePaymentMethodField() {
+  const isNow = document.getElementById("poPayment").value === "NOW";
+  document.getElementById("poMethodField").style.display = isNow ? "" : "none";
+}
+
+async function onOrderTypeChange() {
+  const type = document.getElementById("poType").value;
+  _poCart = [];
+  const catalogEl = document.getElementById("poCatalog");
+  catalogEl.innerHTML = `<div class="loading-state">Loading catalog…</div>`;
+
+  try {
+    if (type === "SPA") {
+      const { spaTreatments } = await staffApi.listSpaTreatments();
+      _poCatalogItems = spaTreatments;
+      catalogEl.innerHTML = `
+        <div class="form-row">
+          <div class="form-field"><label>Treatment</label>
+            <select id="poSpaTreatment" onchange="updatePoTotal()">
+              ${spaTreatments.map((t) => `<option value="${t.id}" data-price="${t.price}">${t.name} — &#8358;${Number(t.price).toLocaleString()}</option>`).join("")}
+            </select>
+          </div>
+          <div class="form-field"><label>Date &amp; time</label><input type="datetime-local" id="poSpaTime"></div>
+        </div>
+      `;
+    } else if (type === "LAUNDRY") {
+      const { laundryItems } = await staffApi.listLaundryItems();
+      _poCatalogItems = laundryItems;
+      catalogEl.innerHTML = `
+        <table><thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
+          <tbody>${laundryItems.length ? laundryItems.map((i) => `
+            <tr><td>${i.name}</td><td>&#8358;${Number(i.price).toLocaleString()}</td>
+            <td><button type="button" class="btn btn-sm btn-outline" onclick="addToPoCart('${i.id}')">Add</button></td></tr>
+          `).join("") : `<tr><td colspan="3" class="empty-state">Nothing available.</td></tr>`}</tbody>
+        </table>
+        <div id="poCartWrap" style="margin-top:14px;"></div>
+      `;
+      renderPoCart();
+    } else {
+      const { menuItems } = await staffApi.listMenuItems(type === "BAR" ? "DRINK" : "FOOD");
+      const items = type === "ROOM_SERVICE" ? menuItems.filter((i) => i.availableForRoomService) : menuItems;
+      _poCatalogItems = items;
+      catalogEl.innerHTML = `
+        <table><thead><tr><th>Item</th><th>Price</th><th></th></tr></thead>
+          <tbody>${items.length ? items.map((i) => `
+            <tr><td>${i.name}</td><td>&#8358;${Number(i.price).toLocaleString()}</td>
+            <td><button type="button" class="btn btn-sm btn-outline" onclick="addToPoCart('${i.id}')">Add</button></td></tr>
+          `).join("") : `<tr><td colspan="3" class="empty-state">Nothing available${type === "ROOM_SERVICE" ? " for room service" : ""}.</td></tr>`}</tbody>
+        </table>
+        <div id="poCartWrap" style="margin-top:14px;"></div>
+      `;
+      renderPoCart();
+    }
+  } catch (err) {
+    catalogEl.innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+  updatePoTotal();
+}
+
+function addToPoCart(itemId) {
+  const item = _poCatalogItems.find((i) => i.id === itemId);
+  if (!item) return;
+  const existing = _poCart.find((l) => l.id === itemId);
+  if (existing) existing.quantity += 1;
+  else _poCart.push({ id: item.id, name: item.name, price: Number(item.price), quantity: 1 });
+  renderPoCart();
+  updatePoTotal();
+}
+function removeFromPoCart(itemId) {
+  _poCart = _poCart.filter((l) => l.id !== itemId);
+  renderPoCart();
+  updatePoTotal();
+}
+function renderPoCart() {
+  const wrap = document.getElementById("poCartWrap");
+  if (!wrap) return;
+  wrap.innerHTML = _poCart.length ? `
+    <table><thead><tr><th>Item</th><th>Qty</th><th>Line total</th><th></th></tr></thead>
+      <tbody>${_poCart.map((l) => `
+        <tr><td>${l.name}</td><td>${l.quantity}</td><td>&#8358;${(l.price * l.quantity).toLocaleString()}</td>
+        <td><button type="button" class="btn btn-sm btn-danger" onclick="removeFromPoCart('${l.id}')">Remove</button></td></tr>
+      `).join("")}</tbody>
+    </table>
+  ` : `<p style="color:var(--text-muted); font-size:0.84rem;">No items added yet.</p>`;
+}
+
+function updatePoTotal() {
+  const type = document.getElementById("poType").value;
+  let total = 0;
+  if (type === "SPA") {
+    const sel = document.getElementById("poSpaTreatment");
+    total = sel ? Number(sel.selectedOptions[0]?.dataset.price || 0) : 0;
+  } else {
+    total = _poCart.reduce((sum, l) => sum + l.price * l.quantity, 0);
+  }
+  document.getElementById("poTotalDisplay").textContent = `₦${total.toLocaleString()}`;
+  return total;
+}
+
+let _poSearchTimer = null;
+function searchGuestDebounced() {
+  clearTimeout(_poSearchTimer);
+  _poSearchTimer = setTimeout(async () => {
+    const q = document.getElementById("poGuestSearch").value.trim();
+    const resultsEl = document.getElementById("poGuestResults");
+    if (q.length < 2) { resultsEl.innerHTML = ""; return; }
+    try {
+      const { guests } = await staffApi.searchGuests(q);
+      resultsEl.innerHTML = guests.length ? guests.map((g) => `
+        <div style="padding:8px 10px; border:1px solid var(--border); border-radius:6px; margin-top:4px; cursor:pointer;" onclick='selectGuest(${JSON.stringify(g).replace(/'/g, "&#39;")})'>
+          <b>${g.name}</b> <span style="color:var(--text-muted); font-size:0.82rem;">${g.email}${g.phone ? " · " + g.phone : ""}</span>
+        </div>
+      `).join("") : `<p style="font-size:0.8rem; color:var(--text-muted); margin-top:4px;">No match — enter their details below instead.</p>`;
+    } catch { /* search failing shouldn't block manual entry below */ }
+  }, 350);
+}
+function selectGuest(guest) {
+  _poSelectedGuestId = guest.id;
+  document.getElementById("poSelectedGuestName").textContent = guest.name;
+  document.getElementById("poSelectedGuestEmail").textContent = guest.email;
+  document.getElementById("poSelectedGuest").style.display = "block";
+  document.getElementById("poNewGuestFields").style.display = "none";
+  document.getElementById("poGuestResults").innerHTML = "";
+  document.getElementById("poGuestSearch").value = "";
+}
+function clearSelectedGuest() {
+  _poSelectedGuestId = null;
+  document.getElementById("poSelectedGuest").style.display = "none";
+  document.getElementById("poNewGuestFields").style.display = "block";
+}
+
+async function submitWalkInOrder() {
+  const btn = document.getElementById("poSubmitBtn");
+  const type = document.getElementById("poType").value;
+  const total = updatePoTotal();
+  const paymentChoice = document.getElementById("poPayment").value;
+  const roomId = document.getElementById("poRoom").value || undefined;
+
+  if (!_poSelectedGuestId && (!document.getElementById("poGuestName").value || !document.getElementById("poGuestEmail").value)) {
+    showNotice("placeOrderNotice", "Select an existing guest or enter a name and email for a new one.");
+    return;
+  }
+  if (paymentChoice === "ROOM" && !roomId) {
+    showNotice("placeOrderNotice", "Select a room to charge this to, or choose a different payment option.");
+    return;
+  }
+
+  const payload = {
+    type,
+    existingGuestId: _poSelectedGuestId || undefined,
+    guest: _poSelectedGuestId ? undefined : {
+      name: document.getElementById("poGuestName").value,
+      email: document.getElementById("poGuestEmail").value,
+      phone: document.getElementById("poGuestPhone").value || undefined,
+    },
+    roomId,
+    chargeToRoom: paymentChoice === "ROOM",
+  };
+
+  if (type === "SPA") {
+    payload.treatmentId = document.getElementById("poSpaTreatment").value;
+    payload.scheduledAt = document.getElementById("poSpaTime").value;
+    if (!payload.scheduledAt) { showNotice("placeOrderNotice", "Pick a date and time for the appointment."); return; }
+  } else {
+    if (!_poCart.length) { showNotice("placeOrderNotice", "Add at least one item."); return; }
+    payload.lines = _poCart.map((l) => ({ [type === "LAUNDRY" ? "laundryItemId" : "menuItemId"]: l.id, quantity: l.quantity }));
+  }
+
+  btn.disabled = true;
+  try {
+    const { order } = await staffApi.createWalkInOrder(payload);
+
+    if (paymentChoice === "NOW" && order.totalAmount) {
+      try {
+        await staffApi.recordTransaction({
+          orderId: order.id,
+          guestName: _poSelectedGuestId ? document.getElementById("poSelectedGuestName").textContent : document.getElementById("poGuestName").value,
+          source: ORDER_TYPE_TRANSACTION_SOURCE[type],
+          amount: order.totalAmount,
+          method: document.getElementById("poMethod").value,
+        });
+      } catch (err) {
+        showNotice("placeOrderNotice", `Order placed, but recording the payment failed: ${err.message}. Record it from Transactions instead.`, "error");
+        return;
+      }
+    }
+
+    showNotice("placeOrderNotice", "Order placed.", "success");
+    await loadPlaceOrderPage();
+  } catch (err) {
+    showNotice("placeOrderNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   ORDERS QUEUE — every order at this branch, guest self-service and
+   staff walk-in alike, with the placing staff member shown when
+   applicable. Same "advance status" convention as Bookings.
+   ============================================================ */
+async function loadOrdersQueuePage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Orders", "Every order placed at this branch — online and walk-in.")}
+    <div id="ordersNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Type</th><th>Total</th><th>Status</th><th>Placed by</th><th></th></tr></thead>
+        <tbody id="ordersBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="orderDetailModal" style="display:none;">
+      <div class="modal" style="max-width:640px;">
+        <h3>Order detail</h3>
+        <div id="orderDetailNotice"></div>
+        <div id="orderDetailBody"><div class="loading-state">Loading…</div></div>
+      </div>
+    </div>
+  `;
+  await refreshOrdersQueue();
+}
+async function refreshOrdersQueue() {
+  const NEXT_STATUS = { PENDING: "IN_PROGRESS", IN_PROGRESS: "COMPLETED" };
+  try {
+    const { orders } = await staffApi.listOrders();
+    document.getElementById("ordersBody").innerHTML = orders.length ? orders.map((o) => `
+      <tr>
+        <td>${o.guest.name}</td>
+        <td>${(o.type || "").replace(/_/g, " ")}</td>
+        <td>${o.totalAmount != null ? "&#8358;" + Number(o.totalAmount).toLocaleString() : "—"}</td>
+        <td><span class="badge badge-${o.status.toLowerCase()}">${o.status}</span></td>
+        <td style="font-size:0.82rem; color:var(--text-muted);">${o.placedByStaff ? o.placedByStaff.name : "Guest"}</td>
+        <td><button class="btn btn-sm btn-outline" onclick="openOrderDetailModal('${o.id}')">View</button>
+        ${NEXT_STATUS[o.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceOrder('${o.id}','${NEXT_STATUS[o.status]}')">${NEXT_STATUS[o.status].replace("_"," ").toLowerCase()}</button>` : ""}
+        ${["PENDING","IN_PROGRESS"].includes(o.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceOrder('${o.id}','CANCELLED')">Cancel</button>` : ""}</td>
+      </tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No orders yet.</td></tr>`;
+  } catch (err) {
+    document.getElementById("ordersBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`;
+  }
+}
+async function advanceOrder(id, status) {
+  try { await staffApi.updateOrderStatus(id, status); refreshOrdersQueue(); }
+  catch (err) { showNotice("ordersNotice", err.message); }
+}
+
+/* ============================================================
+   ORDER DETAIL — line-level management (manage_orders). Anyone with
+   manage_bookings can view; only manage_orders can add/void a line;
+   only manage_payments can reopen a closed order — matching the
+   backend's own permission split exactly.
+   ============================================================ */
+let _odOrderId = null;
+async function openOrderDetailModal(id) {
+  _odOrderId = id;
+  document.getElementById("orderDetailNotice").innerHTML = "";
+  document.getElementById("orderDetailModal").style.display = "flex";
+  await refreshOrderDetail();
+}
+function closeOrderDetailModal() { document.getElementById("orderDetailModal").style.display = "none"; }
+
+async function refreshOrderDetail() {
+  const body = document.getElementById("orderDetailBody");
+  try {
+    const { order } = await staffApi.getOrder(_odOrderId);
+    const canEditLines = hasPermission("manage_orders");
+    const canReopen = hasPermission("manage_payments");
+    body.innerHTML = `
+      <p style="font-size:0.84rem; color:var(--text-muted); margin-bottom:10px;">${order.guest.name} · <span class="badge badge-${order.status.toLowerCase()}">${order.status}</span> ${order.isOpen ? "" : "· Closed"}</p>
+      <table><thead><tr><th>Item</th><th>Qty</th><th>Line total</th><th>Status</th>${canEditLines ? "<th></th>" : ""}</tr></thead>
+        <tbody>${order.lines.length ? order.lines.map((l) => `
+          <tr>
+            <td>${l.itemName}</td><td>${l.quantity}</td>
+            <td>&#8358;${(Number(l.unitPrice) * l.quantity).toLocaleString()}</td>
+            <td><span class="badge badge-${l.status.toLowerCase()}">${l.status}</span></td>
+            ${canEditLines ? `<td>${l.status === "ACTIVE" ? `<button class="btn btn-sm btn-danger" onclick="voidOrderLineRow('${l.id}')">Void</button>` : ""}</td>` : ""}
+          </tr>
+        `).join("") : `<tr><td colspan="${canEditLines ? 5 : 4}" class="empty-state">No items on this order.</td></tr>`}</tbody>
+      </table>
+      <div class="summary-line total" style="margin-top:10px;"><span>Total</span><span>&#8358;${Number(order.totalAmount || 0).toLocaleString()}</span></div>
+      ${canEditLines && order.isOpen ? `
+        <form id="addLineForm" style="border-top:1px solid var(--border); margin-top:16px; padding-top:16px;">
+          <div class="form-row">
+            <div class="form-field"><label>Add item</label><select id="odMenuItemId"><option value="">Loading…</option></select></div>
+            <div class="form-field"><label>Qty</label><input type="number" id="odQty" value="1" min="1"></div>
+          </div>
+          <button type="submit" class="btn btn-sm btn-outline">Add to order</button>
+        </form>
+      ` : ""}
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" onclick="closeOrderDetailModal()">Close</button>
+        ${canEditLines && order.isOpen ? `<button type="button" class="btn btn-danger" onclick="closeOrderRow()">Close order</button>` : ""}
+        ${canReopen && !order.isOpen ? `<button type="button" class="btn btn-outline" onclick="reopenOrderRow()">Reopen order</button>` : ""}
+      </div>
+    `;
+    if (canEditLines && order.isOpen) {
+      const menuSelect = document.getElementById("odMenuItemId");
+      try {
+        const { menuItems } = await staffApi.listMenuItems();
+        menuSelect.innerHTML = menuItems.map((m) => `<option value="${m.id}">${m.name} — &#8358;${Number(m.price).toLocaleString()}</option>`).join("");
+      } catch { menuSelect.innerHTML = `<option value="">Couldn't load menu</option>`; }
+      document.getElementById("addLineForm").addEventListener("submit", submitAddOrderLine);
+    }
+  } catch (err) {
+    body.innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+async function submitAddOrderLine(e) {
+  e.preventDefault();
+  const menuItemId = document.getElementById("odMenuItemId").value;
+  const quantity = Number(document.getElementById("odQty").value) || 1;
+  if (!menuItemId) return;
+  try {
+    await staffApi.addOrderLine(_odOrderId, { menuItemId, quantity });
+    await refreshOrderDetail();
+    refreshOrdersQueue();
+  } catch (err) {
+    showNotice("orderDetailNotice", err.message);
+  }
+}
+async function voidOrderLineRow(lineId) {
+  const reason = prompt("Reason for voiding this item (required):");
+  if (!reason || reason.trim().length < 3) { if (reason !== null) showNotice("orderDetailNotice", "A reason of at least 3 characters is required."); return; }
+  try {
+    await staffApi.voidOrderLine(_odOrderId, lineId, { reason: reason.trim() });
+    await refreshOrderDetail();
+    refreshOrdersQueue();
+  } catch (err) {
+    showNotice("orderDetailNotice", err.message);
+  }
+}
+async function closeOrderRow() {
+  if (!confirm("Close this order? No more items can be added unless it's reopened.")) return;
+  try {
+    await staffApi.closeOrder(_odOrderId);
+    await refreshOrderDetail();
+    refreshOrdersQueue();
+  } catch (err) {
+    showNotice("orderDetailNotice", err.message);
+  }
+}
+async function reopenOrderRow() {
+  try {
+    await staffApi.reopenOrder(_odOrderId);
+    await refreshOrderDetail();
+    refreshOrdersQueue();
+  } catch (err) {
+    showNotice("orderDetailNotice", err.message);
+  }
+}
+
+/* ============================================================
+   BOOKINGS — full lifecycle actions kept (front-desk work)
+   ============================================================ */
+let _bookingsCache = [];
+async function loadBookingsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Bookings", "Confirm, check in, check out, or cancel.")}
+    <div id="bookingsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Guest</th><th>Room</th><th>Dates</th><th>Status</th><th></th></tr></thead>
+        <tbody id="bookingsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="checkInModal" style="display:none;">
+      <div class="modal" style="max-width:520px;">
+        <h3>Check in — <span id="ciGuestName"></span></h3>
+        <div id="checkInNotice"></div>
+        <form id="checkInForm">
+          <input type="hidden" id="ciBookingId">
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">ID registration is required by policy before handing over a key.</p>
+          <div class="form-row">
+            <div class="form-field"><label>Guest's full legal name</label><input type="text" id="ciFullName" required></div>
+            <div class="form-field"><label>ID type</label>
+              <select id="ciIdType" required>
+                <option value="PASSPORT">Passport</option>
+                <option value="NATIONAL_ID">National ID</option>
+                <option value="DRIVERS_LICENSE">Driver's licence</option>
+                <option value="VOTERS_CARD">Voter's card</option>
+              </select>
+            </div>
+          </div>
+          <div class="form-field"><label>ID number</label><input type="text" id="ciIdNumber" required></div>
+          <div class="form-field"><label>Room</label><select id="ciRoomId"></select></div>
+          <div class="form-field" id="ciOverrideField" style="display:none;">
+            <label style="display:flex; align-items:center; gap:8px; font-weight:400;"><input type="checkbox" id="ciOverrideHousekeeping" style="width:auto;"> Check in anyway — housekeeping hasn't cleared this room</label>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Deposit <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="number" id="ciDepositAmount" min="0"></div>
+            <div class="form-field"><label>Method</label>
+              <select id="ciDepositMethod"><option value="CASH">Cash</option><option value="CARD">Card</option><option value="TRANSFER">Transfer</option></select>
+            </div>
+          </div>
+          <div class="form-field"><label>Keys issued <span style="color:var(--text-muted); font-weight:400;">(optional, comma-separated)</span></label><input type="text" id="ciKeys" placeholder="Key card, Spare card"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeCheckInModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="ciSubmitBtn">Check in</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="assignRoomModal" style="display:none;">
+      <div class="modal">
+        <h3>Change room</h3>
+        <div id="assignRoomNotice"></div>
+        <form id="assignRoomForm">
+          <input type="hidden" id="arBookingId">
+          <div class="form-field"><label>Room</label><select id="arRoomId" required></select></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeAssignRoomModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="arSubmitBtn">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("checkInForm").addEventListener("submit", submitCheckInForm);
+  document.getElementById("assignRoomForm").addEventListener("submit", submitAssignRoomForm);
+  await refreshBookingsTable();
+}
+async function refreshBookingsTable() {
+  const NEXT_STATUS = { PENDING: "CONFIRMED" };
+  try {
+    const { bookings } = await staffApi.listBookings();
+    _bookingsCache = bookings;
+    document.getElementById("bookingsBody").innerHTML = bookings.length ? bookings.map((b) => `
+      <tr><td>${b.guest.name}<br><span style="color:var(--text-muted); font-size:0.78rem;">${b.guest.email}</span></td>
+      <td>${b.room ? `${b.room.name} — ${b.room.roomNumber}` : `<span style="color:var(--text-muted);">Not assigned yet</span>`}</td>
+      <td>${b.checkIn.slice(0,10)} → ${b.checkOut.slice(0,10)}</td>
+      <td><span class="badge badge-${b.status.toLowerCase()}">${b.status}</span></td>
+      <td>${b.status === "CHECKED_IN" ? `<button class="btn btn-sm btn-outline" onclick="openFolioModal('${b.id}')">Check out</button><button class="btn btn-sm btn-outline" onclick="openAssignRoomModal('${b.id}')">Change room</button>`
+        : b.status === "CONFIRMED" ? `<button class="btn btn-sm btn-outline" onclick="openCheckInModal('${b.id}')">Check in</button>`
+        : NEXT_STATUS[b.status] ? `<button class="btn btn-sm btn-outline" onclick="advanceBooking('${b.id}','${NEXT_STATUS[b.status]}')">${NEXT_STATUS[b.status].replace("_"," ").toLowerCase()}</button>` : ""}
+      ${["PENDING","CONFIRMED"].includes(b.status) ? `<button class="btn btn-sm btn-danger" onclick="advanceBooking('${b.id}','CANCELLED')">Cancel</button>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No bookings yet.</td></tr>`;
+  } catch (err) { document.getElementById("bookingsBody").innerHTML = `<tr><td colspan="5" class="empty-state">${err.message}</td></tr>`; }
+}
+async function advanceBooking(id, status) {
+  try { await staffApi.updateBookingStatus(id, status); refreshBookingsTable(); }
+  catch (err) { showNotice("bookingsNotice", err.message); }
+}
+
+async function populateRoomSelect(selectEl, selectedRoomId, includeAutoOption) {
+  selectEl.innerHTML = `<option value="">Loading…</option>`;
+  try {
+    const { rooms } = await staffApi.listRooms();
+    selectEl.innerHTML = (includeAutoOption ? `<option value="">— Auto-assign —</option>` : "")
+      + rooms.map((r) => `<option value="${r.id}" ${r.id === selectedRoomId ? "selected" : ""}>${r.name} — ${r.roomNumber}</option>`).join("");
+  } catch { selectEl.innerHTML = includeAutoOption ? `<option value="">— Auto-assign —</option>` : `<option value="">Couldn't load rooms</option>`; }
+}
+
+async function openCheckInModal(bookingId) {
+  const booking = _bookingsCache.find((b) => b.id === bookingId);
+  document.getElementById("checkInForm").reset();
+  document.getElementById("checkInNotice").innerHTML = "";
+  document.getElementById("ciBookingId").value = bookingId;
+  document.getElementById("ciGuestName").textContent = booking ? booking.guest.name : "";
+  document.getElementById("ciOverrideField").style.display = "none";
+  await populateRoomSelect(document.getElementById("ciRoomId"), booking?.room?.id, true);
+  document.getElementById("checkInModal").style.display = "flex";
+}
+function closeCheckInModal() { document.getElementById("checkInModal").style.display = "none"; }
+
+async function submitCheckInForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("ciSubmitBtn");
+  btn.disabled = true;
+  const bookingId = document.getElementById("ciBookingId").value;
+  const keysRaw = document.getElementById("ciKeys").value.trim();
+  const depositAmount = document.getElementById("ciDepositAmount").value;
+  const payload = {
+    registration: {
+      fullName: document.getElementById("ciFullName").value,
+      idType: document.getElementById("ciIdType").value,
+      idNumber: document.getElementById("ciIdNumber").value,
+    },
+    roomId: document.getElementById("ciRoomId").value || undefined,
+    overrideHousekeeping: document.getElementById("ciOverrideHousekeeping").checked || undefined,
+    deposit: depositAmount ? { amount: Number(depositAmount), method: document.getElementById("ciDepositMethod").value } : undefined,
+    keys: keysRaw ? keysRaw.split(",").map((label) => ({ label: label.trim() })).filter((k) => k.label) : undefined,
+  };
+  try {
+    await staffApi.checkInBooking(bookingId, payload);
+    closeCheckInModal();
+    showNotice("bookingsNotice", "Guest checked in.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    if (err.code === "ROOM_NOT_READY") document.getElementById("ciOverrideField").style.display = "block";
+    showNotice("checkInNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function openAssignRoomModal(bookingId) {
+  const booking = _bookingsCache.find((b) => b.id === bookingId);
+  document.getElementById("assignRoomForm").reset();
+  document.getElementById("assignRoomNotice").innerHTML = "";
+  document.getElementById("arBookingId").value = bookingId;
+  await populateRoomSelect(document.getElementById("arRoomId"), booking?.room?.id, false);
+  document.getElementById("assignRoomModal").style.display = "flex";
+}
+function closeAssignRoomModal() { document.getElementById("assignRoomModal").style.display = "none"; }
+async function submitAssignRoomForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("arSubmitBtn");
+  btn.disabled = true;
+  try {
+    await staffApi.assignRoom(document.getElementById("arBookingId").value, { roomId: document.getElementById("arRoomId").value });
+    closeAssignRoomModal();
+    showNotice("bookingsNotice", "Room updated.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    showNotice("assignRoomNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   FOLIO — the guest's running room-charge tab. Only relevant for a
+   CHECKED_IN booking. Checkout is blocked server-side while a balance
+   is outstanding, so this modal is the only path to checking someone
+   out once they've charged anything to their room.
+   ============================================================ */
+async function openFolioModal(bookingId) {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay"; overlay.id = "folioModal";
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:600px;">
+      <h3>Room folio</h3>
+      <div id="folioModalNotice"></div>
+      <div id="folioModalContent"><div class="loading-state">Loading…</div></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  await refreshFolioModal(bookingId);
+}
+
+async function refreshFolioModal(bookingId) {
+  try {
+    const { booking, charges, balance } = await staffApi.getFolio(bookingId);
+    document.getElementById("folioModalContent").innerHTML = `
+      <p style="color:var(--text-muted); font-size:0.86rem; margin-bottom:12px;">${booking.guestName} — Room ${booking.roomNumber}</p>
+      ${charges.length ? `
+        <table><thead><tr><th>Type</th><th>Placed</th><th style="text-align:right;">Amount</th></tr></thead>
+          <tbody>${charges.map((c) => `<tr><td>${c.type.replace(/_/g, " ")}</td><td>${new Date(c.createdAt).toLocaleString()}</td><td style="text-align:right;">&#8358;${Number(c.totalAmount).toLocaleString()}</td></tr>`).join("")}</tbody>
+        </table>
+        <div class="summary-line total" style="margin-top:10px;"><span>Balance due</span><span>&#8358;${Number(balance).toLocaleString()}</span></div>
+        <form id="folioSettleForm" style="margin-top:16px; border-top:1px solid var(--border); padding-top:16px;">
+          <div class="form-field">
+            <label>Settle by</label>
+            <select id="folioMethod">
+              <option value="CASH">Cash</option>
+              <option value="CARD">Card</option>
+              <option value="TRANSFER">Transfer</option>
+              <option value="PAYSTACK">Paystack</option>
+              <option value="STRIPE">Stripe</option>
+            </select>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button>
+            <button type="submit" class="btn btn-primary" id="folioSettleBtn">Settle &amp; check out</button>
+          </div>
+        </form>
+      ` : `
+        <div class="empty-state">No room charges on this stay.</div>
+        <div class="modal-actions" style="margin-top:14px;">
+          <button type="button" class="btn btn-outline" onclick="document.getElementById('folioModal').remove()">Close</button>
+          <button type="button" class="btn btn-primary" onclick="checkOutFromFolio('${bookingId}')">Check out</button>
+        </div>
+      `}
+    `;
+    if (charges.length) {
+      document.getElementById("folioSettleForm").addEventListener("submit", (e) => { e.preventDefault(); settleFolioAndCheckOut(bookingId); });
+    }
+  } catch (err) {
+    document.getElementById("folioModalContent").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+async function performCheckOut(bookingId, extraFlags = {}) {
+  try {
+    await staffApi.checkOutBooking(bookingId, extraFlags);
+  } catch (err) {
+    if (err.code === "KEYS_OUTSTANDING" && !extraFlags.acceptMissingKeys) {
+      if (confirm(`${err.message} Check out anyway?`)) return performCheckOut(bookingId, { ...extraFlags, acceptMissingKeys: true });
+      throw new Error("Checkout cancelled.");
+    }
+    throw err;
+  }
+}
+
+async function settleFolioAndCheckOut(bookingId) {
+  const btn = document.getElementById("folioSettleBtn");
+  const method = document.getElementById("folioMethod").value;
+  if (btn) { btn.disabled = true; btn.textContent = "Settling…"; }
+  try {
+    await staffApi.settleFolio(bookingId, method);
+    await performCheckOut(bookingId);
+    document.getElementById("folioModal").remove();
+    showNotice("bookingsNotice", "Folio settled and guest checked out.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    document.getElementById("folioModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = "Settle & check out"; }
+  }
+}
+
+async function checkOutFromFolio(bookingId) {
+  try {
+    await performCheckOut(bookingId);
+    document.getElementById("folioModal").remove();
+    showNotice("bookingsNotice", "Guest checked out.", "success");
+    refreshBookingsTable();
+  } catch (err) {
+    document.getElementById("folioModalNotice").innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+/* ============================================================
+   EVENTS — create/manage events, scan tickets at the door.
+   ============================================================ */
+async function loadEventsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Events", "Create and manage events at your branch, and scan tickets at the door.",
+      `<button class="btn btn-primary" onclick="openEventModal()">New event</button>`)}
+    <div id="eventsNotice"></div>
+
+    <div class="panel" style="margin-bottom:20px;">
+      <h3>Door scan</h3>
+      <form id="ticketScanForm" style="display:flex; gap:10px; align-items:flex-end;">
+        <div class="form-field" style="flex:1; margin:0;"><label>Ticket code</label><input type="text" id="scanCode" autocomplete="off"></div>
+        <button type="submit" class="btn btn-primary">Scan</button>
+      </form>
+      <div id="scanResult" style="margin-top:12px;"></div>
+    </div>
+
+    <div class="panel">
+      <table><thead><tr><th>Name</th><th>Starts</th><th>Capacity</th><th>Price</th><th></th></tr></thead>
+        <tbody id="eventsBody"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="eventModal" style="display:none;">
+      <div class="modal">
+        <h3 id="eventModalTitle">New event</h3>
+        <div id="eventModalNotice"></div>
+        <form id="eventForm">
+          <input type="hidden" id="evId">
+          <div class="form-field"><label>Name</label><input type="text" id="evName" required></div>
+          <div class="form-field"><label>Description</label><textarea id="evDescription" rows="2"></textarea></div>
+          <div class="form-row">
+            <div class="form-field"><label>Starts</label><input type="datetime-local" id="evStartsAt" required></div>
+            <div class="form-field"><label>Ends <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="datetime-local" id="evEndsAt"></div>
+          </div>
+          <div class="form-row">
+            <div class="form-field"><label>Capacity <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label><input type="number" id="evCapacity" min="1"></div>
+            <div class="form-field"><label>Price</label><input type="number" id="evPrice" min="0" value="0"></div>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeEventModal()">Cancel</button>
+            <button type="submit" class="btn btn-primary" id="evSubmitBtn">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="attendeesModal" style="display:none;">
+      <div class="modal">
+        <h3>Attendees</h3>
+        <div id="attendeesBody"><div class="loading-state">Loading…</div></div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="document.getElementById('attendeesModal').style.display='none'">Close</button></div>
+      </div>
+    </div>
+  `;
+  document.getElementById("eventForm").addEventListener("submit", submitEventForm);
+  document.getElementById("ticketScanForm").addEventListener("submit", submitTicketScan);
+  await refreshEventsTable();
+}
+
+async function refreshEventsTable() {
+  try {
+    const { events } = await staffApi.listEvents();
+    document.getElementById("eventsBody").innerHTML = events.length ? events.map((ev) => `
+      <tr>
+        <td>${ev.name}</td>
+        <td>${new Date(ev.startsAt).toLocaleString()}</td>
+        <td>${ev.capacity ?? "—"}</td>
+        <td>${ev.price ? "&#8358;" + Number(ev.price).toLocaleString() : "Free"}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick="openAttendeesModal('${ev.id}')">Attendees</button>
+          <button class="btn btn-sm btn-outline" onclick='openEventModal(${JSON.stringify(ev).replace(/'/g, "&#39;")})'>Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteEventRow('${ev.id}')">Delete</button>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5" class="empty-state">No events yet.</td></tr>`;
+  } catch (err) {
+    showNotice("eventsNotice", err.message);
+  }
+}
+
+function openEventModal(ev) {
+  document.getElementById("eventForm").reset();
+  document.getElementById("evId").value = ev ? ev.id : "";
+  document.getElementById("eventModalTitle").textContent = ev ? "Edit event" : "New event";
+  if (ev) {
+    document.getElementById("evName").value = ev.name;
+    document.getElementById("evDescription").value = ev.description || "";
+    document.getElementById("evStartsAt").value = ev.startsAt ? ev.startsAt.slice(0, 16) : "";
+    document.getElementById("evEndsAt").value = ev.endsAt ? ev.endsAt.slice(0, 16) : "";
+    document.getElementById("evCapacity").value = ev.capacity ?? "";
+    document.getElementById("evPrice").value = ev.price ?? 0;
+  }
+  document.getElementById("eventModal").style.display = "flex";
+}
+function closeEventModal() { document.getElementById("eventModal").style.display = "none"; }
+
+async function submitEventForm(e) {
+  e.preventDefault();
+  const btn = document.getElementById("evSubmitBtn");
+  btn.disabled = true;
+  const id = document.getElementById("evId").value;
+  const payload = {
+    name: document.getElementById("evName").value,
+    description: document.getElementById("evDescription").value || undefined,
+    startsAt: document.getElementById("evStartsAt").value,
+    endsAt: document.getElementById("evEndsAt").value || undefined,
+    capacity: document.getElementById("evCapacity").value ? Number(document.getElementById("evCapacity").value) : undefined,
+    price: document.getElementById("evPrice").value ? Number(document.getElementById("evPrice").value) : 0,
+  };
+  try {
+    if (id) await staffApi.updateEvent(id, payload);
+    else await staffApi.createEvent(payload);
+    closeEventModal();
+    showNotice("eventsNotice", id ? "Event updated." : "Event created.", "success");
+    refreshEventsTable();
+  } catch (err) {
+    showNotice("eventModalNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function deleteEventRow(id) {
+  if (!confirm("Delete this event? This can't be undone.")) return;
+  try {
+    await staffApi.deleteEvent(id);
+    showNotice("eventsNotice", "Event deleted.", "success");
+    refreshEventsTable();
+  } catch (err) {
+    showNotice("eventsNotice", err.message);
+  }
+}
+
+async function openAttendeesModal(id) {
+  document.getElementById("attendeesModal").style.display = "flex";
+  document.getElementById("attendeesBody").innerHTML = `<div class="loading-state">Loading…</div>`;
+  try {
+    const { total, redeemed, tickets } = await staffApi.getEventAttendees(id);
+    document.getElementById("attendeesBody").innerHTML = `
+      <p style="font-size:0.86rem; color:var(--text-muted); margin-bottom:12px;">${redeemed} of ${total} scanned in.</p>
+      <table><thead><tr><th>Name</th><th>Type</th><th>Status</th></tr></thead>
+        <tbody>${tickets.length ? tickets.map((t) => `<tr><td>${t.holderName || "—"}</td><td>${t.ticketType || "—"}</td><td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td></tr>`).join("") : `<tr><td colspan="3" class="empty-state">No tickets sold yet.</td></tr>`}</tbody>
+      </table>
+    `;
+  } catch (err) {
+    document.getElementById("attendeesBody").innerHTML = `<div class="empty-state">${err.message}</div>`;
+  }
+}
+
+async function submitTicketScan(e) {
+  e.preventDefault();
+  const codeInput = document.getElementById("scanCode");
+  const code = codeInput.value.trim();
+  if (!code) return;
+  const resultEl = document.getElementById("scanResult");
+  resultEl.innerHTML = `<div class="loading-state">Checking…</div>`;
+  try {
+    const result = await staffApi.redeemTicket(code);
+    resultEl.innerHTML = `<div class="notice success">${result.message}${result.ticket?.holderName ? ` — ${result.ticket.holderName}` : ""}</div>`;
+  } catch (err) {
+    resultEl.innerHTML = `<div class="notice error">${err.data?.message || err.message}</div>`;
+  }
+  codeInput.value = "";
+  codeInput.focus();
+}
+
+/* ============================================================
+   TICKETS — claim/resolve, plus full thread view + reply.
+   ============================================================ */
+async function loadTicketsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Guest Tickets", "Support requests from guests at your branch.")}
+    <div id="ticketsNotice"></div>
+    <div class="panel">
+      <table><thead><tr><th>Subject</th><th>Guest</th><th>Priority</th><th>Assigned</th><th>Status</th><th></th></tr></thead>
+        <tbody id="ticketsBody"><tr><td colspan="6" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="modal-overlay" id="ticketDetailModal" style="display:none;">
+      <div class="modal" style="max-width:560px;">
+        <h3 id="tdSubject">Ticket</h3>
+        <div id="ticketDetailNotice"></div>
+        <div id="tdMeta" style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;"></div>
+        <div id="tdThread" style="max-height:320px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:14px;"></div>
+        <form id="tdReplyForm">
+          <div class="form-field"><label>Reply</label><textarea id="tdReplyMessage" rows="3" required></textarea></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTicketDetailModal()">Close</button>
+            <button type="submit" class="btn btn-primary" id="tdReplySubmitBtn">Send reply</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `;
+  document.getElementById("tdReplyForm").addEventListener("submit", submitTicketReply);
+  await refreshTicketsTable();
+}
+async function refreshTicketsTable() {
+  try {
+    const { tickets } = await staffApi.listTickets();
+    document.getElementById("ticketsBody").innerHTML = tickets.length ? tickets.map((t) => `
+      <tr><td>${t.subject}</td><td>${t.guest.name}</td><td>${t.priority}</td>
+      <td>${(t.assignedManager || t.assignedStaffMember) ? (t.assignedManager || t.assignedStaffMember).name : "—"}</td><td><span class="badge badge-${t.status.toLowerCase()}">${t.status}</span></td>
+      <td><button class="btn btn-sm btn-outline" onclick="openTicketDetailModal('${t.id}')">View</button>
+      ${!(t.assignedManager || t.assignedStaffMember) ? `<button class="btn btn-sm btn-outline" onclick="claimTicket('${t.id}')">Assign to me</button>` : ""}
+      ${t.status !== "RESOLVED" ? `<button class="btn btn-sm btn-outline" onclick="resolveTicketRow('${t.id}')">Resolve</button>` : ""}</td></tr>
+    `).join("") : `<tr><td colspan="6" class="empty-state">No tickets yet.</td></tr>`;
+
+    const openCount = tickets.filter((t) => ["OPEN", "IN_PROGRESS"].includes(t.status)).length;
+    const bellBadge = document.getElementById("ticketsBellBadge");
+    const navBadge = document.getElementById("ticketsNavBadge");
+    [bellBadge, navBadge].forEach((el) => { if (!el) return; el.textContent = openCount; el.style.display = openCount ? "flex" : "none"; el.classList.toggle("visible", openCount > 0); });
+  } catch (err) { document.getElementById("ticketsBody").innerHTML = `<tr><td colspan="6" class="empty-state">${err.message}</td></tr>`; }
+}
+async function claimTicket(id) { try { await staffApi.assignTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
+async function resolveTicketRow(id) { try { await staffApi.resolveTicket(id); refreshTicketsTable(); } catch (err) { showNotice("ticketsNotice", err.message); } }
+
+async function openTicketDetailModal(id) {
+  document.getElementById("ticketDetailNotice").innerHTML = "";
+  document.getElementById("tdThread").innerHTML = `<div class="loading-state">Loading…</div>`;
+  document.getElementById("tdReplyForm").dataset.ticketId = id;
+  document.getElementById("ticketDetailModal").style.display = "flex";
+  await refreshTicketDetail(id);
+}
+function closeTicketDetailModal() { document.getElementById("ticketDetailModal").style.display = "none"; }
+
+async function refreshTicketDetail(id) {
+  try {
+    const { ticket } = await staffApi.getTicketDetail(id);
+    document.getElementById("tdSubject").textContent = ticket.subject;
+    document.getElementById("tdMeta").textContent = `${ticket.guest.name} · ${ticket.priority} · ${ticket.status}`;
+    document.getElementById("tdThread").innerHTML = ticket.messages.length ? ticket.messages.map((m) => `
+      <div style="margin-bottom:10px; ${m.senderType === "GUEST" ? "" : "text-align:right;"}">
+        <div style="font-size:0.7rem; color:var(--text-muted); margin-bottom:2px;">${m.senderType === "GUEST" ? ticket.guest.name : "You"} · ${new Date(m.createdAt).toLocaleString()}</div>
+        <div style="display:inline-block; padding:8px 12px; border-radius:8px; background:${m.senderType === "GUEST" ? "var(--ivory)" : "rgba(185,141,69,0.12)"}; font-size:0.86rem;">${m.message || ""}</div>
+      </div>
+    `).join("") : `<div class="empty-state">No messages yet.</div>`;
+    document.getElementById("tdThread").scrollTop = document.getElementById("tdThread").scrollHeight;
+  } catch (err) {
+    showNotice("ticketDetailNotice", err.message);
+  }
+}
+
+async function submitTicketReply(e) {
+  e.preventDefault();
+  const id = e.target.dataset.ticketId;
+  const btn = document.getElementById("tdReplySubmitBtn");
+  btn.disabled = true;
+  try {
+    await staffApi.replyToTicket(id, document.getElementById("tdReplyMessage").value);
+    document.getElementById("tdReplyMessage").value = "";
+    await refreshTicketDetail(id);
+    refreshTicketsTable();
+  } catch (err) {
+    showNotice("ticketDetailNotice", err.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ============================================================
+   REPORTS — read-only branch snapshot (view_reports)
+   ============================================================ */
+async function loadReportsPage() {
+  const container = document.getElementById("pageContent");
+  container.innerHTML = `
+    ${pageHeader("Branch Reports", "A snapshot of this branch's activity.")}
+    <div id="reportsNotice"></div>
+    <div class="stats-grid" id="reportsStatCards"><div class="loading-state">Loading…</div></div>
+  `;
+  try {
+    const { report } = await staffApi.getReports();
+    document.getElementById("reportsStatCards").innerHTML = `
+      <div class="stat-card"><b>${report.roomCount}</b><span>Rooms</span></div>
+      <div class="stat-card"><b>${report.activeBookings}</b><span>Active bookings</span></div>
+      <div class="stat-card"><b>${report.bookingsThisMonth}</b><span>Bookings this month</span></div>
+      <div class="stat-card"><b>&#8358;${Number(report.revenueThisMonth).toLocaleString()}</b><span>Revenue this month</span></div>
+      <div class="stat-card"><b>${report.openTickets}</b><span>Open tickets</span></div>
+    `;
+  } catch (err) { showNotice("reportsNotice", err.message); }
+}
+/* ============================================================
+   SECURITY — 2FA enrollment, opened by clicking your own name
+   ============================================================ */
+function renderSecurityModalShell() {
+  if (document.getElementById("securityModal")) return;
+  document.body.insertAdjacentHTML("beforeend", `
+    <div class="modal-overlay" id="securityModal" style="display:none;">
+      <div class="modal">
+        <h3>Account & Security</h3>
+        <div id="securityNotice"></div>
+        <div id="securityBody"></div>
+        <div class="modal-actions"><button type="button" class="btn btn-outline" onclick="closeSecurityModal()">Close</button></div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="enable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn on two-factor authentication</h3>
+        <div id="enable2FAStep1">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Scan this with your authenticator app, then enter the code it shows.</p>
+          <div id="qrCodeContainer" style="text-align:center; margin-bottom:16px;"></div>
+          <div class="form-field"><label>6-digit code</label><input type="text" id="enable2FACode" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('enable2FAModal')">Cancel</button>
+            <button type="button" class="btn btn-primary" id="enable2FASubmitBtn" onclick="submitEnableTwoFactor()">Verify & enable</button>
+          </div>
+        </div>
+        <div id="enable2FAStep2" style="display:none;">
+          <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:10px;">2FA is on. Save these backup codes somewhere safe — each works once. <strong>They won't be shown again.</strong></p>
+          <div id="backupCodesList" style="background:var(--ivory); padding:14px 18px; border-radius:6px; font-family:monospace; font-size:0.9rem; line-height:1.9;"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" onclick="closeTwoFactorModal('enable2FAModal'); renderSecurityBody();">Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="disable2FAModal" style="display:none;">
+      <div class="modal">
+        <h3>Turn off two-factor authentication</h3>
+        <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">Confirm your password to turn off 2FA.</p>
+        <div class="form-field"><label>Password</label><input type="password" id="disable2FAPassword"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" onclick="closeTwoFactorModal('disable2FAModal')">Cancel</button>
+          <button type="button" class="btn btn-danger" id="disable2FASubmitBtn" onclick="submitDisableTwoFactor()">Turn off 2FA</button>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function openSecurityModal() {
+  renderSecurityModalShell();
+  renderSecurityBody();
+  document.getElementById("securityModal").style.display = "flex";
+}
+function closeSecurityModal() { document.getElementById("securityModal").style.display = "none"; }
+function closeTwoFactorModal(id) { document.getElementById(id).style.display = "none"; }
+
+function renderSecurityBody() {
+  const staff = getStaff();
+  const enabled = !!staff.twoFactorEnabled;
+  document.getElementById("securityBody").innerHTML = enabled ? `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-active">Enabled</span> Your account requires a code from your authenticator app at every login.
+    </p>
+    <button class="btn btn-outline" onclick="openDisable2FAModal()">Turn off 2FA</button>
+  ` : `
+    <p style="color:var(--text-muted); font-size:0.88rem; margin-bottom:14px;">
+      <span class="badge badge-inactive">Disabled</span> Add a second step at login using an authenticator app.
+    </p>
+    <button class="btn btn-primary" onclick="startTwoFactorSetup()">Turn on 2FA</button>
+  `;
+}
+
+async function startTwoFactorSetup() {
+  try {
+    const { qrCodeDataUrl } = await staffApi.setupTwoFactor();
+    document.getElementById("qrCodeContainer").innerHTML = `<img src="${qrCodeDataUrl}" alt="2FA QR code" style="width:200px; height:200px;">`;
+    document.getElementById("enable2FAStep1").style.display = "";
+    document.getElementById("enable2FAStep2").style.display = "none";
+    document.getElementById("enable2FAModal").style.display = "flex";
+  } catch (err) { showNotice("securityNotice", err.message); }
+}
+async function submitEnableTwoFactor() {
+  const btn = document.getElementById("enable2FASubmitBtn"); btn.disabled = true;
+  try {
+    const { backupCodes } = await staffApi.enableTwoFactor(document.getElementById("enable2FACode").value.trim());
+    document.getElementById("backupCodesList").innerHTML = backupCodes.map((c) => `<div>${c}</div>`).join("");
+    document.getElementById("enable2FAStep1").style.display = "none";
+    document.getElementById("enable2FAStep2").style.display = "";
+    const staff = getStaff(); staff.twoFactorEnabled = true; setSession(getToken(), staff);
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+function openDisable2FAModal() { document.getElementById("disable2FAPassword").value = ""; document.getElementById("disable2FAModal").style.display = "flex"; }
+async function submitDisableTwoFactor() {
+  const btn = document.getElementById("disable2FASubmitBtn"); btn.disabled = true;
+  try {
+    await staffApi.disableTwoFactor(document.getElementById("disable2FAPassword").value);
+    closeTwoFactorModal("disable2FAModal");
+    const staff = getStaff(); staff.twoFactorEnabled = false; setSession(getToken(), staff);
+    renderSecurityBody();
+    showNotice("securityNotice", "2FA turned off.", "success");
+  } catch (err) { showNotice("securityNotice", err.message); } finally { btn.disabled = false; }
+}
+
+/* ============================================================
+   SHARED / LOGIN / BOOT
+   ============================================================ */
+function showNotice(containerId, message, type = "error") {
+  const el = document.getElementById(containerId); if (!el) return;
+  el.innerHTML = `<div class="notice ${type}">${message}</div>`;
+  setTimeout(() => { if (el) el.innerHTML = ""; }, 4000);
+}
+function showLogin() { document.getElementById("loginScreen").style.display = "flex"; document.getElementById("appShell").style.display = "none"; }
+function showApp() {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("appShell").style.display = "block";
+  renderSidebar(); switchPage("dashboard"); refreshTicketsBadgeSilently();
+}
+async function refreshTicketsBadgeSilently() {
+  if (!hasPermission("handle_tickets")) return;
+  try {
+    const { tickets } = await staffApi.listTickets("OPEN");
+    const badge = document.getElementById("ticketsBellBadge");
+    if (badge) { badge.textContent = tickets.length; badge.style.display = tickets.length ? "flex" : "none"; }
+  } catch { /* silent — background badge refresh */ }
+}
+
+let _pendingTempToken = null;
+
+document.getElementById("loginForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("loginBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Logging in…";
+  try {
+    const result = await staffApi.login(document.getElementById("loginEmail").value, document.getElementById("loginPassword").value);
+    if (result.requires2FA) {
+      _pendingTempToken = result.tempToken;
+      document.getElementById("loginForm").style.display = "none";
+      document.getElementById("twoFactorForm").style.display = "block";
+      document.getElementById("twoFactorCode").focus();
+      return;
+    }
+    setSession(result.token, result.staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Log in"; }
+});
+
+document.getElementById("twoFactorForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById("twoFactorBtn");
+  const notice = document.getElementById("loginNotice");
+  notice.innerHTML = ""; btn.disabled = true; btn.textContent = "Verifying…";
+  try {
+    const result = await staffApi.verifyTwoFactor(_pendingTempToken, document.getElementById("twoFactorCode").value.trim());
+    _pendingTempToken = null;
+    setSession(result.token, result.staff);
+    showApp();
+  } catch (err) {
+    notice.innerHTML = `<div class="notice error">${err.message}</div>`;
+  } finally { btn.disabled = false; btn.textContent = "Verify"; }
+});
+
+document.getElementById("twoFactorBackBtn").addEventListener("click", () => {
+  _pendingTempToken = null;
+  document.getElementById("twoFactorForm").style.display = "none";
+  document.getElementById("twoFactorForm").reset();
+  document.getElementById("loginForm").style.display = "block";
+  document.getElementById("loginNotice").innerHTML = "";
+});
+document.getElementById("logoutBtn").addEventListener("click", () => { clearSession(); showLogin(); });
+document.getElementById("hamburgerBtn").addEventListener("click", () => document.getElementById("sidebar").classList.toggle("open"));
+document.getElementById("ticketsBellBtn").addEventListener("click", () => switchPage("tickets"));
+
+// Boot
+if (getToken() && getStaff()) { showApp(); } else { showLogin(); }
+</script>
+</body>
+</html>

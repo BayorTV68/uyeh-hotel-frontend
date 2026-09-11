@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title id="pageTitle">Our Hotel — Book direct, no OTA fees, real-time availability</title>
+<title id="pageTitle">Uyeh hotel — Book direct, no OTA fees, real-time availability</title>
 <meta name="description" id="pageDescription" content="Book rooms, restaurant, spa and events directly with real-time availability and Paystack payment.">
 <style>
 /* ============================================================
@@ -49,31 +49,84 @@ img { max-width: 100%; display: block; }
 .brand span { color: var(--brass-light); }
 .brand-logo { height: 32px; width: auto; display: block; }
 .nav-links { display: flex; gap: 36px; align-items: center; }
-.nav-links a { color: var(--text-on-ink); font-size: 0.92rem; letter-spacing: 0.02em; transition: color 0.2s; }
-.nav-links a:hover { color: var(--brass-light); }
-.nav-cta { border: 1px solid var(--brass); color: var(--brass-light) !important; padding: 9px 20px; border-radius: var(--radius); font-size: 0.85rem !important; }
+.nav-links a { color: var(--text-on-ink); font-size: 0.92rem; letter-spacing: 0.02em; }
+.nav-links a:not(.nav-cta) { position: relative; padding-bottom: 2px; }
+.nav-links a:not(.nav-cta)::after { content: ""; position: absolute; left: 0; right: 100%; bottom: 0; height: 1px; background: var(--brass-light); transition: right 0.3s ease; }
+.nav-links a:not(.nav-cta):hover::after { right: 0; }
+.nav-cta { border: 1px solid var(--brass); color: var(--brass-light) !important; padding: 9px 20px; border-radius: var(--radius); font-size: 0.85rem !important; transition: background 0.2s, color 0.2s; }
 .nav-cta:hover { background: var(--brass); color: var(--ink) !important; }
-.nav-toggle { display: none; background: none; border: none; color: var(--ivory); font-size: 1.5rem; cursor: pointer; }
+
+/* Animated hamburger — three bars morphing into an X, ivory on the
+   dark nav bar (unlike a light-background version, so bars are
+   --ivory, not black). */
+.nav-toggle { display: none; flex-direction: column; justify-content: center; gap: 5px; width: 28px; height: 28px; background: none; border: none; cursor: pointer; padding: 0; }
+.nav-toggle .bar { display: block; width: 100%; height: 2px; background: var(--ivory); transition: transform 0.3s ease, opacity 0.3s ease; }
+.nav-toggle.active .bar:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.nav-toggle.active .bar:nth-child(2) { opacity: 0; }
+.nav-toggle.active .bar:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
 @media (max-width: 860px) {
-  .nav-links { position: fixed; top: 76px; left: 0; right: 0; background: var(--ink); flex-direction: column; padding: 24px 32px; gap: 20px; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: all 0.25s; }
+  .nav-links { position: fixed; top: 76px; left: 0; right: 0; background: var(--ink); flex-direction: column; align-items: flex-start; padding: 24px 32px; gap: 20px; transform: translateY(-8px); opacity: 0; pointer-events: none; transition: all 0.25s; }
   .nav-links.open { transform: translateY(0); opacity: 1; pointer-events: auto; }
-  .nav-toggle { display: block; }
+  .nav-toggle { display: flex; }
 }
 
 /* ---- Hero ---- */
-.hero { background: var(--ink); color: var(--text-on-ink); position: relative; overflow: hidden; padding: 120px 0 100px; background-image: var(--hero-image, none); background-size: cover; background-position: center; }
-.hero::before { content: ""; position: absolute; inset: 0; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.14) 0, transparent 45%), radial-gradient(circle at 85% 75%, rgba(47, 93, 90, 0.35) 0, transparent 50%); pointer-events: none; }
+.hero { min-height: 100svh; background: var(--ink); color: var(--text-on-ink); position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; padding: 140px 0 88px; isolation: isolate; }
+@media (min-width: 861px) { .hero { justify-content: center; padding: 0; } }
+
+/* Background photo layer — separate from .hero itself so the slow
+   drift + mouse-parallax transform never fights the grain/gradient
+   overlays below. Renders nothing but the solid ink color when the
+   Director hasn't set a hero image yet (no stock photography
+   standing in for real branch photography). */
+.hero-bg { position: absolute; inset: -8%; z-index: -2; background-image: var(--hero-image, none); background-size: cover; background-position: 70% center; transform: translate3d(0, 0, 0) scale(1.08); will-change: transform; }
+.hero::before { content: ""; position: absolute; inset: 0; z-index: -1; background-image: radial-gradient(circle at 15% 20%, rgba(185, 141, 69, 0.16) 0, transparent 45%), radial-gradient(circle at 85% 75%, rgba(47, 93, 90, 0.4) 0, transparent 50%), linear-gradient(180deg, rgba(20,24,31,0.15) 0%, rgba(20,24,31,0.55) 100%); pointer-events: none; }
 .hero .wrap { position: relative; }
-.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 24px; }
+.hero-content { max-width: 620px; }
+
+/* 1 — blurred whisper-line: a quiet aside before the real headline
+   arrives, not meant to be fully readable — decorative, not motion. */
+.hero-intro-blur { pointer-events: none; user-select: none; margin-bottom: 22px; font-size: clamp(15px, 2.6vw, 18px); line-height: 1.5; font-weight: 400; color: rgba(237, 230, 214, 0.55); filter: blur(3px); opacity: 0; animation: heroFadeIn 0.9s ease 0.15s forwards; }
+
+/* 2 — the real headline, typed out on load. The typing target and
+   the live-settings target are the SAME element (#heroTitle) — the
+   headline you see typed is always the actual configured copy, not
+   a stand-in that gets swapped out later. */
+.eyebrow { display: inline-flex; align-items: center; gap: 8px; font-size: 0.78rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 20px; opacity: 0; animation: heroFadeIn 0.7s ease 0.4s forwards; }
 .eyebrow::before { content: ""; width: 24px; height: 1px; background: var(--brass); }
-.hero h1 { font-size: clamp(2.6rem, 5.5vw, 4.4rem); max-width: 14ch; margin-bottom: 26px; }
-.hero p.lead { font-size: 1.15rem; color: rgba(237, 230, 214, 0.75); max-width: 46ch; margin-bottom: 40px; }
-.hero-actions { display: flex; gap: 16px; flex-wrap: wrap; }
+.hero h1 { font-size: clamp(2.4rem, 5vw, 4rem); max-width: 15ch; margin-bottom: 24px; min-height: 1.1em; }
+.type-cursor { display: inline-block; width: 2px; height: 0.9em; background: var(--ivory); vertical-align: -0.1em; margin-left: 2px; animation: blink 1s step-end infinite; }
+.type-cursor.hidden { display: none; }
+.hero p.lead { font-size: 1.1rem; color: rgba(237, 230, 214, 0.75); max-width: 46ch; margin-bottom: 38px; opacity: 0; transform: translateY(6px); transition: opacity 0.6s ease, transform 0.6s ease; }
+.hero p.lead.in { opacity: 1; transform: translateY(0); }
+
+/* 3 — pill actions. Fade in on a fixed timer, independent of the
+   typewriter — a slow typer shouldn't make someone wait to book. */
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; opacity: 0; transform: translateY(8px); transition: opacity 0.4s ease, transform 0.4s ease; }
+.hero-actions.in { opacity: 1; transform: translateY(0); }
+.pill { display: inline-flex; align-items: center; justify-content: center; background: rgba(246, 241, 231, 0.94); color: var(--ink); border: 1px solid transparent; border-radius: 999px; font-size: 0.86rem; font-weight: 500; letter-spacing: 0.01em; padding: 11px 20px; white-space: nowrap; transition: background 0.2s, color 0.2s, transform 0.2s; }
+.pill:hover { background: var(--brass); transform: translateY(-1px); }
+.pill.pill-primary { background: var(--brass); }
+.pill.pill-primary:hover { background: var(--brass-light); }
+.pill-outline { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--ivory); border: 1px solid rgba(237, 230, 214, 0.4); border-radius: 999px; font-size: 0.86rem; padding: 11px 20px; white-space: nowrap; cursor: pointer; transition: background 0.2s, color 0.2s; font-family: var(--font-body); }
+.pill-outline:hover { background: var(--ivory); color: var(--ink); }
+.pill-outline u { text-underline-offset: 2px; }
+.pill-outline .copy-flash { position: absolute; margin-top: -34px; font-size: 0.72rem; background: var(--ink); color: var(--ivory); padding: 4px 10px; border-radius: 3px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.pill-outline .copy-flash.show { opacity: 1; }
+
+/* Scroll cue — bottom-center, tells you there's more below now that
+   the hero is a full viewport tall. Static line if reduced motion. */
+.scroll-cue { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; color: rgba(237, 230, 214, 0.5); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0; animation: heroFadeIn 0.8s ease 1s forwards; }
+.scroll-cue .line { width: 1px; height: 26px; background: rgba(237, 230, 214, 0.35); position: relative; overflow: hidden; }
+.scroll-cue .line::after { content: ""; position: absolute; top: -100%; left: 0; width: 100%; height: 100%; background: var(--brass-light); animation: scrollDrip 1.8s ease-in-out infinite; }
+@keyframes scrollDrip { 0% { top: -100%; } 60%, 100% { top: 100%; } }
+@keyframes heroFadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 
 .tide-divider { display: block; width: 100%; height: 48px; background: var(--ink); }
 .tide-divider svg { display: block; width: 100%; height: 48px; }
 
-/* ---- Buttons ---- */
+/* ---- Buttons (used outside the hero — CTA banner, branch cards, etc.) ---- */
 .btn { display: inline-flex; align-items: center; justify-content: center; padding: 14px 28px; border-radius: var(--radius); font-size: 0.9rem; letter-spacing: 0.02em; font-weight: 500; cursor: pointer; border: 1px solid transparent; transition: all 0.2s; }
 .btn-primary { background: var(--brass); color: var(--ink); }
 .btn-primary:hover { background: var(--brass-light); }
@@ -86,7 +139,7 @@ img { max-width: 100%; display: block; }
 /* ---- Section scaffolding ---- */
 section { padding: 96px 0; }
 .section-head { max-width: 640px; margin-bottom: 56px; }
-.section-head .eyebrow { color: var(--teal); }
+.section-head .eyebrow { color: var(--teal); opacity: 1; animation: none; }
 .section-head .eyebrow::before { background: var(--teal); }
 .section-head h2 { font-size: clamp(1.9rem, 3.5vw, 2.6rem); color: var(--ink); }
 .section-head p { color: var(--text-muted); margin-top: 14px; font-size: 1.02rem; }
@@ -143,11 +196,6 @@ section { padding: 96px 0; }
   pointer-events: none;
 }
 
-/* ---- Hero: slow drift instead of a static crop — reads as attended-to,
-   not a stock background. No-ops harmlessly when no hero image is set. ---- */
-@keyframes heroDrift { 0% { background-position: 50% 38%; } 100% { background-position: 50% 58%; } }
-.hero { animation: heroDrift 26s ease-in-out infinite alternate; }
-
 /* ---- Scroll reveal ---- */
 .reveal { opacity: 0; transform: translateY(22px); transition: opacity 0.7s ease, transform 0.7s ease; }
 .reveal.is-visible { opacity: 1; transform: translateY(0); }
@@ -189,7 +237,7 @@ footer a:hover { color: var(--brass-light); }
 
 <nav class="site-nav">
   <div class="wrap">
-    <a href="index.html" class="brand" id="navBrand">Our Hotel</a>
+    <a href="index.html" class="brand" id="navBrand">Uyeh hotel</a>
     <div class="nav-links" id="navLinks">
       <a href="index.html">Home</a>
       <a href="blog.html">Blog</a>
@@ -198,20 +246,39 @@ footer a:hover { color: var(--brass-light); }
       <a href="contact.html">Contact</a>
       <a href="index.html#locations" class="nav-cta">Book a room</a>
     </div>
-    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu">&#9776;</button>
+    <button class="nav-toggle" id="navToggle" aria-label="Toggle menu" aria-expanded="false">
+      <span class="bar"></span><span class="bar"></span><span class="bar"></span>
+    </button>
   </div>
 </nav>
 
 <header class="hero grain">
+  <div class="hero-bg" id="heroBg"></div>
   <div class="wrap">
-    <p class="eyebrow" data-content="heroEyebrow">Every location, held to the same standard</p>
-    <h1 data-content="heroTitle" id="heroTitle">A stay arranged the way it should be.</h1>
-    <p class="lead" data-content="heroSubtitle">Rooms, dining, spa and events — reserved directly with us, at any branch, with real-time availability and nothing left to guesswork.</p>
-    <div class="hero-actions">
-      <a href="#locations" class="btn btn-primary">Check availability</a>
-      <a href="about.html" class="btn btn-ghost">About us</a>
+    <div class="hero-content">
+      <p class="hero-intro-blur">Before anything else — a word on how<br>we like to welcome people.</p>
+
+      <p class="eyebrow" data-content="heroEyebrow">Every location, held to the same standard</p>
+      <h1 data-content="heroTitle" id="heroTitle">A stay arranged the way it should be.</h1>
+      <p class="lead" id="heroSubtitle" data-content="heroSubtitle">Rooms, dining, spa and events — reserved directly with us, at any branch, with real-time availability and nothing left to guesswork.</p>
+
+      <div class="hero-actions" id="heroActions">
+        <a href="#locations" class="pill pill-primary">Check availability</a>
+        <a href="#experiences" class="pill">Explore dining &amp; spa</a>
+        <a href="#standard" class="pill">See how it works</a>
+        <a href="about.html" class="pill">About us</a>
+        <button type="button" class="pill-outline" id="heroEmailPill" onclick="copyHeroEmail()">
+          Reach us: <u id="heroEmailText">hello@ourhotel.com</u>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <rect x="4" y="4" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1"/>
+            <rect x="1" y="1" width="7" height="7" rx="1" stroke="currentColor" stroke-width="1"/>
+          </svg>
+          <span class="copy-flash" id="copyFlash">Copied</span>
+        </button>
+      </div>
     </div>
   </div>
+  <div class="scroll-cue"><span>Scroll</span><span class="line"></span></div>
 </header>
 <div class="tide-divider">
   <svg viewBox="0 0 1200 48" preserveAspectRatio="none"><path d="M0,24 C150,44 300,4 450,24 C600,44 750,4 900,24 C1050,44 1150,10 1200,24 L1200,48 L0,48 Z" fill="#F6F1E7"/></svg>
@@ -236,7 +303,7 @@ footer a:hover { color: var(--brass-light); }
      swap the ::before backgrounds for real branch photography (dining room,
      spa treatment room, event space) as it becomes available; the layout
      and hover treatment don't need to change when that happens. -->
-<section class="reveal">
+<section id="experiences" class="reveal">
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">Signature experiences</p>
@@ -284,7 +351,7 @@ footer a:hover { color: var(--brass-light); }
 </section>
 
 <!-- ===== THE STANDARD ===== -->
-<section class="reveal">
+<section id="standard" class="reveal">
   <div class="wrap">
     <div class="section-head">
       <p class="eyebrow">The standard</p>
@@ -312,7 +379,7 @@ footer a:hover { color: var(--brass-light); }
   <div class="wrap">
     <div class="footer-grid">
       <div>
-        <a href="index.html" class="brand" id="footerBrand">Our Hotel</a>
+        <a href="index.html" class="brand" id="footerBrand">Uyeh hotel</a>
         <p style="max-width:34ch; margin-top:10px; font-size:0.9rem;" data-content="footerAbout">Multiple locations, one company, one booking system — built directly by the team that runs it.</p>
       </div>
       <div>
@@ -342,7 +409,7 @@ footer a:hover { color: var(--brass-light); }
       </div>
     </div>
     <div class="footer-bottom">
-      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Our Hotel</span>. All rights reserved.</span>
+      <span>&copy; <span id="year"></span> <span id="footerCopyrightName">Uyeh hotel</span>. All rights reserved.</span>
       <span>A stay arranged directly with us, start to finish.</span>
     </div>
   </div>
@@ -359,6 +426,7 @@ footer a:hover { color: var(--brass-light); }
   "use strict";
 
   const API_BASE = "https://uyeh-hotel-backend.onrender.com/api";
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   async function apiRequest(path, options = {}) {
     const res = await fetch(`${API_BASE}${path}`, {
@@ -381,9 +449,9 @@ footer a:hover { color: var(--brass-light); }
   async function hydrateSiteSettings() {
     try {
       const { settings } = await apiRequest("/settings");
-      const name = settings.platformName || "Our Hotel";
+      const name = settings.platformName || "Uyeh hotel";
 
-      document.title = document.title.replace("Our Hotel", name);
+      document.title = document.title.replace("Uyeh hotel", name);
       document.getElementById("footerCopyrightName").textContent = name;
 
       // Logo — image if the Director uploaded one, otherwise the text name
@@ -445,10 +513,16 @@ footer a:hover { color: var(--brass-light); }
       const footerAboutEl = document.querySelector('[data-content="footerAbout"]');
       if (footerAboutEl && settings.footerAbout) footerAboutEl.textContent = settings.footerAbout;
       const footerEmailEl = document.querySelector('[data-content="footerEmail"]');
+      const emailForPill = settings.footerEmail || "hello@ourhotel.com";
       if (footerEmailEl && settings.footerEmail) {
         footerEmailEl.textContent = settings.footerEmail;
         footerEmailEl.setAttribute("href", `mailto:${settings.footerEmail}`);
       }
+      // Hero "Reach us" pill mirrors the same footer email — one source
+      // of truth for the address, two places it's shown.
+      const heroEmailText = document.getElementById("heroEmailText");
+      if (heroEmailText) heroEmailText.textContent = emailForPill;
+
       const footerPhoneEl = document.querySelector('[data-content="footerPhone"]');
       if (footerPhoneEl && settings.footerPhone) {
         footerPhoneEl.textContent = settings.footerPhone;
@@ -458,13 +532,104 @@ footer a:hover { color: var(--brass-light); }
       // /api/settings unreachable — page keeps every fallback already in
       // the HTML, so nothing looks broken, just generic.
       console.warn("Could not load site settings, using fallbacks:", err.message);
+    } finally {
+      // Runs whether settings loaded or not — the headline typewriter
+      // always types whatever ended up in #heroTitle (real copy or
+      // fallback), so the animation is never showing placeholder text.
+      startHeroTypewriter();
     }
+  }
+
+  function copyHeroEmail() {
+    const email = document.getElementById("heroEmailText").textContent;
+    navigator.clipboard.writeText(email).then(() => {
+      const flash = document.getElementById("copyFlash");
+      flash.classList.add("show");
+      setTimeout(() => flash.classList.remove("show"), 1200);
+    });
+  }
+  window.copyHeroEmail = copyHeroEmail;
+
+  /** Types out #heroTitle's own text one character at a time. Reduced-
+   * motion visitors just see the final text immediately, no cursor. */
+  function startHeroTypewriter() {
+    const el = document.getElementById("heroTitle");
+    const leadEl = document.getElementById("heroSubtitle");
+    if (!el) return;
+    const fullText = el.textContent.trim();
+
+    if (prefersReducedMotion) {
+      el.textContent = fullText;
+      if (leadEl) leadEl.classList.add("in");
+      return;
+    }
+
+    const speed = 32;
+    const startDelay = 500;
+    el.textContent = "";
+    const cursor = document.createElement("span");
+    cursor.className = "type-cursor";
+    el.after(cursor);
+
+    setTimeout(() => {
+      let i = 0;
+      const interval = setInterval(() => {
+        i += 1;
+        el.textContent = fullText.slice(0, i);
+        if (i >= fullText.length) {
+          clearInterval(interval);
+          cursor.classList.add("hidden");
+          if (leadEl) leadEl.classList.add("in");
+        }
+      }, speed);
+    }, startDelay);
+  }
+
+  /** Pill actions fade in on their own fixed timer — never waits on
+   * the typewriter, so a slow typer doesn't delay the booking CTA. */
+  function revealHeroActions() {
+    setTimeout(() => {
+      const el = document.getElementById("heroActions");
+      if (el) el.classList.add("in");
+    }, prefersReducedMotion ? 0 : 400);
+  }
+
+  /** Slow ambient drift (always on) blended with mouse-reactive
+   * parallax (skipped entirely for reduced-motion visitors) on the
+   * hero background layer. One rAF loop drives both so they never
+   * fight each other or a CSS keyframe running in parallel. */
+  function initHeroMotion() {
+    const bg = document.getElementById("heroBg");
+    if (!bg) return;
+    if (prefersReducedMotion) return; // static background, no loop at all
+
+    let mouseX = 0, mouseY = 0; // -1..1
+    window.addEventListener("mousemove", (e) => {
+      mouseX = (e.clientX / window.innerWidth - 0.5) * 2;
+      mouseY = (e.clientY / window.innerHeight - 0.5) * 2;
+    });
+
+    function frame(t) {
+      const driftX = Math.sin(t / 9000) * 10;
+      const driftY = Math.cos(t / 12000) * 6;
+      const px = driftX + mouseX * 14;
+      const py = driftY + mouseY * 10;
+      bg.style.transform = `translate3d(${px}px, ${py}px, 0) scale(1.08)`;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
   }
 
   function initNav() {
     const toggle = document.getElementById("navToggle");
     const links = document.getElementById("navLinks");
-    if (toggle && links) toggle.addEventListener("click", () => links.classList.toggle("open"));
+    if (toggle && links) {
+      toggle.addEventListener("click", () => {
+        const isOpen = links.classList.toggle("open");
+        toggle.classList.toggle("active", isOpen);
+        toggle.setAttribute("aria-expanded", String(isOpen));
+      });
+    }
   }
 
   /** Scroll-triggered reveal for .reveal sections. Skips straight to
@@ -475,8 +640,7 @@ footer a:hover { color: var(--brass-light); }
     const targets = document.querySelectorAll(".reveal");
     if (!targets.length) return;
 
-    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReduced || !("IntersectionObserver" in window)) {
+    if (prefersReducedMotion || !("IntersectionObserver" in window)) {
       targets.forEach((el) => el.classList.add("is-visible"));
       return;
     }
@@ -494,8 +658,6 @@ footer a:hover { color: var(--brass-light); }
     );
     targets.forEach((el) => observer.observe(el));
   }
-
-  
 
   /** Live "Our Locations" section, fed by the real GET /api/branches. */
   async function loadBranches() {
@@ -546,7 +708,9 @@ footer a:hover { color: var(--brass-light); }
   document.addEventListener("DOMContentLoaded", () => {
     initNav();
     initReveal();
-    hydrateSiteSettings();
+    initHeroMotion();
+    revealHeroActions();
+    hydrateSiteSettings(); // also kicks off the headline typewriter when it resolves
     loadBranches();
     document.getElementById("newsletterForm").addEventListener("submit", submitNewsletterSignup);
     document.getElementById("year").textContent = new Date().getFullYear();

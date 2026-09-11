@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rooms — Solace House Admin</title>
+<link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+
+<div class="app-shell">
+  <aside class="sidebar" id="sidebar-root"></aside>
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1>Rooms</h1>
+        <p>Manage room types and individual room inventory.</p>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-outline" id="add-room-type-btn">New room type</button>
+        <button class="btn btn-primary" id="add-room-btn">New room</button>
+      </div>
+    </div>
+
+    <div id="notice-area"></div>
+
+    <div class="panel">
+      <h3>Room types</h3>
+      <table>
+        <thead><tr><th>Name</th><th>Price / night</th><th>Occupancy</th><th>Rooms</th></tr></thead>
+        <tbody id="room-types-body"><tr><td colspan="4" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h3>Individual rooms</h3>
+      <table>
+        <thead><tr><th>Room #</th><th>Type</th><th>Floor</th><th>Status</th><th></th></tr></thead>
+        <tbody id="rooms-body"><tr><td colspan="5" class="loading-state">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- New room type modal -->
+<div class="modal-overlay" id="room-type-modal" style="display:none;">
+  <div class="modal">
+    <h3>New room type</h3>
+    <form id="room-type-form">
+      <div class="form-field"><label>Name</label><input type="text" id="rt-name" required></div>
+      <div class="form-field"><label>Description</label><textarea id="rt-description"></textarea></div>
+      <div class="form-row">
+        <div class="form-field"><label>Base price / night</label><input type="number" id="rt-price" required></div>
+        <div class="form-field"><label>Max occupancy</label><input type="number" id="rt-occupancy" value="2" required></div>
+      </div>
+      <div class="form-field"><label>Amenities (comma-separated)</label><input type="text" id="rt-amenities" placeholder="wifi, ac, breakfast"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="rt-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="rt-submit-btn">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- New room modal -->
+<div class="modal-overlay" id="room-modal" style="display:none;">
+  <div class="modal">
+    <h3>New room</h3>
+    <form id="room-form">
+      <div class="form-field">
+        <label>Room type</label>
+        <select id="r-room-type" required></select>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label>Room number</label><input type="text" id="r-number" required></div>
+        <div class="form-field"><label>Floor (optional)</label><input type="text" id="r-floor"></div>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-outline" id="r-cancel-btn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="r-submit-btn">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="js/admin-api.js"></script>
+<script src="js/admin-nav.js"></script>
+<script src="js/rooms.js"></script>
+</body>
+</html>
